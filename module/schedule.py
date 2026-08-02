@@ -54,15 +54,19 @@ def build_schedules(sc):
             drop = "pmt_na"
         if drop:
             rec = {c: np.nan for c in SCHED_COLS}
-            rec.update(ITEM_CD=it, nobs=n, lz_from_prev=False, sched_ok=False, sched_drop=drop)
+            rec.update(ITEM_CD=it, nobs=n, lz_from_prev=False, pmt_nonmono=False,
+                       sched_ok=False, sched_drop=drop)
             rows.append(rec)
             continue
+        # 누적 지급률은 회차가 갈수록 줄 수 없다. raw 에 1회차가 만기값으로 들어간 오류가 있다(0.67%).
+        pv = [float(x) for x in pmt]
+        nonmono = any(b < a - 1e-9 for a, b in zip(pv[:-1], pv[1:]))
         pairs_b = [(i, float(b) / 100.0) for i, b in enumerate(lzb) if pd.notna(b)]
         pairs_p = [(i, float(p) if pd.notna(p) else 0.0)
                    for i, (p, b) in enumerate(zip(lzp, lzb)) if pd.notna(b)]
         rec = {"ITEM_CD": it, "nobs": n,
                "lz_from_prev": any(t == "FROM_PREV" for t in term),
-               "sched_ok": True, "sched_drop": ""}
+               "pmt_nonmono": nonmono, "sched_ok": True, "sched_drop": ""}
         for j, v in enumerate(_pad_ffill([float(x) / 100.0 for x in strk])):
             rec[f"strk_{j}"] = v
         for j, v in enumerate(_pad_ffill([float(x) for x in pmt])):
