@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """raw + cache → els3_dataset (원천 재유도). exp15 로직을 정식 이식하되 '현재 정의'로 빌드:
    변동성·상관 = 180일 역사(module.features), 수익률곡선 = KRW Nelson-Siegel. MC 는 여기서 계산하지 않음(1_MC_recompute).
- 산출: data/els3_dataset.parquet (보조피처 + branch[sig/rho/sig_eff/u/r/curve] + fair + recent_mktvol). item·isu_ord 포함."""
+ 유니버스 = 3-star KRW 4구조(STEP/LIZARD × 낙인/노낙인). 노낙인은 B=1.0 으로 인코딩(항상 knocked-in).
+ 산출: data/els3_dataset.parquet (보조피처 + branch[sig/rho/sig_eff/u/r/curve] + fair + recent_mktvol
+       + 구조[opt_type/ki_yn] + 기초자산[udl1..3/udl_key] + 스케줄[strk/pmt/lz_barr/lz_pmt ×12]). item·isu_ord 포함."""
 import io, sys, json, time
 from datetime import date
 import numpy as np
@@ -10,6 +12,29 @@ import bisect
 
 from util import file_manager as fm
 from . import features as F
+from .schedule import load_schedules, NSTRK, SCHED_COLS
+
+STRUCTS = (("STEP", 1), ("STEP", 0), ("LIZARD", 1), ("LIZARD", 0))
+FAIR_LO, FAIR_HI = 0.70, 1.05
+TEN_LO, TEN_HI = 0.5, 5.0
+
+
+def encode_barrier(ki_yn, barr_pct):
+    """낙인형: BARR_1/100. 노낙인: 1.0.
+     1.0 은 '만기 미상환이면 항상 worst 수취' 를 뜻하고, 엔진이 B>=1.0 을 명시적으로 always-KI 로 처리한다.
+     노낙인인데 BARR_1 이 붙은 상품이 1건 있으나 KNCK_IN_YN 을 신뢰한다."""
+    if int(ki_yn) == 1:
+        return float(barr_pct) / 100.0 if pd.notna(barr_pct) else np.nan
+    return 1.0
+
+
+def structure_mask(ac, three_index):
+    """3-star ∧ KRW ∧ (OPT_TYPE, KNCK_IN_YN) ∈ STRUCTS ∧ 공정가/만기 범위."""
+    struct = pd.Series(False, index=ac.index)
+    for o, k in STRUCTS:
+        struct |= (ac["OPT_TYPE"].eq(o) & ac["KNCK_IN_YN"].eq(k))
+    return (ac["ITEM_CD"].isin(three_index) & ac["CUR_CD"].eq("KRW") & struct
+            & ac["fair"].between(FAIR_LO, FAIR_HI) & ac["tenor"].between(TEN_LO, TEN_HI))
 
 
 def _safe(t):
@@ -39,13 +64,13 @@ def build_source(save=True, verbose=True):
     ac["fair"] = ac["FAIR_VALUE"] / ac["ISU_PRC_DETAIL"]
     nu = ud.groupby("ITEM_CD")["UDLY_ID"].nunique(); three = nu[nu == 3].index
     u3map = ud[ud.ITEM_CD.isin(three)].groupby("ITEM_CD")["UDLY_ID"].apply(list)
-    sc1 = sc[sc.SCHD_TYPE == 1].sort_values(["ITEM_CD", "SEQ"])
-    strk_by = sc1.groupby("ITEM_CD")["STRK_1"].apply(lambda s: list(s / 100))
-    barr_by = sc1.groupby("ITEM_CD")["BARR_1"].min() / 100
-    cand = ac[(ac.ITEM_CD.isin(three)) & (ac.OPT_TYPE == "STEP") & (ac.CUR_CD == "KRW")
-              & ac.fair.between(0.7, 1.05) & ac.tenor.between(0.5, 5)]
+    SCHED = load_schedules()
+    barr_pct = sc[sc.SCHD_TYPE == 1].groupby("ITEM_CD")["BARR_1"].min()
+    cand = ac[structure_mask(ac, three)]
     if verbose:
-        print("candidate 3-star STEP KRW:", len(cand))
+        print("4구조 후보:", len(cand))
+        print("  ", cand.groupby(["OPT_TYPE", "KNCK_IN_YN"]).size().to_dict())
+    drops = {}
 
     def mom6m(rets, dt, win=126):
         vals = []
@@ -63,23 +88,29 @@ def build_source(save=True, verbose=True):
         try:
             ts = [mapping.get(x) for x in u3map.get(it, [])]
             if len(ts) != 3 or any(t is None for t in ts):
-                continue
+                drops["티커 매핑 실패"] = drops.get("티커 매핑 실패", 0) + 1; continue
             rets = [RET.get(t) for t in ts]
             if any(r is None for r in rets):
-                continue
+                drops["가격이력 없음"] = drops.get("가격이력 없음", 0) + 1; continue
             dt = rw.ISU_DT
             sigs = [F.vol180(r, dt) for r in rets]                 # 현재 정의: 180일 역사 변동성
             if any(pd.isna(sigs)):
-                continue
+                drops["180일 변동성 부족"] = drops.get("180일 변동성 부족", 0) + 1; continue
             corr = F.corr180(rets, dt)                             # 180일 역사 상관
             if corr is None:
-                continue
-            strikes = strk_by.get(it)
-            if strikes is None or len(strikes) < 2 or any(pd.isna(strikes)):
-                continue
-            B = barr_by.get(it); c = rw.ANL_RTRN / 100; ten = rw.tenor
+                drops["180일 상관 부족"] = drops.get("180일 상관 부족", 0) + 1; continue
+            if it not in SCHED.index or not bool(SCHED.at[it, "sched_ok"]):
+                why = SCHED.at[it, "sched_drop"] if it in SCHED.index else "스케줄 없음"
+                drops[f"스케줄: {why}"] = drops.get(f"스케줄: {why}", 0) + 1; continue
+            if bool(SCHED.at[it, "lz_from_prev"]):                 # FROM_PREV 리자드는 엔진 미지원
+                drops["리자드 FROM_PREV"] = drops.get("리자드 FROM_PREV", 0) + 1; continue
+            srow = SCHED.loc[it]
+            nobs_ = int(srow["nobs"])
+            strikes = [float(srow[f"strk_{j}"]) for j in range(nobs_)]
+            B = encode_barrier(rw.KNCK_IN_YN, barr_pct.get(it, np.nan))
+            c = rw.ANL_RTRN / 100; ten = rw.tenor
             if any(pd.isna(x) for x in [B, c, ten]):
-                continue
+                drops["배리어/쿠폰/만기 결측"] = drops.get("배리어/쿠폰/만기 결측", 0) + 1; continue
             beta = F.krw_beta(KRW.asof(dt).values)                 # KRW NS 곡선
             if beta is None:
                 continue
@@ -95,7 +126,7 @@ def build_source(save=True, verbose=True):
                        sig_mean=smean, sig_max=sig3, sig_min=sig1, rho=rho_v, sig_eff=sig_eff,
                        cpn_spread=float(c - r), b_over_k=float(B / Klast) if Klast > 0 else 1.0,
                        stepdown=float(Kfst - Klast), mom6m=mom6m(rets, dt), isu_ord=int(dt.toordinal()),
-                       r=r, B=float(B), Kfirst=Kfst, K=Klast, coupon=float(c), tenor=float(ten), nobs=len(strikes),
+                       r=r, B=float(B), Kfirst=Kfst, K=Klast, coupon=float(c), tenor=float(ten), nobs=nobs_,
                        fair=float(rw.fair), issuer=str(rw.ISU_ORG), risk=str(rw.RISK_GRADE),
                        ptype=str(rw.PRODUCT_TYPE), rdmp=str(rw.RDMP_TYPE), imonth=str(int(dt.month)),
                        amt=float(rw.ACT_ISU_AMT) if pd.notna(rw.ACT_ISU_AMT) else np.nan,
@@ -108,12 +139,24 @@ def build_source(save=True, verbose=True):
                 rec[f"u{j}"] = float(u[j])
             rec["curve_level"] = float(u.mean()); rec["curve_slope"] = float(u[9] - u[0])
             rec["curve_curv"] = float(2 * u[4] - u[0] - u[9])
+            rec["opt_type"] = str(rw.OPT_TYPE)
+            rec["ki_yn"] = int(rw.KNCK_IN_YN)
+            ts_sorted = sorted(ts)                       # 기초자산 티커 (평가 분해용 식별자)
+            rec["udl1"], rec["udl2"], rec["udl3"] = ts_sorted
+            rec["udl_key"] = "|".join(ts_sorted)
+            for cname in SCHED_COLS:
+                rec[cname] = float(srow[cname]) if pd.notna(srow[cname]) else np.nan
             rows.append(rec)
-        except Exception:
+        except Exception as e:
+            key = f"예외: {type(e).__name__}"
+            drops[key] = drops.get(key, 0) + 1
             continue
     df = pd.DataFrame(rows).sort_values("isu_ord").reset_index(drop=True)
     if verbose:
         print(f"built {len(df)} products in {time.time()-t0:.0f}s")
+        print("  구조별:", df.groupby(["opt_type", "ki_yn"]).size().to_dict())
+        if drops:
+            print("  탈락 사유:", dict(sorted(drops.items(), key=lambda x: -x[1])))
     # recent_mktvol: 발행 전 90일 발행분 평균 sig_mean (인과적)
     o = df["isu_ord"].tolist(); sm = df["sig_mean"].values; rmv = np.zeros(len(df))
     for i in range(len(df)):
