@@ -57,11 +57,12 @@ def _mp(name, k):
     return str(d / f"{name}_fold{k}")
 
 
-def _predict_hybrid_ci(D, cfg, anchor_fn, resid_ci_fn, name=None, target=None, use_margin=False):
-    """CI 2단계 하이브리드(predict_hybrid 미러링 + CI 컬럼). y=MC_hat+mean, 구간=[y−Z·std, y+Z·std].
+def _predict_hybrid_ci(D, cfg, anchor_fn, resid_ci_fn, name=None, target=None, use_margin=True):
+    """CI 2단계 하이브리드(predict_hybrid 미러링 + CI 컬럼).
+     y=MC_hat+recent_margin+mean, 구간=[y−Z·std, y+Z·std].
      anchor_fn(D,cfg,tr,va,te,save_path=)->predict(idx)->np.ndarray.
      resid_ci_fn(D,cfg,tr,va,te,target,save_path=)->(mean_te, std_te)."""
-    tgt = D.MC if target is None else target
+    tgt = D.FAIR if target is None else target
     rm_full = D.rm if use_margin else np.zeros(D.n, dtype="float32")
     rows = []
     for k, (tr, va, te) in enumerate(D.WF):
@@ -145,7 +146,7 @@ def _anchor(D, cfg, tr, va, te, save_path=None):
 
 
 def run(D, cfg):
-    # 이론가(MC) 2단계 CI 하이브리드 하나: y=MC_hat+μ, 구간=[y−2s, y+2s].
+    # 공정가(FAIR) 2단계 CI 하이브리드 하나: y=MC_hat+recent_margin+μ, 구간=[y−2s, y+2s].
     return {"deeponet_hybrid_ci": _predict_hybrid_ci(
         D, cfg, _anchor, nll_resid, name="deeponet_hybrid_ci",
-        target=D.MC, use_margin=False)}
+        target=D.FAIR, use_margin=True)}

@@ -54,10 +54,11 @@ def _resid_loader(D, rtype, base):
 
 
 def predict_all_from_weights(D, cfg):
-    """저장 가중치로 전 모델의 이론가(MC) OOS 예측을 조립. pipeline 산출 DataFrame 과 동일 스키마.
-     직접(단일 단계) 벤치마크: y = 예측(MC) (stage 컬럼 없음).
-     2단계 하이브리드: y = MC_hat + resid (마진 없음), y_true = MC, resid_true = MC − MC_hat."""
-    MC = D.MC
+    """저장 가중치로 전 모델의 공정가(FAIR) OOS 예측을 조립. pipeline 산출 DataFrame 과 동일 스키마.
+     직접(단일 단계) 벤치마크: y = 예측(FAIR) (stage 컬럼 없음).
+     2단계 하이브리드: y = MC_hat + recent_margin + resid, y_true = FAIR,
+                      resid_true = FAIR − MC_hat − recent_margin, mc_true = MC(이론가 참값)."""
+    FAIR, MC, rm = D.FAIR, D.MC, D.rm
     out = {}
     # 직접(단일 단계) 벤치마크
     for name in _DIRECT:
@@ -67,7 +68,7 @@ def predict_all_from_weights(D, cfg):
             yp = np.asarray(pred(te), dtype="float32")
             rows.append(pd.DataFrame({
                 "ITEM_CD": D.ITEM[te], "isu_ord": D.ORD[te],
-                "y_true": MC[te], "y_pred": yp,
+                "y_true": FAIR[te], "y_pred": yp,
             }))
         out[name] = pd.concat(rows, ignore_index=True)
     # 2단계 하이브리드
@@ -78,12 +79,12 @@ def predict_all_from_weights(D, cfg):
             resid = _resid_loader(D, rtype, _mp(f"{name}_resid", k))
             mc_te = np.asarray(anchor(te), dtype="float32")
             r_te = np.asarray(resid(te), dtype="float32")
-            y = mc_te + r_te
+            y = mc_te + rm[te] + r_te
             rows.append(pd.DataFrame({
                 "ITEM_CD": D.ITEM[te], "isu_ord": D.ORD[te],
-                "y_true": MC[te], "y_pred": y,
+                "y_true": FAIR[te], "y_pred": y,
                 "mc_true": MC[te], "mc_pred": mc_te,
-                "resid_true": (MC[te] - mc_te).astype("float32"), "resid_pred": r_te,
+                "resid_true": (FAIR[te] - mc_te - rm[te]).astype("float32"), "resid_pred": r_te,
             }))
         out[name] = pd.concat(rows, ignore_index=True)
     return out

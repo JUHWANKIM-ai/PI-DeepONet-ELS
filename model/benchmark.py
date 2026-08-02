@@ -42,10 +42,10 @@ def _xgb_anchor(D, cfg, tr, va, te, save_path=None):
 
 def run(D, cfg):
     out = {}
-    # (1) 직접(단일 단계) 벤치마크: ml.csv 전 특성으로 이론가(MC) 직접 예측
+    # (1) 직접(단일 단계) 벤치마크: ml.csv 전 특성으로 공정가(FAIR) 직접 예측
     for key, name in _DIRECT.items():
-        out[name] = predict_direct_tab(D, cfg, key, name=name)   # target=None → D.MC
-    # (2) XGB 하이브리드(2단계): XGB 앵커(MC_hat) + XGB 잔차(MC−MC_hat), 마진 없음
+        out[name] = predict_direct_tab(D, cfg, key, name=name, target=D.FAIR)
+    # (2) XGB 하이브리드(2단계): XGB 앵커(MC_hat) + recent_margin + XGB 잔차(FAIR−MC_hat−rm)
     out["xgb_hybrid"] = predict_hybrid(D, cfg, _xgb_anchor, name="xgb_hybrid",
-                                       target=D.MC, use_margin=False)
+                                       target=D.FAIR, use_margin=True)
     return out
