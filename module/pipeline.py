@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from .tabular import fit_tab
-from model.stage2 import xgb_resid
+from model.stage2 import ml_resid
 from util import file_manager as fm
 
 
@@ -60,8 +60,8 @@ def predict_hybrid(D, cfg, anchor_fn, resid_fn=None, name=None, target=None, use
         mc_hat[sel] = np.asarray(anchor_predict(sel), dtype="float32")
         rt = np.full(D.n, np.nan, dtype="float32")
         rt[sel] = hybrid_residual_target(tgt[sel], mc_hat[sel], rm_full[sel])
-        # stage-2 잔차모델: 기본=model.stage2.xgb_resid(XGB on D.DON), resid_fn 주면 그것(예: don_resid)
-        rfn = xgb_resid if resid_fn is None else resid_fn
+        # stage-2 잔차모델: 기본=model.stage2.ml_resid(ml 전체특성, cfg['margin']), resid_fn 주면 그것
+        rfn = ml_resid if resid_fn is None else resid_fn
         _, resid_pred = rfn(D, cfg, tr, va, te, rt,
                             save_path=_mp(f"{name}_resid" if name else None, k))
         mc_te = mc_hat[te]
