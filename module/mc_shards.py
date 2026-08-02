@@ -25,14 +25,23 @@ import numpy as np
 import pandas as pd
 from util import file_manager as fm
 from module import mc as MC
+from module.mc_engine import price_one_t, DEFAULT_DEV
 
 FACE = 10000
 
 
 def _tasks():
+    """parquet -> (df, 태스크 dict 리스트). 스케줄 배열은 실제 회차 수(nobs)만큼만 잘라 넘긴다."""
     df = pd.read_parquet(fm.source()).sort_values("isu_ord").reset_index(drop=True)
-    tasks = [(i, r["item"], int(r["isu_ord"]), float(r["B"]), float(r["coupon"]),
-              float(r["tenor"]), float(r["sig_eff"])) for i, r in df.iterrows()]
+    tasks = []
+    for i, r in df.iterrows():
+        k = int(r["nobs"])
+        tasks.append(dict(i=int(i), item=r["item"], iord=int(r["isu_ord"]), B=float(r["B"]),
+                          c=float(r["coupon"]), ten=float(r["tenor"]), sig_eff=float(r["sig_eff"]),
+                          strikes=[float(r[f"strk_{j}"]) for j in range(k)],
+                          pmts=[float(r[f"pmt_{j}"]) for j in range(k)],
+                          lz_barr=[float(r[f"lz_barr_{j}"]) for j in range(k)],
+                          lz_pmt=[float(r[f"lz_pmt_{j}"]) for j in range(k)]))
     return df, tasks
 
 
@@ -40,7 +49,7 @@ def _clean(x):
     return None if (isinstance(x, float) and np.isnan(x)) else float(x)
 
 
-def combine(N=None, verbose=True):
+def combine(N=None, verbose=True, engine="cuda"):
     """캐시된 샤드 JSON(data/cache/mccal_shard_*.json)을 읽어 els3_dataset.parquet 에
     mc·MC입력·recent_margin 을 붙여 저장(재시뮬 없이 수 초). N=None 이면 존재하는 샤드 수 자동감지.
     노트북·CLI 공용. 반환: 저장된 df. (JSON 없으면 FileNotFoundError)"""
@@ -61,6 +70,8 @@ def combine(N=None, verbose=True):
             arr[c][i] = (np.nan if val is None else val)
     for c in MC.MC_COLS:
         df[c] = arr[c].astype("float32")
+    df["mc_engine"] = engine
+    df["mc_seed"] = np.arange(len(df), dtype="int32")     # seed = isu_ord 정렬 후 행 인덱스
     df["fair_minus_mc"] = (df["fair"] - df["mc"]).astype("float32")
     df["mc_krw"] = (df["mc"] * FACE).round().astype("float32")
     df["fair_krw"] = (df["fair"] * FACE).round().astype("float32")
@@ -98,15 +109,42 @@ def main():
             hb.write_text(json.dumps({"done": done, "total": len(my), "t": time.time(), "finished": finished}))
 
         out = {}; t0 = time.time(); _beat(0)
-        for n_, (idx, it, iord, B, c, ten, se) in enumerate(my):
-            r = MC.price_one(mk, kmap, it, iord, B, c, ten, se)
-            out[str(idx)] = [_clean(v) for v in r]
+        for n_, t in enumerate(my):          # 레거시 numpy 엔진 (새 규칙 미지원 -> pmts/lz 미전달)
+            r = MC.price_one(mk, kmap, t["item"], t["iord"], t["B"], t["c"], t["ten"],
+                             t["sig_eff"], strikes=t["strikes"])
+            out[str(t["i"])] = [_clean(v) for v in r]
             if (n_ + 1) % 200 == 0:
                 gc.collect(); _beat(n_ + 1)
                 print(f"shard{k}: {n_+1}/{len(my)} ({time.time()-t0:.0f}s)", flush=True)
         (fm.CACHE / f"mccal_shard_{k}.json").write_text(json.dumps(out))
         _beat(len(my), finished=True)
         print(f"shard{k} DONE {len(out)} in {time.time()-t0:.0f}s", flush=True)
+
+    elif mode == "gpu":
+        N = int(sys.argv[2]) if len(sys.argv) > 2 else 28
+        mk = MC.load_market(); _, tasks = _tasks()
+        pdir = fm.SCRATCH / "mc_progress"; pdir.mkdir(parents=True, exist_ok=True)
+        print(f"GPU 엔진 {DEFAULT_DEV} | 상품 {len(tasks):,} | 청크 {N}", flush=True)
+        t_all = time.time()
+        for k in range(N):
+            outp = fm.CACHE / f"mccal_shard_{k}.json"
+            if outp.exists():
+                print(f"chunk{k}: skip (이미 있음)", flush=True); continue
+            my = tasks[k::N]; out = {}; t0 = time.time(); hb = pdir / f"shard_{k}.json"
+            for n_, t in enumerate(my):
+                r = price_one_t(mk, kmap, t["item"], t["iord"], t["B"], t["c"], t["ten"],
+                                t["sig_eff"], seed=t["i"], strikes=t["strikes"], pmts=t["pmts"],
+                                lz_barr=t["lz_barr"], lz_pmt=t["lz_pmt"])
+                out[str(t["i"])] = [_clean(v) for v in r]
+                if (n_ + 1) % 200 == 0:
+                    hb.write_text(json.dumps({"done": n_ + 1, "total": len(my),
+                                              "t": time.time(), "finished": False}))
+                    print(f"chunk{k}: {n_+1}/{len(my)} ({time.time()-t0:.0f}s)", flush=True)
+            outp.write_text(json.dumps(out))
+            hb.write_text(json.dumps({"done": len(my), "total": len(my),
+                                      "t": time.time(), "finished": True}))
+            print(f"chunk{k} DONE {len(out)} in {time.time()-t0:.0f}s "
+                  f"(누적 {(time.time()-t_all)/60:.1f}분)", flush=True)
 
     elif mode == "combine":
         N = int(sys.argv[2]) if len(sys.argv) > 2 else None
@@ -138,7 +176,9 @@ def main():
 
     else:  # test
         mk = MC.load_market(); df, tasks = _tasks()
-        t0 = time.time(); rows = [MC.price_one(mk, kmap, *t[1:]) for t in tasks[:30]]
+        t0 = time.time()
+        rows = [MC.price_one(mk, kmap, t["item"], t["iord"], t["B"], t["c"], t["ten"],
+                             t["sig_eff"], strikes=t["strikes"]) for t in tasks[:30]]
         mc = np.array([r[0] for r in rows]); kk = np.array([r[8] for r in rows]); fair = df["fair"].values[:30]
         print(f"kmap: {kmap}")
         print(f"test 30 in {time.time()-t0:.0f}s | mc {np.nanmean(mc):.4f} | fair {np.nanmean(fair):.4f} | "
