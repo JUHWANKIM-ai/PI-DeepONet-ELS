@@ -3,6 +3,10 @@
  일별 GBM + 촐레스키(180일 역사 상관) + 180일 역사 변동성(cache px_*) + KRW Nelson-Siegel 할인 + q=0 + 일별 KI.
  곡선·vol·corr 정의는 module.features 사용.
 
+ *** 이 모듈(numpy)은 프로덕션 재산출에서 퇴역했다. 페이오프 규칙의 정본은 module/mc_engine.py (torch) 다.
+     여기 mc_daily 는 레거시 규칙(선형 쿠폰·리자드 없음·낙인 판정)만 지원하며, 기존 데이터셋 mc 재현과
+     엔진 대조(scratch/verify_engine_agreement.py)에만 쓴다. 새 규칙을 여기에 추가하지 말 것. ***
+
  캘리브레이션(선택): 역사 변동성은 내재변동성보다 낮아 MC가 공정가치를 상회한다. 관측 입력(sig_eff)의
  연속 함수 k(sig_eff)=piecewise-linear(=data/cache/calib_kmap.json)를 σ에 곱해 편향을 줄인다(불연속 없음).
  kmap=None 이면 미보정(pre-calibration) 버전 = 원래 MC.
@@ -90,22 +94,33 @@ def mc_daily(sigs, corr, beta, B, strikes, c, ten, n=NPATH, seed=0, chunk=PCHUNK
     return tot / n
 
 
-def price_one(mk, kmap, item, iord, B, c, ten, sig_eff, n=NPATH, seed=0):
-    """상품 하나: (mc, vol1..3, rho12/13/23, r_krw, k). 실제 3기초자산 180일 역사 vol/corr + 캘리브레이션 배수 k.
-     vol1..3 은 관측(미보정) 역사변동성이며 MC 내부에서는 k·σ 를 사용(k=적용배수)."""
+def prepare_one(mk, kmap, item, iord, ten, sig_eff, strikes=None):
+    """상품 -> 엔진 공통 입력. numpy(price_one)와 torch(mc_engine.price_one_t)가 공유한다.
+     sigs 는 캘리브레이션 배수 k 가 곱해진 값, audit 은 미보정 관측값(데이터셋 mc_vol*/mc_rho* 용)."""
     dt = pd.Timestamp(date.fromordinal(int(iord)))
-    beta = F.krw_beta(mk["KRW"].asof(dt).values); strikes = mk["strk_by"].get(item)
-    ts = [mk["mapping"].get(x) for x in mk["u3map"].get(item, [])]; ts = [t for t in ts if t]
-    nan8 = (np.nan,) * 7
+    beta = F.krw_beta(mk["KRW"].asof(dt).values)
+    strikes = list(strikes) if strikes is not None else mk["strk_by"].get(item)
     if beta is None or not strikes:
-        return (np.nan, *nan8)
+        return None
     rkrw = float(F.zero_curve(beta, np.array([ten]))[0])
     k = calib_k(sig_eff, kmap)
+    ts = [mk["mapping"].get(x) for x in mk["u3map"].get(item, [])]; ts = [t for t in ts if t]
     rets = [mk["RET"].get(t) for t in ts]
     if len(ts) == 3 and all(r is not None for r in rets):
         sigs = [F.vol180(r, dt) for r in rets]; corr = F.corr180(rets, dt)
         if corr is not None and not any(pd.isna(sigs)):
-            mc = mc_daily([k * s for s in sigs], corr, beta, B, strikes, c, ten, n=n, seed=seed)
-            return (mc, sigs[0], sigs[1], sigs[2], corr[0, 1], corr[0, 2], corr[1, 2], rkrw, k)
-    mc = mc_daily([k * sig_eff] * 3, np.eye(3), beta, B, strikes, c, ten, n=n, seed=seed)   # 폴백: 단일자산
-    return (mc, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, rkrw, k)
+            return dict(beta=beta, strikes=strikes, sigs=[k * s for s in sigs], corr=corr,
+                        rkrw=rkrw, k=k,
+                        audit=(sigs[0], sigs[1], sigs[2], corr[0, 1], corr[0, 2], corr[1, 2]))
+    return dict(beta=beta, strikes=strikes, sigs=[k * sig_eff] * 3, corr=np.eye(3),
+                rkrw=rkrw, k=k, audit=(np.nan,) * 6)          # 폴백: 단일자산 근사
+
+
+def price_one(mk, kmap, item, iord, B, c, ten, sig_eff, n=NPATH, seed=0, strikes=None):
+    """상품 하나 (레거시 numpy 엔진): (mc, vol1..3, rho12/13/23, r_krw, k) 9개.
+     vol1..3 은 관측(미보정) 역사변동성이며 MC 내부에서는 k·σ 를 사용(k=적용배수)."""
+    P = prepare_one(mk, kmap, item, iord, ten, sig_eff, strikes=strikes)
+    if P is None:
+        return (np.nan,) * len(MC_COLS)
+    mc = mc_daily(P["sigs"], P["corr"], P["beta"], B, P["strikes"], c, ten, n=n, seed=seed)
+    return (mc, *P["audit"], P["rkrw"], P["k"])
