@@ -49,6 +49,32 @@ def _clean(x):
     return None if (isinstance(x, float) and np.isnan(x)) else float(x)
 
 
+RM_WINDOW = 90
+RM_BY = ("opt_type", "ki_yn")
+
+
+def recent_margin(df, window=RM_WINDOW, by=RM_BY):
+    """인과적 recent_margin = 발행 전 window 일 (fair-mc) 평균, **같은 구조 안에서만**.
+
+     4구조를 섞어 평균내면 구조별 마진 차이(예: LIZARD-noKI -0.057 vs STEP-noKI -0.047)가
+     서로 오염시켜 baseline 이 나빠진다(실측 R² 0.5354 -> 0.5119, 구조별로 계산하면 0.5351 복구).
+     반환: 입력 행 순서에 맞춘 float32 배열."""
+    rm = np.zeros(len(df), dtype="float64")
+    mg_all = (df["fair"].values - df["mc"].values)
+    pos_all = np.arange(len(df))
+    keys = list(by) if all(c in df.columns for c in by) else []
+    groups = df.groupby(list(keys), sort=False).indices.values() if keys else [pos_all]
+    for gpos in groups:
+        gpos = np.asarray(gpos)
+        order = np.argsort(df["isu_ord"].values[gpos], kind="stable")
+        gpos = gpos[order]
+        o = df["isu_ord"].values[gpos].tolist(); mg = mg_all[gpos]
+        for t in range(len(gpos)):
+            hi = bisect.bisect_left(o, o[t]); lo = bisect.bisect_left(o, o[t] - window)
+            rm[gpos[t]] = mg[lo:hi].mean() if hi > lo else (mg[:hi].mean() if hi > 0 else 0.0)
+    return rm.astype("float32")
+
+
 def combine(N=None, verbose=True, engine="cuda"):
     """캐시된 샤드 JSON(data/cache/mccal_shard_*.json)을 읽어 els3_dataset.parquet 에
     mc·MC입력·recent_margin 을 붙여 저장(재시뮬 없이 수 초). N=None 이면 존재하는 샤드 수 자동감지.
@@ -77,12 +103,7 @@ def combine(N=None, verbose=True, engine="cuda"):
     df["fair_krw"] = (df["fair"] * FACE).round().astype("float32")
     df["fair_minus_mc_krw"] = ((df["fair"] - df["mc"]) * FACE).round().astype("float32")
     df = df.sort_values("isu_ord").reset_index(drop=True)
-    # recent_margin: 발행 전 90일 (fair-mc) 평균 (인과적)
-    o = df["isu_ord"].tolist(); mg = (df["fair"] - df["mc"]).values; rm = np.zeros(len(df))
-    for i in range(len(df)):
-        hi = bisect.bisect_left(o, o[i]); lo = bisect.bisect_left(o, o[i] - 90)
-        rm[i] = mg[lo:hi].mean() if hi > lo else (mg[:hi].mean() if hi > 0 else 0.0)
-    df["recent_margin"] = rm.astype("float32")
+    df["recent_margin"] = recent_margin(df)      # 인과적, 구조별
     df.to_parquet(fm.source())
     pdir = fm.SCRATCH / "mc_progress"           # 진행 heartbeat 정리
     if pdir.exists():
