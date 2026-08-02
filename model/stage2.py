@@ -9,7 +9,7 @@
 import numpy as np
 import torch
 
-from module.data import to_tensor, zstats, time_weights
+from module.data import to_tensor, zstats, znorm, time_weights
 from module.networks import MarginOperator
 from module.train import _EarlyStop, _opt
 
@@ -52,7 +52,7 @@ def don_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
     torch.manual_seed(cfg["seed"])
     Bmat = D.VC; Tmat = np.concatenate([D.CURVE, D.CON], axis=1)
     bm, bs = zstats(Bmat, tr); tm, ts = zstats(Tmat, tr)
-    Bt = to_tensor((Bmat - bm) / bs, dev); Tt = to_tensor((Tmat - tm) / ts, dev)
+    Bt = to_tensor(znorm(Bmat, bm, bs), dev); Tt = to_tensor(znorm(Tmat, tm, ts), dev)
     ym, ysd = float(target[tr].mean()), float(target[tr].std() + 1e-8)
     Y = to_tensor((target - ym) / ysd, dev)
     net = MarginOperator(Bt.shape[1], Tt.shape[1], P).to(dev); opt = _opt(net, cfg)
@@ -88,8 +88,8 @@ def load_don_resid(D, path):
     net = MarginOperator(ck["nb"], ck["nt"], ck["P"]).to(D.DEV)
     net.load_state_dict(ck["state"]); net.eval()
     Bmat = D.VC; Tmat = np.concatenate([D.CURVE, D.CON], axis=1)
-    Bt = to_tensor((Bmat - ck["bm"]) / ck["bs"], D.DEV)
-    Tt = to_tensor((Tmat - ck["tm"]) / ck["ts"], D.DEV)
+    Bt = to_tensor(znorm(Bmat, ck["bm"], ck["bs"]), D.DEV)
+    Tt = to_tensor(znorm(Tmat, ck["tm"], ck["ts"]), D.DEV)
     ym, ysd = ck["ym"], ck["ysd"]
 
     def predict(idx):

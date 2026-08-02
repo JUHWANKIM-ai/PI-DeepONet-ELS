@@ -6,7 +6,7 @@
 import numpy as np
 import torch
 
-from .data import to_tensor, zstats
+from .data import to_tensor, zstats, znorm
 from .networks import CurveOperatorV2
 
 
@@ -59,9 +59,9 @@ def train_curve(D, cfg, tr, te, target, va=None, loss="mse", return_predict=Fals
     dev = D.DEV; B = cfg["train"]["batch"]; NIT = cfg["train"]["nit"]; P = cfg["networks"]["P"]
     torch.manual_seed(cfg["seed"])
     um, us = zstats(D.CURVE, tr); vm, vs = zstats(D.VC, tr); cm, cs = zstats(D.CON, tr)
-    Un = to_tensor((D.CURVE - um) / us, dev)
-    Vn = to_tensor((D.VC - vm) / vs, dev)
-    Cn = to_tensor((D.CON - cm) / cs, dev)
+    Un = to_tensor(znorm(D.CURVE, um, us), dev)
+    Vn = to_tensor(znorm(D.VC, vm, vs), dev)
+    Cn = to_tensor(znorm(D.CON, cm, cs), dev)
     net = CurveOperatorV2(Vn.shape[1], Cn.shape[1], P).to(dev); opt = _opt(net, cfg)
     ym, ysd = float(target[tr].mean()), float(target[tr].std() + 1e-8); Y = to_tensor((target - ym) / ysd, dev)
     Torig = to_tensor(target, dev)                 # 원본 스케일 타깃 (mape loss용)
@@ -101,9 +101,9 @@ def load_curve_predictor(D, path):
     ck = torch.load(path, map_location="cpu", weights_only=False)
     net = CurveOperatorV2(ck["nvc"], ck["ncon"], ck["P"]).to(D.DEV)
     net.load_state_dict(ck["state"]); net.eval()
-    Un = to_tensor((D.CURVE - ck["um"]) / ck["us"], D.DEV)
-    Vn = to_tensor((D.VC - ck["vm"]) / ck["vs"], D.DEV)
-    Cn = to_tensor((D.CON - ck["cm"]) / ck["cs"], D.DEV)
+    Un = to_tensor(znorm(D.CURVE, ck["um"], ck["us"]), D.DEV)
+    Vn = to_tensor(znorm(D.VC, ck["vm"], ck["vs"]), D.DEV)
+    Cn = to_tensor(znorm(D.CON, ck["cm"], ck["cs"]), D.DEV)
     ym, ysd = ck["ym"], ck["ysd"]
 
     def predict(idx):
