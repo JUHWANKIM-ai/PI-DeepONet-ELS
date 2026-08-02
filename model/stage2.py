@@ -2,16 +2,39 @@
 """stage-2 잔차모델 전용 (하이브리드 공용). 하이브리드는 stage1 앵커만 다르고 stage2는 여기 것을 공유.
  입력은 **deeponet 특성 블록 D.DON**(곡선 u0-9 | vol·corr·sig_eff | 계약; 이론가 결정 특성, ml aux 제외).
 
-  xgb_resid       : 기본 stage2. XGB on D.DON. (deeponet_hybrid/_l1/_mape/xgb_hybrid)
+  ml_resid        : **기본 stage2**. cfg['margin'] 설정으로 ml 전체특성(BASE+CAT) 위에서 잔차 회귀.
+                    마진(fair-mc)은 발행사·발행금액·청약일수 같은 시장/발행자 현상이라 그 특성이 필요하다.
+  xgb_resid       : XGB on D.DON(이론가 결정 특성만). 이론가 잔차용.
   don_resid       : DeepONet stage2. branch=vol·corr·sig_eff, trunk=[곡선|계약]. (deeponet_hybrid_s2don)
  각 resid_fn(D,cfg,tr,va,te,target,save_path=) -> (resid_tr, resid_te). 로더는 predict(idx)->np.ndarray.
+
+ 주의: 2026-07-10 rebase 때 기본 stage2 가 ml 전체특성 -> D.DON 으로 바뀌면서 공정가 R² 가
+ 0.66 -> 0.44 로 떨어졌다(STEP×KI 실측, tests/verify_step_ki_reproduction.py). 기본값을 되돌린다.
 """
 import numpy as np
 import torch
 
 from module.data import to_tensor, zstats, znorm, time_weights
 from module.networks import MarginOperator
+from module.tabular import fit_tab, load_tab_predictor
 from module.train import _EarlyStop, _opt
+
+
+def ml_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
+    """기본 stage-2: ml 전체특성(cfg['margin'].feature_set) 으로 잔차 회귀.
+     target = FAIR − MC_hat − recent_margin. 저장/로드는 fit_tab 규약(.pkl)."""
+    out = fit_tab(D, cfg, cfg["margin"]["model"], tr, te, cfg["margin"]["feature_set"], target,
+                  tw=cfg["data"]["time_decay"], va=va, save_path=save_path,
+                  return_predictor=return_predict)
+    if return_predict:
+        yp, p = out
+        return p(tr), yp, p
+    return None, out
+
+
+def load_ml_resid(D, path):
+    """ml_resid 저장 .pkl → predict(idx)."""
+    return load_tab_predictor(D, path)
 
 
 def xgb_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):

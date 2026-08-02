@@ -10,7 +10,7 @@ import joblib
 from util import file_manager as fm
 from .train import load_curve_predictor
 from .tabular import load_tab_predictor
-from model.stage2 import load_xgb_resid, load_don_resid
+from model.stage2 import load_xgb_resid, load_don_resid, load_ml_resid
 
 
 def _mp(name, k):
@@ -29,11 +29,11 @@ _DIRECT = ["bench_ridge", "bench_gbm", "bench_lgbm", "bench_xgboost", "bench_cat
 
 # 이론가(MC) 2단계(하이브리드) 모델 구성: name -> (anchor_type, resid_type)
 _HYBRID = {
-    "deeponet_hybrid": ("curve", "tab"),        # 앵커 MSE
-    "deeponet_hybrid_l1": ("curve", "tab"),     # 앵커 L1
-    "deeponet_hybrid_mape": ("curve", "tab"),   # 앵커 MAPE
+    "deeponet_hybrid": ("curve", "mltab"),        # 앵커 MSE
+    "deeponet_hybrid_l1": ("curve", "mltab"),     # 앵커 L1
+    "deeponet_hybrid_mape": ("curve", "mltab"),   # 앵커 MAPE
     "deeponet_hybrid_s2don": ("curve", "margin"),  # stage-2 = DeepONet
-    "xgb_hybrid": ("xgb", "tab"),               # 앵커 XGB
+    "xgb_hybrid": ("xgb", "mltab"),               # 앵커 XGB
 }
 
 
@@ -46,6 +46,8 @@ def _anchor_loader(D, atype, base):
 
 
 def _resid_loader(D, rtype, base):
+    if rtype == "mltab":
+        return load_ml_resid(D, base + ".pkl")         # 기본 stage2: ml 전체특성 (cfg['margin'])
     if rtype == "tab":
         return load_xgb_resid(D, base + ".pkl")        # XGB on deeponet 블록 D.DON
     if rtype == "margin":

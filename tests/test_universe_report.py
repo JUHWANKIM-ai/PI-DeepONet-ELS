@@ -43,6 +43,11 @@ def test_lizard_products_have_a_real_barrier_somewhere(ml):
     assert (lz[cols] < 1.2).any(axis=1).all(), "리자드 상품인데 실제 배리어가 하나도 없다"
 
 
-def test_mc_is_finite_and_in_plausible_range(ml):
+def test_mc_cannot_exceed_max_contractual_payoff(ml):
+    """조기상환 페이오프 = (1 + 누적지급률)*DF <= 1 + 마지막 누적지급률,
+     만기 생존 페이오프 = min(1, worst)*DF <= 1. 따라서 mc <= 1 + pmt_last 는 계약상 불변식."""
     assert ml["MC"].notna().all()
-    assert ml["MC"].between(0.3, 1.15).all(), (ml["MC"].min(), ml["MC"].max())
+    cap = 1.0 + ml["pmt_11"]
+    over = ml["MC"] > cap + 1e-3
+    assert not over.any(), (int(over.sum()), ml.loc[over, ["MC", "pmt_11"]].head().to_dict())
+    assert (ml["MC"] > 0.3).all(), ml["MC"].min()
