@@ -189,6 +189,19 @@ def to_tensor(a, dev):
     return torch.tensor(np.asarray(a, dtype="float32"), device=dev)
 
 
+ZCLIP = 10.0    # 표준화값 한계 (정규 표본이면 절대 안 걸리는 수준)
+
+
 def zstats(a, tr):
     """train 기준 표준화 통계."""
     return a[tr].mean(0), a[tr].std(0) + 1e-8
+
+
+def znorm(a, m, s, clip=ZCLIP):
+    """train 기준 표준화 + 클리핑.
+
+     train 폴드에서 상수인 열(예: 리자드 lz_pmt_5/6/7 — 그 회차에 리자드가 붙은 상품이
+     train 구간에 하나도 없다)은 std 가 eps(1e-8) 라, test 에 값이 나타나면 |z| 가
+     2,500만까지 튄다. 트리 모델은 스케일 불변이라 무사하지만 tanh MLP 는 포화돼 발산한다.
+     (실측: deeponet_hybrid_s2don stage2 R² −1.84)"""
+    return np.clip((a - m) / s, -clip, clip)

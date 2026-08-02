@@ -28,6 +28,21 @@ def encode_barrier(ki_yn, barr_pct):
     return 1.0
 
 
+def needs_linear_pmt(pmts, c, ten, nonmono):
+    """상환 스케줄이 계약 쿠폰을 담고 있지 않으면 선형 c*t (기존 엔진 동작) 로 대체해야 한다.
+
+     (1) 누적 지급률 비단조 = raw 오류 (1회차 슬롯에 만기값)
+     (2) 마지막 누적 지급률이 c*tenor 의 절반에도 못 미침 = 월지급형 등 '쿠폰 미기재'.
+         이걸 그대로 쓰면 쿠폰이 통째로 빠져 mc 가 액면 대비 약 570원 낮아진다(실측).
+     반대 방향(스케줄이 c*tenor 보다 많이 지급, 예: ANL_RTRN=0 인데 스케줄엔 지급률 있음)은
+     스케줄이 정답이므로 건드리지 않는다."""
+    if nonmono:
+        return True
+    if c <= 0 or ten <= 0:
+        return False
+    return bool(float(pmts[-1]) < 0.5 * float(c) * float(ten))
+
+
 def structure_mask(ac, three_index):
     """3-star ∧ KRW ∧ (OPT_TYPE, KNCK_IN_YN) ∈ STRUCTS ∧ 공정가/만기 범위."""
     struct = pd.Series(False, index=ac.index)
@@ -146,8 +161,10 @@ def build_source(save=True, verbose=True):
             rec["udl_key"] = "|".join(ts_sorted)
             for cname in SCHED_COLS:
                 rec[cname] = float(srow[cname]) if pd.notna(srow[cname]) else np.nan
-            # 누적 지급률이 감소하는 raw 오류(0.67%)는 선형 쿠폰 c*t 로 대체 = 기존 엔진 동작
-            rec["pmt_linear"] = int(bool(srow["pmt_nonmono"]))
+            # 스케줄이 계약 쿠폰을 담지 못한 경우(raw 비단조 0.67% + 월지급형 등 13%)는
+            # 선형 쿠폰 c*t 로 대체 = 기존 엔진 동작
+            rec["pmt_linear"] = int(needs_linear_pmt(
+                [rec[f"pmt_{q}"] for q in range(nobs_)], c, ten, bool(srow["pmt_nonmono"])))
             if rec["pmt_linear"]:
                 Nd = int(round(ten * 365))
                 od = np.clip(np.round(np.arange(1, nobs_ + 1) * (ten / nobs_) * 365).astype(int), 1, Nd)

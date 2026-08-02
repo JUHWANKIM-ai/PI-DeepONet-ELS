@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from module.build_source import STRUCTS, encode_barrier, structure_mask
+from module.build_source import STRUCTS, encode_barrier, structure_mask, needs_linear_pmt
 
 
 def test_structs_covers_two_by_two():
@@ -50,6 +50,27 @@ def test_structure_mask_requires_three_underlyings():
     })
     m = structure_mask(ac, pd.Index(["a"]))       # b 는 3-star 아님
     assert list(ac.loc[m, "ITEM_CD"]) == ["a"]
+
+
+def test_linear_fallback_when_schedule_omits_the_coupon():
+    """월지급형은 상환 스케줄 지급률이 0 이라 그대로 쓰면 쿠폰이 통째로 사라진다."""
+    assert needs_linear_pmt([0.0, 0.0, 0.0], c=0.06, ten=3.0, nonmono=False) is True
+    assert needs_linear_pmt([0.01, 0.02, 0.03], c=0.06, ten=3.0, nonmono=False) is True  # 0.03 < 0.09
+
+
+def test_no_fallback_for_normal_schedule():
+    assert needs_linear_pmt([0.03, 0.06, 0.09], c=0.06, ten=1.5, nonmono=False) is False
+    assert needs_linear_pmt([0.033, 0.067, 0.100], c=0.0335, ten=3.0, nonmono=False) is False
+
+
+def test_no_fallback_when_schedule_pays_more_than_annual_rate():
+    """c=0 인데 스케줄이 지급하는 상품(360건)은 스케줄이 정답 — 건드리지 않는다."""
+    assert needs_linear_pmt([0.06, 0.12, 0.19], c=0.0, ten=3.0, nonmono=False) is False
+    assert needs_linear_pmt([0.10, 0.20, 0.30], c=0.05, ten=3.0, nonmono=False) is False
+
+
+def test_nonmonotone_still_triggers_fallback():
+    assert needs_linear_pmt([0.201, 0.067, 0.201], c=0.067, ten=3.0, nonmono=True) is True
 
 
 def test_built_source_has_structure_and_underlying_columns():
