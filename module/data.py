@@ -12,6 +12,7 @@ import pandas as pd
 import torch
 
 from util import file_manager as fm
+from .schedule import NSTRK, SCHED_COLS, LZ_BARR_NEUTRAL, LZ_PMT_NEUTRAL
 
 # ===== 원천 컬럼명 -> 데이터셋 컬럼명 (raw 이름/산식 활용) =====
 RENAME = {
@@ -27,6 +28,7 @@ RENAME = {
     "ptype": "PRODUCT_TYPE", "rdmp": "RDMP_TYPE", "iyear": "ISU_DT_year",
     "imonth": "ISU_DT_month", "subdays": "SUB_END_DT-SUB_START_DT",
     "K": "STRK_1_last/100", "Kfirst": "STRK_1_first/100",
+    "opt_type": "OPT_TYPE", "ki_yn": "KNCK_IN_YN",   # 구조 (STEP/LIZARD × 낙인/노낙인)
     "item": "ITEM_CD",   # 행 식별 인덱스 (훈련 미사용, 예측→상품 추적용)
 }
 INV = {v: k for k, v in RENAME.items()}
@@ -47,12 +49,16 @@ CAT = [_new(c) for c in ["issuer", "risk", "ptype", "rdmp", "imonth"]]
 # 연산자망 (deeponet.csv)
 VOLCORR = ["sig1", "sig2", "sig3", "rho12", "rho13", "rho23", "sig_eff"]   # branch: 바스켓 변동성·상관
 UC = [f"u{j}" for j in range(10)]                                         # branch: 수익률곡선 10노드
-NSTRK = 12
-STRK = [f"strk_{j}" for j in range(NSTRK)]                                # trunk: 전체 오토콜 STRK 스케줄(/100, 패딩)
+STRK = [f"strk_{j}" for j in range(NSTRK)]                                # trunk: 오토콜 행사가 스케줄(/100, 패딩)
+PMT = [f"pmt_{j}" for j in range(NSTRK)]                                  # trunk: 회차별 누적 지급률(소수)
+LZB = [f"lz_barr_{j}" for j in range(NSTRK)]                              # trunk: 리자드 배리어(없으면 중립 1.2)
+LZP = [f"lz_pmt_{j}" for j in range(NSTRK)]                               # trunk: 리자드 축소 지급률(없으면 0)
 
-# ml BASE 에도 전체 행사가 스케줄 포함 (deeponet trunk 와 동일 정보). K/Kfirst 는 파생피처(b_over_k, stepdown)용으로 유지.
-BASE = BASE + STRK
-CONTRACT = STRK + [_new("B"), _new("coupon"), _new("tenor")]              # trunk: 계약(STRK + 배리어 + 쿠폰 + 만기)
+# ml BASE 에도 행사가·지급률 스케줄 포함. K/Kfirst 는 파생피처(b_over_k, stepdown)용으로 유지.
+# 리자드 배열은 ml 에 넣지 않고 CAT 의 OPT_TYPE 으로 구조를 구분한다(GBM 은 범주형이 더 유리).
+BASE = BASE + STRK + PMT
+CONTRACT = STRK + PMT + LZB + LZP + [_new("B"), _new("coupon"), _new("tenor")]   # trunk 51
+CAT = CAT + [_new("opt_type"), _new("ki_yn")]
 
 INDEX = _new("item")      # ITEM_CD (행 식별 인덱스, 훈련 미사용)
 TARGET = _new("fair")     # FAIR_VALUE/ISU_PRC_DETAIL
@@ -72,35 +78,28 @@ def featnum(feat):
     return BASE + (REG if feat == "regime" else [])
 
 
-def _strike_schedule():
-    """raw SCHD_INFO(SCHD_TYPE=1)에서 ITEM_CD별 전체 STRK 스케줄(/100) 리스트."""
-    sc = pd.read_csv(fm.RAW / "LAKE_V2_DART_SCHD_INFO.csv", low_memory=False)
-    sc1 = sc[sc["SCHD_TYPE"] == 1].sort_values(["ITEM_CD", "SEQ"])
-    return sc1.groupby("ITEM_CD")["STRK_1"].apply(lambda s: [float(x) / 100 for x in s])
-
-
-def _pad(strikes, k=NSTRK):
-    """길이 k로 고정: 짧으면 마지막값 forward-fill, 길면 앞 k개로 절단."""
-    if strikes is None or len(strikes) == 0:
-        return [np.nan] * k
-    s = list(strikes[:k])
-    if len(s) < k:
-        s = s + [s[-1]] * (k - len(s))
-    return s
+def fill_lizard_neutral(df):
+    """리자드 없는 회차의 NaN 을 중립값으로 채운다 (parquet 은 NaN 유지, CSV/모델 입력만 채움).
+     lz_barr=1.2 는 스팟 위라 no-touch 조건이 즉시 깨져 '발동 불가' 가 명확하다."""
+    for j in range(NSTRK):
+        b, p = f"lz_barr_{j}", f"lz_pmt_{j}"
+        if b in df.columns:
+            df[b] = df[b].fillna(LZ_BARR_NEUTRAL)
+        if p in df.columns:
+            df[p] = df[p].fillna(LZ_PMT_NEUTRAL)
+    return df
 
 
 def _load_source():
-    """원천 = data/els3_dataset.parquet (0_data build_source가 raw+cache로 생성한 branch·aux + 1_MC_recompute가 갱신한 mc·recent_margin)
-    + issue_intensity + raw SCHD STRK 스케줄."""
+    """원천 = data/els3_dataset.parquet (0_data build_source + 1_MC_recompute).
+     행사가·지급률·리자드 스케줄이 이미 parquet 에 있으므로 raw 를 다시 읽지 않는다."""
     df = pd.read_parquet(fm.source()).sort_values(SRC_ORDER).reset_index(drop=True)
     o = df[SRC_ORDER].tolist()
     df["issue_intensity"] = [bisect.bisect_left(o, o[i]) - bisect.bisect_left(o, o[i] - 90)
                              for i in range(len(df))]
-    strk_by = _strike_schedule()
-    padded = [_pad(strk_by.get(str(it))) for it in df["item"].astype(str)]
-    for j in range(NSTRK):
-        df[f"strk_{j}"] = [p[j] for p in padded]
-    return df
+    missing = [c for c in SCHED_COLS if c not in df.columns]
+    assert not missing, f"parquet 에 스케줄 컬럼 없음 (0_data build_source 재실행 필요): {missing[:4]}"
+    return fill_lizard_neutral(df)
 
 
 # ===== 0_data: 데이터셋 생성 (CSV) =====
@@ -146,15 +145,15 @@ def load(cfg):
     # 연산자망 입력 (branch=vol·corr+곡선, trunk=계약) — deeponet.csv
     D.VC = don[VOLCORR].values.astype("float32")      # (n, 7)
     D.CURVE = don[UC].values.astype("float32")        # (n, 10)
-    D.CON = don[CONTRACT].values.astype("float32")    # (n, 15) = strk12 + BARR + coupon + TENOR
+    D.CON = don[CONTRACT].values.astype("float32")    # (n, 51) = strk/pmt/lz_barr/lz_pmt ×12 + BARR + coupon + TENOR
     D.R = don[RF].values.astype("float32")            # r
     D.TEN = don[TENOR].values.astype("float32")       # 만기
     D.SIGEFF = don[SIGEFF].values.astype("float32")   # σ_eff
     # stage-2 잔차모델 입력 = deeponet.csv 특성 블록 [곡선|vol·corr·sig_eff|계약] (= 앵커 입력, 이론가 결정 특성만; ml aux/범주형 제외)
-    D.DON = np.concatenate([D.CURVE, D.VC, D.CON], axis=1).astype("float32")   # (n, 32)
+    D.DON = np.concatenate([D.CURVE, D.VC, D.CON], axis=1).astype("float32")   # (n, 68) = 10+7+51
     # CONTRACT 내 인덱스 (물리/payoff용)
-    D.iK = CONTRACT.index(_new("K")) if _new("K") in CONTRACT else NSTRK - 1   # 만기 행사가 = strk_{last}
-    D.iKlast = NSTRK - 1
+    D.iK = CONTRACT.index(f"strk_{NSTRK - 1}")        # 만기 행사가 = strk_{last}
+    D.iKlast = CONTRACT.index(f"strk_{NSTRK - 1}")
     D.iBARR = CONTRACT.index(BARR)
     D.iCOUPON = CONTRACT.index(COUPON)
     D.iTEN = CONTRACT.index(TENOR)
