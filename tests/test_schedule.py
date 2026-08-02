@@ -85,6 +85,23 @@ def test_schd_type_2_rows_are_ignored():
     assert out.loc["H", "strk_0"] == 0.90
 
 
+def test_non_monotone_cumulative_payment_is_flagged():
+    """누적 지급률은 회차가 갈수록 줄 수 없다. raw 에 1회차가 만기값인 오류가 실제로 있다."""
+    out = build_schedules(_sc([
+        # 정상: 0.03 -> 0.06 -> 0.09
+        ("OK", 1, 1, 90.0, 0.03, 50.0, np.nan, np.nan, np.nan),
+        ("OK", 1, 2, 85.0, 0.06, 50.0, np.nan, np.nan, np.nan),
+        ("OK", 1, 3, 80.0, 0.09, 50.0, np.nan, np.nan, np.nan),
+        # 오류: 1회차가 만기 지급률(0.201)
+        ("BAD", 1, 1, 80.0, 0.2010, np.nan, np.nan, np.nan, np.nan),
+        ("BAD", 1, 2, 80.0, 0.0670, np.nan, np.nan, np.nan, np.nan),
+        ("BAD", 1, 3, 85.0, 0.2010, 50.0, np.nan, np.nan, np.nan),
+    ]))
+    assert bool(out.loc["OK", "pmt_nonmono"]) is False
+    assert bool(out.loc["BAD", "pmt_nonmono"]) is True
+    assert bool(out.loc["BAD", "sched_ok"]) is True          # 제외가 아니라 플래그만 (선형 대체는 build_source)
+
+
 def test_sched_cols_shape():
     assert len(SCHED_COLS) == 4 * NSTRK
     out = build_schedules(_sc([

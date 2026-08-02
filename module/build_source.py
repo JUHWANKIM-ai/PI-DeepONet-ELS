@@ -146,6 +146,15 @@ def build_source(save=True, verbose=True):
             rec["udl_key"] = "|".join(ts_sorted)
             for cname in SCHED_COLS:
                 rec[cname] = float(srow[cname]) if pd.notna(srow[cname]) else np.nan
+            # 누적 지급률이 감소하는 raw 오류(0.67%)는 선형 쿠폰 c*t 로 대체 = 기존 엔진 동작
+            rec["pmt_linear"] = int(bool(srow["pmt_nonmono"]))
+            if rec["pmt_linear"]:
+                Nd = int(round(ten * 365))
+                od = np.clip(np.round(np.arange(1, nobs_ + 1) * (ten / nobs_) * 365).astype(int), 1, Nd)
+                for j, v in enumerate(c * (od / 365.0)):
+                    rec[f"pmt_{j}"] = float(v)
+                for j in range(nobs_, NSTRK):            # 패딩은 마지막값 forward-fill
+                    rec[f"pmt_{j}"] = rec[f"pmt_{nobs_ - 1}"]
             rows.append(rec)
         except Exception as e:
             key = f"예외: {type(e).__name__}"
