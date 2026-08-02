@@ -20,9 +20,11 @@
    D.R, D.TEN, D.SIGEFF  물리용 r / 만기 / sig_eff | D.DEV  torch device
  cfg = util.utils.load_config()  (config.yaml)
 
- 타깃 규약: 현행 파이프라인은 전부 **MC 이론가**를 예측한다(공정가치 아님).
-   직접 벤치마크 → predict_direct_tab(target=None → D.MC).
-   하이브리드    → predict_hybrid(..., target=D.MC, use_margin=False).
+ 타깃 규약: 현행 파이프라인은 전부 **공정가(FAIR)** 를 예측한다.
+   Fair_hat = MC_hat(stage1 앵커) + recent_margin + Residual_hat(stage2)
+   직접 벤치마크 → predict_direct_tab(..., target=D.FAIR).
+   하이브리드    → predict_hybrid(..., target=D.FAIR, use_margin=True).
+   stage-1 앵커 자체는 여전히 MC 이론가를 근사한다 → train_curve(..., target=D.MC).
 
  재사용 헬퍼:
    module.pipeline.predict_direct_tab(D, cfg, model_key, name=)   # 직접(MC) tabular 벤치마크(단일 단계)
@@ -43,6 +45,6 @@ def _anchor(D, cfg, tr, va, te, save_path=None):
 
 
 def run(D, cfg):
-    # 예: MC 이론가 2단계 하이브리드 하나. 이름은 유일해야 함(다른 모델과 충돌 금지).
+    # 예: 공정가 2단계 하이브리드 하나. 이름은 유일해야 함(다른 모델과 충돌 금지).
     return {"my_model_hybrid": predict_hybrid(D, cfg, _anchor, name="my_model_hybrid",
-                                              target=D.MC, use_margin=False)}
+                                              target=D.FAIR, use_margin=True)}

@@ -152,7 +152,8 @@ _QUAL = ["#1f6f9c", "#5aa9dd", "#2a9d8f", "#e07a5f", "#9b5de5", "#e9c46a", "#c06
 
 
 def stage_r2_bar(stage_df, path=None):
-    """stage_df: index=model, columns=[stage1_MC_R2, stage2_resid_R2, final_MC_R2] (이론가 2단계)."""
+    """stage_df: index=model, columns=[stage1_MC_R2, stage2_resid_R2, final_MC_R2] (공정가 2단계).
+     키 이름은 하위호환으로 유지: stage1=MC 앵커, stage2=공정가 잔차, final=공정가."""
     labels = list(stage_df.index)
     x = np.arange(3)
     w = 0.8 / max(len(labels), 1)
@@ -165,7 +166,9 @@ def stage_r2_bar(stage_df, path=None):
             ax.text(x[i] + off, v + (0.012 if v >= 0 else -0.012), f"{v:.2f}",
                     ha="center", va="bottom" if v >= 0 else "top", fontsize=7.5, rotation=90)
     ax.set_xticks(x)
-    ax.set_xticklabels(["Stage-1\n(anchor MC_hat)", "Stage-2\n(residual MC−MC_hat)", "Final\n(theoretical MC)"])
+    ax.set_xticklabels(["Stage-1\n(anchor: MC theoretical)",
+                        "Stage-2\n(residual: Fair - MC_hat - margin)",
+                        "Final\n(fair value)"])
     ax.set_ylabel("R²")
     ax.axhline(0, color="#444", lw=0.6)
     ax.grid(axis="y", color="#cccccc", lw=0.6, alpha=0.5)
