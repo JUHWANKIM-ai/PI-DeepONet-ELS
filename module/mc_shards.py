@@ -116,6 +116,41 @@ def combine(N=None, verbose=True, engine="cuda"):
     return df
 
 
+def recompute_gpu(N=28, kmap=None, verbose=True):
+    """torch 엔진(module.mc_engine)으로 전량 MC 재산출. 청크를 순차 처리하며 청크마다
+     data/cache/mccal_shard_<k>.json 을 쓴다. 이미 있는 청크는 건너뛰므로 중단 후 재개 가능.
+     CLI(`python -m module.mc_shards gpu N`)와 노트북(1_MC_recompute)이 공유한다."""
+    mk = MC.load_market(); _, tasks = _tasks()
+    pdir = fm.SCRATCH / "mc_progress"; pdir.mkdir(parents=True, exist_ok=True)
+    if verbose:
+        print(f"GPU 엔진 {DEFAULT_DEV} | 상품 {len(tasks):,} | 청크 {N}", flush=True)
+    t_all = time.time()
+    for k in range(N):
+        outp = fm.CACHE / f"mccal_shard_{k}.json"
+        if outp.exists():
+            if verbose:
+                print(f"chunk{k}: skip (이미 있음)", flush=True)
+            continue
+        my = tasks[k::N]; out = {}; t0 = time.time(); hb = pdir / f"shard_{k}.json"
+        for n_, t in enumerate(my):
+            r = price_one_t(mk, kmap, t["item"], t["iord"], t["B"], t["c"], t["ten"],
+                            t["sig_eff"], seed=t["i"], strikes=t["strikes"], pmts=t["pmts"],
+                            lz_barr=t["lz_barr"], lz_pmt=t["lz_pmt"])
+            out[str(t["i"])] = [_clean(v) for v in r]
+            if (n_ + 1) % 200 == 0:
+                hb.write_text(json.dumps({"done": n_ + 1, "total": len(my),
+                                          "t": time.time(), "finished": False}))
+                if verbose:
+                    print(f"chunk{k}: {n_+1}/{len(my)} ({time.time()-t0:.0f}s)", flush=True)
+        outp.write_text(json.dumps(out))
+        hb.write_text(json.dumps({"done": len(my), "total": len(my),
+                                  "t": time.time(), "finished": True}))
+        if verbose:
+            print(f"chunk{k} DONE {len(out)} in {time.time()-t0:.0f}s "
+                  f"(누적 {(time.time()-t_all)/60:.1f}분)", flush=True)
+    return N
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "test"
     kmap = MC.load_kmap()
@@ -142,30 +177,7 @@ def main():
         print(f"shard{k} DONE {len(out)} in {time.time()-t0:.0f}s", flush=True)
 
     elif mode == "gpu":
-        N = int(sys.argv[2]) if len(sys.argv) > 2 else 28
-        mk = MC.load_market(); _, tasks = _tasks()
-        pdir = fm.SCRATCH / "mc_progress"; pdir.mkdir(parents=True, exist_ok=True)
-        print(f"GPU 엔진 {DEFAULT_DEV} | 상품 {len(tasks):,} | 청크 {N}", flush=True)
-        t_all = time.time()
-        for k in range(N):
-            outp = fm.CACHE / f"mccal_shard_{k}.json"
-            if outp.exists():
-                print(f"chunk{k}: skip (이미 있음)", flush=True); continue
-            my = tasks[k::N]; out = {}; t0 = time.time(); hb = pdir / f"shard_{k}.json"
-            for n_, t in enumerate(my):
-                r = price_one_t(mk, kmap, t["item"], t["iord"], t["B"], t["c"], t["ten"],
-                                t["sig_eff"], seed=t["i"], strikes=t["strikes"], pmts=t["pmts"],
-                                lz_barr=t["lz_barr"], lz_pmt=t["lz_pmt"])
-                out[str(t["i"])] = [_clean(v) for v in r]
-                if (n_ + 1) % 200 == 0:
-                    hb.write_text(json.dumps({"done": n_ + 1, "total": len(my),
-                                              "t": time.time(), "finished": False}))
-                    print(f"chunk{k}: {n_+1}/{len(my)} ({time.time()-t0:.0f}s)", flush=True)
-            outp.write_text(json.dumps(out))
-            hb.write_text(json.dumps({"done": len(my), "total": len(my),
-                                      "t": time.time(), "finished": True}))
-            print(f"chunk{k} DONE {len(out)} in {time.time()-t0:.0f}s "
-                  f"(누적 {(time.time()-t_all)/60:.1f}분)", flush=True)
+        recompute_gpu(int(sys.argv[2]) if len(sys.argv) > 2 else 28, kmap=kmap)
 
     elif mode == "combine":
         N = int(sys.argv[2]) if len(sys.argv) > 2 else None
