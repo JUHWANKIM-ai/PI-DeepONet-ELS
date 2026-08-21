@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from .data import to_tensor, zstats, znorm
-from .networks import CurveOperatorV2
+from .networks import CurveOperatorV2, CurveOperatorMoE
 
 
 def _opt(net, cfg):
@@ -53,16 +53,19 @@ def _loss_fn(loss):
     return lambda p, y: ((p - y) ** 2).mean()
 
 
-def train_curve(D, cfg, tr, te, target, va=None, loss="mse", return_predict=False, save_path=None):
+def train_curve(D, cfg, tr, te, target, va=None, loss="mse", return_predict=False, save_path=None,
+                moe_k=0, moe_ib=0):
     """target=D.MC → 하이브리드 앵커(이론가) / target=D.FAIR → 직접.
-    loss: 'mse'(기본)|'l1'|'huber'|'mape'. mape 는 원본 스케일 상대오차. va → val 조기종료."""
+    loss: 'mse'(기본)|'l1'|'huber'|'mape'. mape 는 원본 스케일 상대오차. va → val 조기종료.
+    moe_k>0 이면 CurveOperatorMoE(K=moe_k, 배리어게이트 ib=moe_ib) 사용 (arm A4b)."""
     dev = D.DEV; B = cfg["train"]["batch"]; NIT = cfg["train"]["nit"]; P = cfg["networks"]["P"]
     torch.manual_seed(cfg["seed"])
     um, us = zstats(D.CURVE, tr); vm, vs = zstats(D.VC, tr); cm, cs = zstats(D.CON, tr)
     Un = to_tensor(znorm(D.CURVE, um, us), dev)
     Vn = to_tensor(znorm(D.VC, vm, vs), dev)
     Cn = to_tensor(znorm(D.CON, cm, cs), dev)
-    net = CurveOperatorV2(Vn.shape[1], Cn.shape[1], P).to(dev); opt = _opt(net, cfg)
+    net = (CurveOperatorMoE(Vn.shape[1], Cn.shape[1], P, K=moe_k, ib=moe_ib) if moe_k
+           else CurveOperatorV2(Vn.shape[1], Cn.shape[1], P)).to(dev); opt = _opt(net, cfg)
     ym, ysd = float(target[tr].mean()), float(target[tr].std() + 1e-8); Y = to_tensor((target - ym) / ysd, dev)
     Torig = to_tensor(target, dev)                 # 원본 스케일 타깃 (mape loss용)
     ntr = len(tr); trt = torch.tensor(tr, device=dev)

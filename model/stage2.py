@@ -22,10 +22,31 @@ from module.train import _EarlyStop, _opt
 
 def ml_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
     """기본 stage-2: ml 전체특성(cfg['margin'].feature_set) 으로 잔차 회귀.
-     target = FAIR − MC_hat − recent_margin. 저장/로드는 fit_tab 규약(.pkl)."""
-    out = fit_tab(D, cfg, cfg["margin"]["model"], tr, te, cfg["margin"]["feature_set"], target,
+     target = FAIR − MC_hat − recent_margin. 저장/로드는 fit_tab 규약(.pkl).
+     cfg['margin'].half_life=='auto' 이면 비정상성 대응으로 시간감쇠 반감기를 **시간기반 inner-val**(tr 최근 15%)
+     에서 fold별 선택(test 미사용 → 미래정보 無). 잔차 MSE 최소화는 fair MSE 최소화와 동치(mc·rm 고정 오프셋)."""
+    mg = cfg["margin"]
+    hl = mg.get("half_life", 365.25)
+    obj = mg.get("loss")                              # None|reg:pseudohubererror 등 (이분산 강건손실)
+    if hl == "auto":
+        if cfg["data"].get("time_decay", True):
+            srt = tr[np.argsort(D.ORD[tr])]; cut = max(1, int(len(srt) * 0.85))
+            itr, ival = srt[:cut], srt[cut:]
+            hl = 365.25
+            if len(ival) >= 20:
+                best = (365.25, np.inf)
+                for h in [None, 730, 365.25, 182, 91, 45]:
+                    pv = fit_tab(D, cfg, mg["model"], itr, ival, mg["feature_set"], target,
+                                 tw=True, va=ival, half_life=h, objective=obj)
+                    m = float(((target[ival] - pv) ** 2).mean())
+                    if m < best[1]:
+                        best = (h, m)
+                hl = best[0]
+        else:
+            hl = 365.25
+    out = fit_tab(D, cfg, mg["model"], tr, te, mg["feature_set"], target,
                   tw=cfg["data"]["time_decay"], va=va, save_path=save_path,
-                  return_predictor=return_predict)
+                  return_predictor=return_predict, half_life=hl, objective=obj)
     if return_predict:
         yp, p = out
         return p(tr), yp, p

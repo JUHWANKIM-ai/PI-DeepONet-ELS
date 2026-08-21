@@ -35,4 +35,6 @@ tabular:                          # stage-1 XGB 앵커 + stage-2 XGB 잔차(deep
 
 margin:
   model: xgb                      # 하이브리드 stage-2 잔차모델 종류
-  feature_set: base               # base|regime  (base가 OOS 최적: regime은 비정상 레짐피처로 외삽 실패)
+  feature_set: driver             # base|regime|driver  (driver=base+인과드라이버[m_issuer·발행사EWMA·IV−HV·σiv]; regime은 OOS 외삽 실패)
+  half_life: auto                 # 시간감쇠 반감기(일) | 'auto'=fold별 시간기반 inner-val 선택(비정상성 대응, test 미사용)
+  loss: reg:pseudohubererror      # stage-2 강건손실(이분산 대응). null 이면 기본 제곱손실

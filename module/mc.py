@@ -20,7 +20,7 @@ import pandas as pd
 from util import file_manager as fm
 from . import features as F
 
-NPATH = 40_000
+NPATH = 100_000
 PCHUNK = 2_000
 MC_COLS = ["mc", "mc_vol1", "mc_vol2", "mc_vol3", "mc_rho12", "mc_rho13", "mc_rho23", "mc_r_krw", "mc_k"]
 
