@@ -45,6 +45,10 @@ BASE = [_new(c) for c in ["sig1", "sig2", "sig3", "rho12", "rho13", "rho23", "si
         "mom6m", "amt", "sbrt", "dvrt", "prcp", "kigrc", "iyear", "subdays"]]
 REG = ["recent_margin", "recent_mktvol", "curve_level", "curve_slope", "curve_curv", "issue_intensity"]
 CAT = [_new(c) for c in ["issuer", "risk", "ptype", "rdmp", "imonth"]]
+# 인과(as-of, 미래정보 無) stage-2 드라이버: 발행사 마진편차(shrinkage)·신뢰도·IV−HV 스프레드·IV수준.
+# 오차분석의 발행사 이질성·위험프리미엄을 명시적으로 모델링 (절대수준 regime 피처는 OOS 실패 → 상대신호만).
+# 균등 m_issuer 는 m_issuer_ewma 가 흡수+노이즈라 제거(ablation: 빼면 +0.004). 5개 세트가 OOS 최적.
+DRIVER = ["m_issuer_ewma", "m_issuer_cnt", "iv_hv_spread", "sig_iv_lr", "recent_mktvol"]
 
 # 연산자망 (deeponet.csv)
 VOLCORR = ["sig1", "sig2", "sig3", "rho12", "rho13", "rho23", "sig_eff"]   # branch: 바스켓 변동성·상관
@@ -75,7 +79,7 @@ CSV_ENC = "utf-8-sig"
 
 
 def featnum(feat):
-    return BASE + (REG if feat == "regime" else [])
+    return BASE + (REG if feat == "regime" else []) + (DRIVER if feat == "driver" else [])
 
 
 def fill_lizard_neutral(df):
@@ -117,7 +121,8 @@ def build_datasets():
         out.to_csv(fm.dataset(name), index=False, encoding=CSV_ENC)
         return list(out.columns)
 
-    cols_ml = write("ml", [INDEX] + BASE + REG + CAT + common)
+    drv = [c for c in DRIVER if c in df.columns]        # 드라이버는 존재할 때만 포함(inject_drivers 선행 시)
+    cols_ml = write("ml", [INDEX] + BASE + REG + drv + CAT + common)
     # DeepONet 연산자망 입력: 곡선 u0-9 + vol·corr·sig_eff + 계약(strk0-11,B,coupon,tenor) + r (stage1 앵커/stage2 D.DON 공용)
     cols_dn = write("deeponet", [INDEX] + UC + VOLCORR + CONTRACT + [RF] + common)
     return {"ml": len(df), "deeponet": len(df),
@@ -181,8 +186,11 @@ def walk_forward(n, bounds, val_frac=0.0, val_seed=0):
     return folds
 
 
-def time_weights(D, tr):
-    return (0.5 ** ((D.ORD[tr].max() - D.ORD[tr]) / 365.25)).astype("float32")
+def time_weights(D, tr, half_life=365.25):
+    """시간감쇠 표본가중 0.5^(dt/half_life). half_life=None → 균등가중(1). dt=학습최신일 대비 경과일."""
+    if half_life is None:
+        return np.ones(len(tr), dtype="float32")
+    return (0.5 ** ((D.ORD[tr].max() - D.ORD[tr]) / half_life)).astype("float32")
 
 
 def to_tensor(a, dev):

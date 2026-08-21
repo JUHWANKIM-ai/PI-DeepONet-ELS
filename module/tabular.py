@@ -23,16 +23,18 @@ def load_tab_predictor(D, path):
     return lambda idx: m.predict(X.iloc[idx])
 
 
-def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=None, return_predictor=False):
-    """train 에만 fit, 시간가중. target: 전체 길이 배열, feat: 'base'|'regime'.
+def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=None, return_predictor=False,
+           half_life=365.25, objective=None):
+    """train 에만 fit, 시간가중. target: 전체 길이 배열, feat: 'base'|'regime'|'driver'.
     va(있으면): xgb/lgbm/cat 는 val 조기종료(early stopping)에 사용 (ridge/gbm 은 미사용).
+    half_life: 시간감쇠 반감기(일). None=균등. (stage-2 ml_resid 가 inner-val 로 선택해 넘길 수 있음)
     save_path 주면 학습 모델+전처리를 <save_path>.pkl 로 저장(로드용).
     return_predictor=True 이면 (preds, predictor) 반환 — predictor(idx)는 D.ml 행 idx의 예측(추론 속도 측정용)."""
     num = featnum(feat)
     X = D.ml[num + CAT]
     Xtr = X.iloc[tr]
     ytr = target[tr]
-    w = time_weights(D, tr) if tw else None
+    w = time_weights(D, tr, half_life) if tw else None
     P = cfg["tabular"]
     es = va is not None and len(va) > 0
     ES_R = cfg["train"].get("es_rounds", 50)
@@ -83,6 +85,8 @@ def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=Non
         predictor = lambda idx: m.predict(X.iloc[idx])
     elif model == "xgb":
         xkw = dict(tree_method="hist", enable_categorical=True, random_state=0, **P["xgb"])
+        if objective:                                 # stage-2 강건손실(예: reg:pseudohubererror, 이분산 대응)
+            xkw["objective"] = objective
         if es:
             xkw["early_stopping_rounds"] = ES_R
         m = xgb.XGBRegressor(**xkw)
