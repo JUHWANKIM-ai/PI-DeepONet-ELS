@@ -9,6 +9,7 @@ import joblib
 
 from util import file_manager as fm
 from .train import load_curve_predictor
+from .pi_train import load_pi_predictor
 from .tabular import load_tab_predictor
 from model.stage2 import load_xgb_resid, load_don_resid, load_ml_resid
 
@@ -36,10 +37,16 @@ _HYBRID = {
     "xgb_hybrid": ("xgb", "mltab"),               # 앵커 XGB
 }
 
+# 구조별 라우팅 하이브리드 (model/pi_route.py): 앵커가 폴드당 2개라 위 (anchor,resid) 규약에 안 맞아 분리.
+# name -> 재현에 쓸 시드. 다중 시드 결과는 result/statistics/exp_pi_route_seeds.csv 참고.
+_ROUTED = {"deeponet_hybrid_pi_lizard": 0}
+
 
 def _anchor_loader(D, atype, base):
     if atype == "curve":
         return load_curve_predictor(D, base + ".pt")
+    if atype == "pi":
+        return load_pi_predictor(D, base + ".pt")      # PI 앵커(상태증강) — 발행시점 상태에서 평가
     if atype == "xgb":
         return _load_xgb_anchor(D, base + ".pkl")
     raise ValueError(atype)
@@ -85,6 +92,24 @@ def predict_all_from_weights(D, cfg):
             rows.append(pd.DataFrame({
                 "ITEM_CD": D.ITEM[te], "isu_ord": D.ORD[te],
                 "y_true": FAIR[te], "y_pred": y,
+                "mc_true": MC[te], "mc_pred": mc_te,
+                "resid_true": (FAIR[te] - mc_te - rm[te]).astype("float32"), "resid_pred": r_te,
+            }))
+        out[name] = pd.concat(rows, ignore_index=True)
+    # 구조별 라우팅 하이브리드 (앵커 2개 → 예측 시 계약조건으로 선택). 없으면 조용히 건너뛴다.
+    from model.pi_route import load_routed_predictor
+    for name, seed in _ROUTED.items():
+        if not (fm.RESULT / "models" / f"{name}_seed{seed}_anchor_base_fold0.pt").exists():
+            continue
+        rows = []
+        for k, (tr, va, te) in enumerate(D.WF):
+            anchor = load_routed_predictor(D, name, seed, k)
+            resid = load_ml_resid(D, _mp(f"{name}_seed{seed}_resid", k) + ".pkl")
+            mc_te = np.asarray(anchor(te), dtype="float32")
+            r_te = np.asarray(resid(te), dtype="float32")
+            rows.append(pd.DataFrame({
+                "ITEM_CD": D.ITEM[te], "isu_ord": D.ORD[te],
+                "y_true": FAIR[te], "y_pred": mc_te + rm[te] + r_te,
                 "mc_true": MC[te], "mc_pred": mc_te,
                 "resid_true": (FAIR[te] - mc_te - rm[te]).astype("float32"), "resid_pred": r_te,
             }))

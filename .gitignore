@@ -48,3 +48,5 @@ docs/
 result/
 
 skills-lock.json
+# MC 변형 샤드 (중간 산출물 — mc_variants.parquet 로 합쳐짐)
+data/cache/mcvar/shard_*.parquet

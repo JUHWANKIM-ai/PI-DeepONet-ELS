@@ -10,6 +10,8 @@ KR_TAUS = np.array([0.08, 0.25, 10.0])                                  # 콜·3
 MSAMP = np.array([0.25, 0.5, 1, 1.5, 2, 3, 4, 5, 7, 10], dtype=float)   # branch 곡선 노드 u0..u9
 VOL_WIN = 180
 CORR_WIN = 180
+EWMA_SPAN = 120          # 자문안 변동성: λ = 1 − 2/(span+1) ≈ 0.9835 (반감기 ≈ 42 거래일)
+ADV_CORR_WIN = 120       # 자문안 상관 창
 
 
 def nsb(t):
@@ -53,9 +55,16 @@ def vol180(ret, dt):
     return float(w.std() * np.sqrt(252)) if len(w) >= 60 else np.nan
 
 
-def corr180(rets, dt):
-    """발행 전 180 거래일 정렬 3자산 Pearson 상관행렬. 자료 부족시 None."""
-    dfr = pd.concat([r[r.index < dt] for r in rets], axis=1).dropna().tail(CORR_WIN)
+def vol_ewma(ret, dt, span=EWMA_SPAN):
+    """발행 전 span 거래일 EWMA 연율 변동성 — pandas ewm(span) 가중 표준편차의 마지막 값 × √252.
+     가중치 (1−α)^i 는 창 안에서 재정규화된다(adjust=True). 표본<60이면 nan."""
+    w = ret[ret.index < dt].tail(span)
+    return float(w.ewm(span=span, adjust=True).std().iloc[-1] * np.sqrt(252)) if len(w) >= 60 else np.nan
+
+
+def corr180(rets, dt, win=CORR_WIN):
+    """발행 전 win(기본 180) 거래일 정렬 3자산 Pearson 상관행렬. 자료 부족시 None."""
+    dfr = pd.concat([r[r.index < dt] for r in rets], axis=1).dropna().tail(win)
     if dfr.shape[1] < 3 or len(dfr) < 60:
         return None
     C = np.corrcoef(dfr.values, rowvar=False)
