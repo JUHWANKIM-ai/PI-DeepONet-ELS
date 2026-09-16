@@ -17,6 +17,26 @@ from .mc import NPATH, MC_COLS, prepare_one
 DEFAULT_DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def payoff_from_path_summary_t(wobs, wrun, wmin, wT, logK, rate, lz_on, loglzb,
+                               lzp, always_ki, logB, DF, obs_day):
+    """경로요약 -> 할인 페이오프. mc_daily_t 가 쓰는 페이오프 블록을 그대로 함수로 분리한 것.
+
+     PI 물리항(module.pi_physics)이 '실측 MC 규약'과 일치하는지 테스트에서 직접 대조하려고 노출한다.
+     정규 상환이 리자드보다 우선. 만기 미상환 시 노낙인(B>=1)은 항상 worst, 낙인은 배리어 터치 여부."""
+    f32 = wobs.dtype
+    hit = wobs >= logK
+    has_lz = bool(lz_on.any())
+    ev = (hit | ((wrun >= loglzb) & lz_on)) if has_lz else hit
+    any_ev = ev.any(dim=1)
+    first = ev.to(f32).argmax(dim=1)
+    is_reg = hit.gather(1, first[:, None]).squeeze(1)
+    pr = torch.where(is_reg, rate[first], lzp[first])                # 정규 상환이 리자드보다 우선
+    early = (1.0 + pr) * DF[obs_day[first] - 1]
+    eT = torch.exp(wT)
+    sv = eT if always_ki else torch.where(wmin < logB, eT, torch.ones_like(eT))
+    return torch.where(any_ev, early, sv * DF[-1])
+
+
 def _setup(sigs, corr, beta, B, strikes, ten, c, pmts, lz_barr, lz_pmt):
     nobs = len(strikes); N = int(round(ten * 365)); dt = 1 / 365
     obs_day = np.clip(np.round(np.arange(1, nobs + 1) * (ten / nobs) * 365).astype(int), 1, N)
@@ -84,19 +104,12 @@ def mc_daily_t(sigs, corr, beta, B, strikes, ten, n=NPATH, seed=0, c=0.0, pmts=N
                 wobs[:, sel] = w[:, col]
                 if has_lz:
                     wrun[:, sel] = cmin[:, col]
-        hit = wobs >= logK
-        ev = (hit | ((wrun >= loglzb) & lz_on)) if has_lz else hit
-        any_ev = ev.any(dim=1)
-        first = ev.to(f32).argmax(dim=1)
-        is_reg = hit.gather(1, first[:, None]).squeeze(1)
-        pr = torch.where(is_reg, rate[first], lzp[first])                # 정규 상환이 리자드보다 우선
-        early = (1.0 + pr) * DF[obs_day[first] - 1]
         wT = torch.minimum(torch.minimum(carry[0, :, 0] + cdrift[0, -1],
                                          carry[1, :, 0] + cdrift[1, -1]),
                            carry[2, :, 0] + cdrift[2, -1])
-        eT = torch.exp(wT)
-        sv = eT if always_ki else torch.where(wmin < logB, eT, torch.ones_like(eT))
-        tot += torch.where(any_ev, early, sv * DF[N - 1]).sum(dtype=torch.float64)
+        payoff = payoff_from_path_summary_t(wobs, wrun, wmin, wT, logK, rate, lz_on,
+                                            loglzb, lzp, always_ki, logB, DF, obs_day)
+        tot += payoff.sum(dtype=torch.float64)
         done += m
     return float(tot.item() / n)
 

@@ -26,6 +26,10 @@ networks:
   P: 192                          # trunk/branch 잠재차원
   mlp_width: 128
 
+physics:                          # PI-DeepONet stage-1 앵커 (module/pi_train.py). stage-2 는 물리 대상 아님
+  alpha: 0.02                     # 물리항 총 가중. 항별 스케일은 첫 스텝에서 data loss 대비 자동 산출
+  batch: 48                       # collocation 배치. PDE 2차도함수가 3x3 autograd 라 스텝비용 지배
+
 tabular:                          # stage-1 XGB 앵커 + stage-2 XGB 잔차(deeponet 블록 D.DON)
   xgb:  {n_estimators: 700, learning_rate: 0.03, max_depth: 7, subsample: 0.8, colsample_bytree: 0.8}
   lgbm: {n_estimators: 700, learning_rate: 0.03, num_leaves: 63, min_child_samples: 40, subsample: 0.8, colsample_bytree: 0.8}
