@@ -95,7 +95,7 @@ def fill_lizard_neutral(df):
 
 
 def _load_source():
-    """원천 = data/els3_dataset.parquet (0_data build_source + 1_MC_recompute).
+    """원천 = data/els3_dataset.parquet (0_data build_source + mc_shards combine).
      행사가·지급률·리자드 스케줄이 이미 parquet 에 있으므로 raw 를 다시 읽지 않는다."""
     df = pd.read_parquet(fm.source()).sort_values(SRC_ORDER).reset_index(drop=True)
     o = df[SRC_ORDER].tolist()

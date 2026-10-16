@@ -37,15 +37,27 @@ def payoff_from_path_summary_t(wobs, wrun, wmin, wT, logK, rate, lz_on, loglzb,
     return torch.where(any_ev, early, sv * DF[-1])
 
 
-def _setup(sigs, corr, beta, B, strikes, ten, c, pmts, lz_barr, lz_pmt):
+def _zero(beta, times):
+    """beta 는 NS 계수 벡터이거나 '만기배열 → 무위험금리' 콜러블(부트스트랩 커브)."""
+    return np.asarray(beta(times), float) if callable(beta) else F.zero_curve(beta, times)
+
+
+def _setup(sigs, corr, beta, B, strikes, ten, c, pmts, lz_barr, lz_pmt,
+           qcont=None, divlog=None, disc_beta=None):
     nobs = len(strikes); N = int(round(ten * 365)); dt = 1 / 365
     obs_day = np.clip(np.round(np.arange(1, nobs + 1) * (ten / nobs) * 365).astype(int), 1, N)
     obs_t = obs_day / 365.0
     times = np.arange(1, N + 1) * dt
-    DF = np.exp(-F.zero_curve(beta, times) * times)
+    DF = np.exp(-_zero(beta, times) * times)
     fdt = (-(np.diff(np.concatenate([[0.0], np.log(DF)])))).astype(np.float32)
     sig = np.asarray(sigs, np.float32)
     drift = (fdt[:, None] - (0.5 * sig ** 2 * np.float32(dt))[None, :]).astype(np.float32)
+    if qcont is not None:                      # 연속 배당수익률: 매일 −q·dt
+        drift = drift - (np.asarray(qcont, np.float32) / np.float32(365.0))[None, :]
+    if divlog is not None:                     # 이산배당: 배당락일에 log(1−δ) (N×3)
+        drift = drift + np.asarray(divlog, np.float32)
+    if disc_beta is not None:                  # 할인만 다른 커브 (드리프트는 beta) — 요인분해용
+        DF = np.exp(-_zero(disc_beta, times) * times)
     rate = np.asarray(c * obs_t if pmts is None else pmts, np.float32)[:nobs]
     lzb = (np.full(nobs, np.nan, np.float32) if lz_barr is None
            else np.asarray(lz_barr, np.float32)[:nobs])
@@ -60,10 +72,15 @@ def _setup(sigs, corr, beta, B, strikes, ten, c, pmts, lz_barr, lz_pmt):
 
 
 def mc_daily_t(sigs, corr, beta, B, strikes, ten, n=NPATH, seed=0, c=0.0, pmts=None,
-               lz_barr=None, lz_pmt=None, dev=None, path_chunk=20_000, tblock=512):
+               lz_barr=None, lz_pmt=None, dev=None, path_chunk=20_000, tblock=512,
+               qcont=None, divlog=None, disc_beta=None):
     """일별 MC (torch). pmts=None 이면 (1 + c*경과연수), 주어지면 (1 + pmts[j]).
-     lz_barr[j] 가 유한하면 정규 조건 실패 경로에 대해 발행 이후 최저 worst >= 배리어일 때 리자드 상환."""
-    P = _setup(sigs, corr, beta, B, strikes, ten, c, pmts, lz_barr, lz_pmt)
+     lz_barr[j] 가 유한하면 정규 조건 실패 경로에 대해 발행 이후 최저 worst >= 배리어일 때 리자드 상환.
+
+     beta: NS 계수 또는 콜러블(부트스트랩 제로커브). qcont/divlog: 연속/이산 배당 드리프트 보정.
+     disc_beta: 할인만 다른 커브. 기본값은 전부 None 이라 종전 동작과 완전히 같다."""
+    P = _setup(sigs, corr, beta, B, strikes, ten, c, pmts, lz_barr, lz_pmt,
+               qcont=qcont, divlog=divlog, disc_beta=disc_beta)
     d = torch.device(dev or DEFAULT_DEV); f32 = torch.float32
     N, nobs = P["N"], P["nobs"]
     L = torch.as_tensor(P["L"] * (P["sig"] * P["sq"])[:, None], device=d)   # s*sqrt(dt) 를 L 에 흡수

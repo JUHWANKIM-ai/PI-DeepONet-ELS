@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """raw + cache → els3_dataset (원천 재유도). exp15 로직을 정식 이식하되 '현재 정의'로 빌드:
-   변동성·상관 = 180일 역사(module.features), 수익률곡선 = KRW Nelson-Siegel. MC 는 여기서 계산하지 않음(1_MC_recompute).
+   변동성·상관 = 180일 역사(module.features), 수익률곡선 = KRW Nelson-Siegel. MC 는 여기서 계산하지 않음(1_MC_pricer).
  유니버스 = 3-star KRW 4구조(STEP/LIZARD × 낙인/노낙인). 노낙인은 B=1.0 으로 인코딩(항상 knocked-in).
  산출: data/els3_dataset.parquet (보조피처 + branch[sig/rho/sig_eff/u/r/curve] + fair + recent_mktvol
        + 구조[opt_type/ki_yn] + 기초자산[udl1..3/udl_key] + 스케줄[strk/pmt/lz_barr/lz_pmt ×12]). item·isu_ord 포함."""
 import io, sys, json, time
 from datetime import date
+from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import bisect
@@ -56,7 +57,24 @@ def _safe(t):
     return "px_" + t.replace("^", "_").replace(".", "_") + ".parquet"
 
 
-def build_source(save=True, verbose=True):
+def _mom6m(rets, dt, win=126):
+    """발행 전 win 거래일 누적 로그수익률의 3자산 평균. 자료 부족이면 0.0."""
+    vals = []
+    for r in rets:
+        if r is None:
+            return 0.0
+        w = r[r.index < dt].tail(win)
+        if len(w) < 40:
+            return 0.0
+        vals.append(float(w.sum()))
+    return float(np.mean(vals)) if vals else 0.0
+
+
+def load_inputs(verbose=False):
+    """raw CSV 3종 + cache(티커맵·가격·KRW커브)를 읽어 빌드에 필요한 것만 묶어 돌려준다.
+
+     반환 필드: mapping, RET(티커→로그수익률), KRW, SCHED, u3map, barr_pct, cand(후보 행).
+     경로는 호출 시점의 fm.CACHE / fm.RAW 를 본다 (테스트에서 monkeypatch 가능)."""
     CA, RAW = fm.CACHE, fm.RAW
     mapping = json.loads((CA / "udly_ticker_map.json").read_text(encoding="utf-8"))
     RET = {}
@@ -78,102 +96,134 @@ def build_source(save=True, verbose=True):
     ac["tenor"] = (ac["MAT_DT"] - ac["ISU_DT"]).dt.days / 365.25
     ac["fair"] = ac["FAIR_VALUE"] / ac["ISU_PRC_DETAIL"]
     nu = ud.groupby("ITEM_CD")["UDLY_ID"].nunique(); three = nu[nu == 3].index
-    u3map = ud[ud.ITEM_CD.isin(three)].groupby("ITEM_CD")["UDLY_ID"].apply(list)
-    SCHED = load_schedules()
-    barr_pct = sc[sc.SCHD_TYPE == 1].groupby("ITEM_CD")["BARR_1"].min()
     cand = ac[structure_mask(ac, three)]
     if verbose:
         print("4구조 후보:", len(cand))
         print("  ", cand.groupby(["OPT_TYPE", "KNCK_IN_YN"]).size().to_dict())
+    return SimpleNamespace(
+        mapping=mapping, RET=RET, KRW=KRW, SCHED=load_schedules(),
+        u3map=ud[ud.ITEM_CD.isin(three)].groupby("ITEM_CD")["UDLY_ID"].apply(list),
+        barr_pct=sc[sc.SCHD_TYPE == 1].groupby("ITEM_CD")["BARR_1"].min(), cand=cand)
+
+
+def eligibility(it, rw, inp):
+    """상품 하나가 빌드 가능한지 판정. 반환 (ctx, drop_reason).
+
+     통과하면 (SimpleNamespace(...), None), 탈락하면 (None, "사유 문자열").
+     사유 문자열이 그대로 drops 집계 키가 되므로 여기가 탈락 분류의 유일한 정의다."""
+    ts = [inp.mapping.get(x) for x in inp.u3map.get(it, [])]
+    if len(ts) != 3 or any(t is None for t in ts):
+        return None, "티커 매핑 실패"
+    rets = [inp.RET.get(t) for t in ts]
+    if any(r is None for r in rets):
+        return None, "가격이력 없음"
+    dt = rw.ISU_DT
+    sigs = [F.vol180(r, dt) for r in rets]                     # 현재 정의: 180일 역사 변동성
+    if any(pd.isna(sigs)):
+        return None, "180일 변동성 부족"
+    corr = F.corr180(rets, dt)                                 # 180일 역사 상관
+    if corr is None:
+        return None, "180일 상관 부족"
+    SCHED = inp.SCHED
+    if it not in SCHED.index or not bool(SCHED.at[it, "sched_ok"]):
+        why = SCHED.at[it, "sched_drop"] if it in SCHED.index else "스케줄 없음"
+        return None, "스케줄: {}".format(why)
+    if bool(SCHED.at[it, "lz_from_prev"]):                     # FROM_PREV 리자드는 엔진 미지원
+        return None, "리자드 FROM_PREV"
+    srow = SCHED.loc[it]
+    nobs_ = int(srow["nobs"])
+    B = encode_barrier(rw.KNCK_IN_YN, inp.barr_pct.get(it, np.nan))
+    c = rw.ANL_RTRN / 100; ten = rw.tenor
+    if any(pd.isna(x) for x in [B, c, ten]):
+        return None, "배리어/쿠폰/만기 결측"
+    beta = F.krw_beta(inp.KRW.asof(dt).values)                 # KRW NS 곡선
+    if beta is None:
+        return None, "KRW 커브 결측"                            # 종전에는 사유 없이 조용히 탈락했다
+    return SimpleNamespace(
+        ts=ts, rets=rets, dt=dt, sigs=sigs, corr=corr, srow=srow, nobs_=nobs_,
+        strikes=[float(srow["strk_{}".format(j)]) for j in range(nobs_)],
+        B=B, c=c, ten=ten, beta=beta), None
+
+
+def make_record(it, rw, ctx):
+    """통과한 상품 하나 → els3_dataset 한 행. eligibility 가 돌려준 ctx 만 읽는다."""
+    srow, nobs_, strikes = ctx.srow, ctx.nobs_, ctx.strikes
+    B, c, ten, dt = ctx.B, ctx.c, ctx.ten, ctx.dt
+    u = F.krw_curve_nodes(ctx.beta)
+    r = float(F.zero_curve(ctx.beta, np.array([ten]))[0])
+    iu = np.triu_indices(3, 1); rr = np.sort(np.clip(ctx.corr[iu], -0.999, 0.999))
+    rho12, rho13, rho23 = float(rr[0]), float(rr[1]), float(rr[2])
+    rho_v = float(np.mean(rr))
+    sigs = ctx.sigs
+    ss = np.sort(sigs); sig1, sig2, sig3 = float(ss[0]), float(ss[1]), float(ss[2])
+    smean = float(np.mean(sigs)); sig_eff = smean * float(np.sqrt(1.0 + max(0.0, 1.0 - rho_v)))
+    Klast = float(strikes[-1]); Kfst = float(strikes[0])
+    sd = (rw.SUB_END_DT - rw.SUB_START_DT).days if pd.notna(rw.SUB_END_DT) and pd.notna(rw.SUB_START_DT) else np.nan
+    rec = dict(item=it, sig1=sig1, sig2=sig2, sig3=sig3, rho12=rho12, rho13=rho13, rho23=rho23,
+               sig_mean=smean, sig_max=sig3, sig_min=sig1, rho=rho_v, sig_eff=sig_eff,
+               cpn_spread=float(c - r), b_over_k=float(B / Klast) if Klast > 0 else 1.0,
+               stepdown=float(Kfst - Klast), mom6m=_mom6m(ctx.rets, dt), isu_ord=int(dt.toordinal()),
+               r=r, B=float(B), Kfirst=Kfst, K=Klast, coupon=float(c), tenor=float(ten), nobs=nobs_,
+               fair=float(rw.fair), issuer=str(rw.ISU_ORG), risk=str(rw.RISK_GRADE),
+               ptype=str(rw.PRODUCT_TYPE), rdmp=str(rw.RDMP_TYPE), imonth=str(int(dt.month)),
+               amt=float(rw.ACT_ISU_AMT) if pd.notna(rw.ACT_ISU_AMT) else np.nan,
+               sbrt=float(rw.SB_RT) if pd.notna(rw.SB_RT) else np.nan,
+               dvrt=float(rw.DV_RT) if pd.notna(rw.DV_RT) else np.nan,
+               prcp=float(rw.PRCP_GRTE_RT) if pd.notna(rw.PRCP_GRTE_RT) else np.nan,
+               kigrc=float(rw.KNCK_IN_GRC_PRD) if pd.notna(rw.KNCK_IN_GRC_PRD) else np.nan,
+               iyear=float(dt.year), subdays=float(sd))
+    for j in range(10):
+        rec[f"u{j}"] = float(u[j])
+    rec["curve_level"] = float(u.mean()); rec["curve_slope"] = float(u[9] - u[0])
+    rec["curve_curv"] = float(2 * u[4] - u[0] - u[9])
+    rec["opt_type"] = str(rw.OPT_TYPE)
+    rec["ki_yn"] = int(rw.KNCK_IN_YN)
+    ts_sorted = sorted(ctx.ts)                   # 기초자산 티커 (평가 분해용 식별자)
+    rec["udl1"], rec["udl2"], rec["udl3"] = ts_sorted
+    rec["udl_key"] = "|".join(ts_sorted)
+    for cname in SCHED_COLS:
+        rec[cname] = float(srow[cname]) if pd.notna(srow[cname]) else np.nan
+    # 스케줄이 계약 쿠폰을 담지 못한 경우(raw 비단조 0.67% + 월지급형 등 13%)는
+    # 선형 쿠폰 c*t 로 대체 = 기존 엔진 동작
+    rec["pmt_linear"] = int(needs_linear_pmt(
+        [rec[f"pmt_{q}"] for q in range(nobs_)], c, ten, bool(srow["pmt_nonmono"])))
+    if rec["pmt_linear"]:
+        Nd = int(round(ten * 365))
+        od = np.clip(np.round(np.arange(1, nobs_ + 1) * (ten / nobs_) * 365).astype(int), 1, Nd)
+        for j, v in enumerate(c * (od / 365.0)):
+            rec[f"pmt_{j}"] = float(v)
+        for j in range(nobs_, NSTRK):            # 패딩은 마지막값 forward-fill
+            rec[f"pmt_{j}"] = rec[f"pmt_{nobs_ - 1}"]
+    return rec
+
+
+def _recent_mktvol(df):
+    """발행 전 90일 발행분의 평균 sig_mean (인과적). 선행 발행분이 없으면 자기 값."""
+    o = df["isu_ord"].tolist(); sm = df["sig_mean"].values; rmv = np.zeros(len(df))
+    for i in range(len(df)):
+        hi = bisect.bisect_left(o, o[i]); lo = bisect.bisect_left(o, o[i] - 90)
+        rmv[i] = sm[lo:hi].mean() if hi > lo else (sm[:hi].mean() if hi > 0 else sm[i])
+    return rmv.astype("float32")
+
+
+def build_source(save=True, verbose=True, strict=False):
+    """후보를 돌며 eligibility → make_record 로 els3_dataset 을 조립한다.
+
+     탈락 사유 집계는 반환 DataFrame 의 .attrs["drops"] 에 담는다 (종전에는 print 로만 나갔다).
+     strict=True 면 행 단위 예외를 삼키지 않고 그대로 올린다 — 디버깅용."""
+    inp = load_inputs(verbose=verbose)
     drops = {}
-
-    def mom6m(rets, dt, win=126):
-        vals = []
-        for r in rets:
-            if r is None:
-                return 0.0
-            w = r[r.index < dt].tail(win)
-            if len(w) < 40:
-                return 0.0
-            vals.append(float(w.sum()))
-        return float(np.mean(vals)) if vals else 0.0
-
     rows = []; t0 = time.time()
-    for it, rw in cand.set_index("ITEM_CD").iterrows():
+    for it, rw in inp.cand.set_index("ITEM_CD").iterrows():
         try:
-            ts = [mapping.get(x) for x in u3map.get(it, [])]
-            if len(ts) != 3 or any(t is None for t in ts):
-                drops["티커 매핑 실패"] = drops.get("티커 매핑 실패", 0) + 1; continue
-            rets = [RET.get(t) for t in ts]
-            if any(r is None for r in rets):
-                drops["가격이력 없음"] = drops.get("가격이력 없음", 0) + 1; continue
-            dt = rw.ISU_DT
-            sigs = [F.vol180(r, dt) for r in rets]                 # 현재 정의: 180일 역사 변동성
-            if any(pd.isna(sigs)):
-                drops["180일 변동성 부족"] = drops.get("180일 변동성 부족", 0) + 1; continue
-            corr = F.corr180(rets, dt)                             # 180일 역사 상관
-            if corr is None:
-                drops["180일 상관 부족"] = drops.get("180일 상관 부족", 0) + 1; continue
-            if it not in SCHED.index or not bool(SCHED.at[it, "sched_ok"]):
-                why = SCHED.at[it, "sched_drop"] if it in SCHED.index else "스케줄 없음"
-                drops[f"스케줄: {why}"] = drops.get(f"스케줄: {why}", 0) + 1; continue
-            if bool(SCHED.at[it, "lz_from_prev"]):                 # FROM_PREV 리자드는 엔진 미지원
-                drops["리자드 FROM_PREV"] = drops.get("리자드 FROM_PREV", 0) + 1; continue
-            srow = SCHED.loc[it]
-            nobs_ = int(srow["nobs"])
-            strikes = [float(srow[f"strk_{j}"]) for j in range(nobs_)]
-            B = encode_barrier(rw.KNCK_IN_YN, barr_pct.get(it, np.nan))
-            c = rw.ANL_RTRN / 100; ten = rw.tenor
-            if any(pd.isna(x) for x in [B, c, ten]):
-                drops["배리어/쿠폰/만기 결측"] = drops.get("배리어/쿠폰/만기 결측", 0) + 1; continue
-            beta = F.krw_beta(KRW.asof(dt).values)                 # KRW NS 곡선
-            if beta is None:
+            ctx, why = eligibility(it, rw, inp)
+            if why:
+                drops[why] = drops.get(why, 0) + 1
                 continue
-            u = F.krw_curve_nodes(beta); r = float(F.zero_curve(beta, np.array([ten]))[0])
-            iu = np.triu_indices(3, 1); rr = np.sort(np.clip(corr[iu], -0.999, 0.999))
-            rho12, rho13, rho23 = float(rr[0]), float(rr[1]), float(rr[2])
-            rho_v = float(np.mean(rr))
-            ss = np.sort(sigs); sig1, sig2, sig3 = float(ss[0]), float(ss[1]), float(ss[2])
-            smean = float(np.mean(sigs)); sig_eff = smean * float(np.sqrt(1.0 + max(0.0, 1.0 - rho_v)))
-            Klast = float(strikes[-1]); Kfst = float(strikes[0])
-            sd = (rw.SUB_END_DT - rw.SUB_START_DT).days if pd.notna(rw.SUB_END_DT) and pd.notna(rw.SUB_START_DT) else np.nan
-            rec = dict(item=it, sig1=sig1, sig2=sig2, sig3=sig3, rho12=rho12, rho13=rho13, rho23=rho23,
-                       sig_mean=smean, sig_max=sig3, sig_min=sig1, rho=rho_v, sig_eff=sig_eff,
-                       cpn_spread=float(c - r), b_over_k=float(B / Klast) if Klast > 0 else 1.0,
-                       stepdown=float(Kfst - Klast), mom6m=mom6m(rets, dt), isu_ord=int(dt.toordinal()),
-                       r=r, B=float(B), Kfirst=Kfst, K=Klast, coupon=float(c), tenor=float(ten), nobs=nobs_,
-                       fair=float(rw.fair), issuer=str(rw.ISU_ORG), risk=str(rw.RISK_GRADE),
-                       ptype=str(rw.PRODUCT_TYPE), rdmp=str(rw.RDMP_TYPE), imonth=str(int(dt.month)),
-                       amt=float(rw.ACT_ISU_AMT) if pd.notna(rw.ACT_ISU_AMT) else np.nan,
-                       sbrt=float(rw.SB_RT) if pd.notna(rw.SB_RT) else np.nan,
-                       dvrt=float(rw.DV_RT) if pd.notna(rw.DV_RT) else np.nan,
-                       prcp=float(rw.PRCP_GRTE_RT) if pd.notna(rw.PRCP_GRTE_RT) else np.nan,
-                       kigrc=float(rw.KNCK_IN_GRC_PRD) if pd.notna(rw.KNCK_IN_GRC_PRD) else np.nan,
-                       iyear=float(dt.year), subdays=float(sd))
-            for j in range(10):
-                rec[f"u{j}"] = float(u[j])
-            rec["curve_level"] = float(u.mean()); rec["curve_slope"] = float(u[9] - u[0])
-            rec["curve_curv"] = float(2 * u[4] - u[0] - u[9])
-            rec["opt_type"] = str(rw.OPT_TYPE)
-            rec["ki_yn"] = int(rw.KNCK_IN_YN)
-            ts_sorted = sorted(ts)                       # 기초자산 티커 (평가 분해용 식별자)
-            rec["udl1"], rec["udl2"], rec["udl3"] = ts_sorted
-            rec["udl_key"] = "|".join(ts_sorted)
-            for cname in SCHED_COLS:
-                rec[cname] = float(srow[cname]) if pd.notna(srow[cname]) else np.nan
-            # 스케줄이 계약 쿠폰을 담지 못한 경우(raw 비단조 0.67% + 월지급형 등 13%)는
-            # 선형 쿠폰 c*t 로 대체 = 기존 엔진 동작
-            rec["pmt_linear"] = int(needs_linear_pmt(
-                [rec[f"pmt_{q}"] for q in range(nobs_)], c, ten, bool(srow["pmt_nonmono"])))
-            if rec["pmt_linear"]:
-                Nd = int(round(ten * 365))
-                od = np.clip(np.round(np.arange(1, nobs_ + 1) * (ten / nobs_) * 365).astype(int), 1, Nd)
-                for j, v in enumerate(c * (od / 365.0)):
-                    rec[f"pmt_{j}"] = float(v)
-                for j in range(nobs_, NSTRK):            # 패딩은 마지막값 forward-fill
-                    rec[f"pmt_{j}"] = rec[f"pmt_{nobs_ - 1}"]
-            rows.append(rec)
+            rows.append(make_record(it, rw, ctx))
         except Exception as e:
+            if strict:
+                raise
             key = f"예외: {type(e).__name__}"
             drops[key] = drops.get(key, 0) + 1
             continue
@@ -183,12 +233,8 @@ def build_source(save=True, verbose=True):
         print("  구조별:", df.groupby(["opt_type", "ki_yn"]).size().to_dict())
         if drops:
             print("  탈락 사유:", dict(sorted(drops.items(), key=lambda x: -x[1])))
-    # recent_mktvol: 발행 전 90일 발행분 평균 sig_mean (인과적)
-    o = df["isu_ord"].tolist(); sm = df["sig_mean"].values; rmv = np.zeros(len(df))
-    for i in range(len(df)):
-        hi = bisect.bisect_left(o, o[i]); lo = bisect.bisect_left(o, o[i] - 90)
-        rmv[i] = sm[lo:hi].mean() if hi > lo else (sm[:hi].mean() if hi > 0 else sm[i])
-    df["recent_mktvol"] = rmv.astype("float32")
+    df["recent_mktvol"] = _recent_mktvol(df)
+    df.attrs["drops"] = drops
     if save:
         out = fm.DATA / "els3_dataset.parquet"
         df.to_parquet(out)

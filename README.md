@@ -50,8 +50,8 @@ run-to-run 노이즈 안에서 뒤바뀌므로 하나의 군집으로 본다.
 
 **단계별 R²(하이브리드).** Stage-1(`mc` 재현) ≈ 0.90–0.96 · Stage-2(잔차 `mc − MC_hat`) ≈ 0.12–0.19
 (DeepONet 하이브리드 기준; `xgb_hybrid` 은 ≈ 0) · Final(`mc`) ≈ 0.90–0.96.
-**속도**(`4_MC_pricing`): MC 재시뮬 ≈ 2.7 s/상품 vs DeepONet 로드+forward ≈ 22 µs/상품 →
-전체 OOS 기준 **약 70,000배 빠름**, MAE ≈ 0.0045.
+**속도**(`2_DeepONet_model` 2-4절 실측, CUDA): MC 40,000 경로 ≈ 26.5 ms/상품 vs
+대리모형 전방계산 ≈ 0.135 µs/상품(배치 8,192) → **약 196,000배 빠름**.
 
 지표: `result/statistics/`  ·  그림: `result/image/`.
 
@@ -62,10 +62,8 @@ run-to-run 노이즈 안에서 뒤바뀌므로 하나의 군집으로 본다.
 ```
 config.yaml              # 모든 하이퍼파라미터의 단일 출처
 0_data.ipynb             # raw + cache  -> data/els3_dataset.parquet (base, MC 없음)
-1_MC_recompute.ipynb     # mc + recent_margin 추가 -> data/ml.csv, data/deeponet.csv 생성
-2_run.ipynb              # 레지스트리 자동발견 -> 전 모델 학습 -> result/predictions/ + 가중치
-3_evaluate.ipynb         # 가중치 로드 -> OOS forward -> 지표 + 그림
-4_MC_pricing.ipynb       # MC 재시뮬 vs DeepONet 대리모델: 속도 + 가격 일치도
+1_MC_pricer.ipynb        # 현행 방법론 프라이서: 시장입력 · 재현검증 · 경로잡음 · 공정가 격차
+2_DeepONet_model.ipynb   # 대리모형: 수준 정확도 · 계약조건 반응 · 기초자산별 · 속도 · 가격오차
 EDA_raw_filter.ipynb     # raw 필터 퍼널 + 공정가비율 / 만기 EDA
 
 model/                   # 모델 플러그인(레지스트리 자동발견): benchmark, deeponet, stage2, _template
@@ -102,14 +100,10 @@ jupyter nbconvert --to notebook --execute --inplace 0_data.ipynb
 #   python -m module.mc_shards monitor $N   # 누적 진행률 n/23151 · 처리율 · ETA 한 줄 갱신
 python -m module.mc_shards combine 28    # els3_dataset.parquet 에 mc + recent_margin 기록 (+ heartbeat 정리)
 
-# 1) 모델링 CSV(ml.csv, deeponet.csv) 생성 + MC-vs-공정가 EDA 그림
-jupyter nbconvert --to notebook --execute --inplace 1_MC_recompute.ipynb
-# 2) 발견된 전 모델을 walk-forward 로 학습 -> result/predictions/ + result/models/
-jupyter nbconvert --to notebook --execute --inplace 2_run.ipynb
-# 3) 저장 가중치를 로드해 OOS test 를 forward -> result/{statistics,image}/
-jupyter nbconvert --to notebook --execute --inplace 3_evaluate.ipynb
-# 4) MC 재시뮬 vs DeepONet 대리모델: 속도 + 가격 일치도
-jupyter nbconvert --to notebook --execute --inplace 4_MC_pricing.ipynb
+# 1) 현행 방법론 프라이서 — 시장입력 조립 · mc_B 재현검증 · 경로수별 MC 잡음 · 공정가 격차
+jupyter nbconvert --to notebook --execute --inplace 1_MC_pricer.ipynb
+# 2) 대리모형 — 수준 정확도 · 계약조건 반응 · 기초자산별 · 추론속도 · 가격오차
+jupyter nbconvert --to notebook --execute --inplace 2_DeepONet_model.ipynb
 ```
 
 모든 하이퍼파라미터는 **`config.yaml`**, 모든 경로는 **`util/file_manager.py`** 로 관리한다.
@@ -235,7 +229,7 @@ walk-forward OOS 예측 조립 + 폴드별 가중치를 `result/models/<name>_fo
   `load_tab_predictor(D, path)` 로 재로드 → `predict(idx)`.
 
 ### `module/infer.py`
-저장 가중치로 예측 재현(`3_evaluate` 이 예측 CSV 대신 이걸 사용).
+저장 가중치로 예측 재현(`2_DeepONet_model` 이 예측 CSV 대신 이걸 사용).
 - `_DIRECT`(직접 5종)·`_HYBRID`(2단계 5종) 레지스트리.
 - `predict_all_from_weights(D, cfg)` → 각 모델의 폴드 가중치를 로드해 OOS test 인덱스를 forward,
   파이프라인과 동일 스키마의 DataFrame 반환(`y_true = mc`; 하이브리드는 단계별 R² 용 컬럼도 포함).

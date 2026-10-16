@@ -8,7 +8,6 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline as SkPipe
 import lightgbm as lgb
 import xgboost as xgb
-from catboost import CatBoostRegressor
 
 from .data import featnum, CAT, time_weights
 
@@ -76,13 +75,6 @@ def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=Non
             fkw["callbacks"] = [lgb.early_stopping(ES_R, verbose=False)]
         m.fit(Xtr, ytr, **fkw)
         predictor = lambda idx: m.predict(X.iloc[idx])
-    elif model == "cat":
-        m = CatBoostRegressor(random_seed=0, verbose=0, cat_features=CAT, **P["cat"])
-        if es:
-            m.fit(Xtr, ytr, sample_weight=w, eval_set=(Xva, yva), early_stopping_rounds=ES_R)
-        else:
-            m.fit(Xtr, ytr, sample_weight=w)
-        predictor = lambda idx: m.predict(X.iloc[idx])
     elif model == "xgb":
         xkw = dict(tree_method="hist", enable_categorical=True, random_state=0, **P["xgb"])
         if objective:                                 # stage-2 강건손실(예: reg:pseudohubererror, 이분산 대응)
@@ -104,3 +96,15 @@ def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=Non
                     save_path + ".pkl")
     preds = predictor(te)
     return (preds, predictor) if return_predictor else preds
+
+
+def load_tab_forward(path):
+    """저장 가중치 -> **임의 입력** 예측기 predict(CURVE, VC, CON) (XGB 앵커 전용).
+
+     앵커 XGB 는 [곡선 | vol·corr | 계약] 을 그대로 이어붙여 학습하므로 (load_tab_predictor 처럼
+     D.ml 열을 되읽지 않는다) 배열을 바로 받을 수 있다."""
+    import numpy as _np
+    import joblib
+    m = joblib.load(path)["model"]
+    return lambda CU, VC, CON: m.predict(
+        _np.concatenate([CU, VC, CON], axis=1)).astype("float32")

@@ -1,52 +1,52 @@
+
+# Claude Code local settings
+# MC 변형 샤드 (중간 산출물 — mc_variants.parquet 로 합쳐짐)
+# Python
+# 원천 대용량 데이터 (GitHub 100MB 한도 초과; 로컬 보관 / LFS 대상)
 ### AL ###
-#Template for AL projects for Dynamics 365 Business Central
-#launch.json folder
-.vscode/
 #Cache folder
-.alcache/
-#Symbols folder
-.alpackages/
-#Snapshots folder
-.snapshots/
-#Testing Output folder
-.output/
 #Extension App-file
-*.app
-#Rapid Application Development File
-rad.json
-#Translation Base-file
-*.g.xlf
 #License-files
+#Rapid Application Development File
+#Snapshots folder
+#Symbols folder
+#Template for AL projects for Dynamics 365 Business Central
+#Test results file
+#Testing Output folder
+#Translation Base-file
+#launch.json folder
+*.app
 *.bclicense
 *.flf
-#Test results file
-TestResults.xml
-
-scratch/
-# Claude Code local settings
-.claude/settings.local.json
-
-/catboost_info
-
-# Python
-__pycache__/
+*.g.xlf
 *.pyc
-
-# 원천 대용량 데이터 (GitHub 100MB 한도 초과; 로컬 보관 / LFS 대상)
-data/raw
-data/deeponet.csv
-data/ml.csv
-data/els3_dataset.parquet
-
-
 .agents
+.alcache/
+.alpackages/
 .claude
-.superpowers
+.claude/settings.local.json
+.coverage
+.crap-cache/
+.output/
 .pytest_cache
-
-docs/
-result/
-
-skills-lock.json
-# MC 변형 샤드 (중간 산출물 — mc_variants.parquet 로 합쳐짐)
+.snapshots/
+.superpowers
+.vscode/
+/catboost_info
+TestResults.xml
+__pycache__/
+cached.json
 data/cache/mcvar/shard_*.parquet
+data/deeponet.csv
+data/els3_dataset.parquet
+data/ml.csv
+data/raw
+docs/
+fn_after.json
+functions.json
+rad.json
+result/
+scratch/
+skills-lock.json
+survivors.json
+to_measure.json

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""MC 이론가 엔진 (미래에셋 36449 방식) — 노트북(1_MC_recompute)·병렬 샤드 스크립트 공용(DRY).
+"""MC 이론가 엔진 (미래에셋 36449 방식) — 노트북(1_MC_pricer)·병렬 샤드 스크립트 공용(DRY).
  일별 GBM + 촐레스키(180일 역사 상관) + 180일 역사 변동성(cache px_*) + KRW Nelson-Siegel 할인 + q=0 + 일별 KI.
  곡선·vol·corr 정의는 module.features 사용.
 

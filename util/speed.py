@@ -68,7 +68,7 @@ def measure(D, cfg, repeat=20):
 
     # 직접(단일 단계) 벤치마크 = ml.csv 전 특성으로 MC 직접 예측 (앵커/잔차 없음)
     for key, nm in [("ridge", "bench_ridge"), ("gbm", "bench_gbm"), ("lgbm", "bench_lgbm"),
-                    ("xgb", "bench_xgboost"), ("cat", "bench_catboost")]:
+                    ("xgb", "bench_xgboost")]:
         _, p_dir = fit_tab(D, cfg, key, tr, te, "regime", D.MC, tw=bool(tw), va=va, return_predictor=True)
         add(nm, p_dir, kind="direct")
 

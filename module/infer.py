@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """저장된 model weight 을 로드해 OOS test set 을 직접 forward → 예측 DataFrame 조립.
- (3_evaluate 가 예측 CSV 대신 이걸 써서 가중치→예측 재현)
+ (2_DeepONet_model 이 예측 CSV 대신 이걸 써서 가중치→예측 재현)
  전 모델이 **이론가(MC) 2단계 예측**: y = MC_hat(stage1) + resid(stage2), 마진 없음, y_true = MC.
  result/models/<name>_fold{k}.{pt|pkl} 규약은 pipeline 의 저장 규약과 동일."""
 import numpy as np
@@ -26,7 +26,7 @@ def _load_xgb_anchor(D, path):
 
 
 # 직접(단일 단계) 벤치마크: fit_tab .pkl → 이론가(MC) 직접 예측
-_DIRECT = ["bench_ridge", "bench_gbm", "bench_lgbm", "bench_xgboost", "bench_catboost"]
+_DIRECT = ["bench_ridge", "bench_gbm", "bench_lgbm", "bench_xgboost"]
 
 # 이론가(MC) 2단계(하이브리드) 모델 구성: name -> (anchor_type, resid_type)
 _HYBRID = {

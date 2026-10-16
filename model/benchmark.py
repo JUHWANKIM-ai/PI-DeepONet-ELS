@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """머신러닝 벤치마크 — 전부 **이론가(MC) 예측**(fair 아님).
- (1) 직접(단일 단계) 벤치마크: ml.csv 전 특성(regime)으로 MC 를 바로 예측 — Ridge/GBM/LightGBM/XGBoost/CatBoost.
+ (1) 직접(단일 단계) 벤치마크: ml.csv 전 특성(regime)으로 MC 를 바로 예측 — Ridge/GBM/LightGBM/XGBoost.
  (2) XGB 하이브리드(2단계): stage-1 앵커=XGB→MC(MC_hat), stage-2=XGB→이론가 잔차(MC_true−MC_hat), 마진 없음.
      앵커 입력을 DeepONet 앵커와 동일하게 맞춤(순수 아키텍처 비교): 곡선 u0-9 + vol·corr + 전체 계약(strk0-11,B,coupon,tenor).
  → 직접 vs 2단계 하이브리드 비교."""
@@ -12,7 +12,7 @@ from module.data import time_weights
 
 # 직접(단일 단계) 벤치마크: fit_tab model_key -> 예측 CSV/가중치 이름
 _DIRECT = {"ridge": "bench_ridge", "gbm": "bench_gbm", "lgbm": "bench_lgbm",
-           "xgb": "bench_xgboost", "cat": "bench_catboost"}
+           "xgb": "bench_xgboost"}
 
 
 def _xgb_anchor(D, cfg, tr, va, te, save_path=None):

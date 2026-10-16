@@ -33,7 +33,6 @@ physics:                          # PI-DeepONet stage-1 앵커 (module/pi_train.
 tabular:                          # stage-1 XGB 앵커 + stage-2 XGB 잔차(deeponet 블록 D.DON)
   xgb:  {n_estimators: 700, learning_rate: 0.03, max_depth: 7, subsample: 0.8, colsample_bytree: 0.8}
   lgbm: {n_estimators: 700, learning_rate: 0.03, num_leaves: 63, min_child_samples: 40, subsample: 0.8, colsample_bytree: 0.8}
-  cat:  {iterations: 700, learning_rate: 0.03, depth: 7}
   gbm:  {max_iter: 500, learning_rate: 0.05, l2_regularization: 1.0}
   ridge: {alpha: 1.0}
 

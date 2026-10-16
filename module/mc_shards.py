@@ -119,7 +119,7 @@ def combine(N=None, verbose=True, engine="cuda"):
 def recompute_gpu(N=28, kmap=None, verbose=True):
     """torch 엔진(module.mc_engine)으로 전량 MC 재산출. 청크를 순차 처리하며 청크마다
      data/cache/mccal_shard_<k>.json 을 쓴다. 이미 있는 청크는 건너뛰므로 중단 후 재개 가능.
-     CLI(`python -m module.mc_shards gpu N`)와 노트북(1_MC_recompute)이 공유한다."""
+     CLI(`python -m module.mc_shards gpu N`)와 노트북(1_MC_pricer)이 공유한다."""
     mk = MC.load_market(); _, tasks = _tasks()
     pdir = fm.SCRATCH / "mc_progress"; pdir.mkdir(parents=True, exist_ok=True)
     if verbose:
