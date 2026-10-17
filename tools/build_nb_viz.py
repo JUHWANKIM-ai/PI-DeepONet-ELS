@@ -52,6 +52,8 @@ cells.append(md("""
 """))
 
 cells.append(code("""
+from pathlib import Path
+
 import numpy as np, pandas as pd
 import matplotlib.pyplot as plt
 
@@ -740,6 +742,35 @@ fig.suptitle("ELS universe over time  ({} - {})".format(dt.min().date(), dt.max(
              fontsize=13.5, fontweight="bold")
 fig.tight_layout(rect=[0, 0, 1, .91])
 save(fig, "cat4_universe_time")
+"""))
+
+cells.append(md("""
+---
+# 부록. 7종 모형 비교 · 전수 횡단면 기울기
+
+앞의 네 범주는 기준 모형(Direct+단조) 두 벌만 쓴다. 여기서는 저장된 **7종 전부**를 같은 폴드·같은
+시험집합에서 비교하고, 계약조건 기울기를 OOS 전수 횡단면으로 다시 잰다.
+
+| 산출물 | 내용 |
+|---|---|
+| `result/image/allstar.png` | 7종 × 스타별 R²·MAPE + 요인별 기울기 배수 |
+| `allstar_level.csv` · `allstar_slope.csv` · `allstar_slope_raw.csv` | 위 수치 |
+| `xsec_slope.csv` · `xsec_resid.csv` | 전수 횡단면 기울기와 잔차회귀 |
+
+`eval_all_stars` 는 노트북 1의 1-0 이 만든 `mc_check_allstar.csv` 를 읽는다 — 없으면 건너뛴다.
+"""))
+
+cells.append(code("""
+from IPython.display import Image, display
+from tools import eval_all_stars, eval_cross_section
+
+if Path(fm.stat("mc_check_allstar")).exists():
+    eval_all_stars.main()
+    display(Image(filename=str(fm.image("allstar"))))
+else:
+    print("건너뜀: mc_check_allstar.csv 가 없다 — 노트북 1 의 1-0 을 먼저 돌린다")
+
+eval_cross_section.main()
 """))
 
 cells.append(md("## 저장된 그림"))

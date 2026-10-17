@@ -112,7 +112,8 @@ def groups(D, fold):
             (3, oos[D.nstar[oos] == 3]), ("ALL", oos)]
 
 
-if __name__ == "__main__":
+def main():
+    """OOS 전수 횡단면 기울기를 재어 xsec_slope.csv · xsec_resid.csv 를 만든다."""
     t0 = time.time()
     D = A.make_all()
     ref = build_terms(D)
@@ -160,3 +161,7 @@ if __name__ == "__main__":
                     "  <- 유의" if abs(r.t) >= 1.96 else ""))
     print()
     print("완료 {:.1f}분".format((time.time() - t0) / 60))
+
+
+if __name__ == "__main__":
+    main()

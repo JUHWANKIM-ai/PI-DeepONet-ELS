@@ -55,7 +55,8 @@ def met(p, y):
                 RMSE=float(np.sqrt((e ** 2).mean())), MSE=float((e ** 2).mean()), bias=e.mean())
 
 
-if __name__ == "__main__":
+def main():
+    """7종 모형을 스타별로 평가해 allstar_level/slope/slope_raw.csv 와 allstar.png 를 만든다."""
     t0 = time.time()
     D = A.make_all(); vb = A.vbase_all(D)
     CONf = np.concatenate([D.CON, vb[:, None]], 1).astype("float32")
@@ -189,3 +190,7 @@ if __name__ == "__main__":
     fig.tight_layout(); fig.savefig(fm.image("allstar")); plt.close(fig)
     print()
     print("saved -> allstar.png ({:.0f}s)".format(time.time() - t0))
+
+
+if __name__ == "__main__":
+    main()

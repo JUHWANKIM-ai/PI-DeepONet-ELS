@@ -88,8 +88,11 @@ def price_con(CONv, mk, row, nobs):
                         divlog=mk["divlog"])
 
 
-if __name__ == "__main__":
-    NPER = int(sys.argv[1]) if len(sys.argv) > 1 else 12
+def main(nper=12):
+    """스타별 섭동 격자 MC 참값을 만들어 result/statistics/mc_check_allstar.csv 에 저장한다.
+
+     nper: 스타당 기준상품 수 (리자드/스텝 절반씩)."""
+    NPER = nper
     d12 = pd.read_parquet(fm.DATA / "els12_dataset.parquet").sort_values("isu_ord").reset_index(drop=True)
     d12["mc_seed"] = np.arange(len(d12), dtype="int32")
     d3 = MK.dataset().copy()
@@ -128,3 +131,7 @@ if __name__ == "__main__":
     R.to_csv(fm.stat("mc_check_allstar"), index=False, encoding="utf-8-sig")
     print("저장 {:,}행 | 스타별 상품수 {}".format(
         len(R), R.groupby("nstar").item.nunique().to_dict()))
+
+
+if __name__ == "__main__":
+    main()

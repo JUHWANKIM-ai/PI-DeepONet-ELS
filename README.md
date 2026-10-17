@@ -95,28 +95,32 @@ paper/                   # 참고 논문 [1]-[5]
 
 ---
 
-## 재현 (오직 `cache` + `raw` 로부터)
+## 재현 — 원천 자료만 있으면 노트북 4장으로 끝난다
 
 ```bash
-pip install -r requirements.txt          # Python 3.11 (conda env `abacus`), JAX/PyTorch CPU
+pip install -r requirements.txt          # Python 3.11 (conda env `abacus`)
 
-# 0) raw + cache 로 base 데이터셋 재유도 (아직 MC 없음)
 jupyter nbconvert --to notebook --execute --inplace 0_data_preprocessing.ipynb
-
-# --- MC 이론가 ---
-# 전량 재계산은 무겁다(단일코어 ~14h). 샤드 결과가 data/cache/ 에 캐시돼 있어 `combine` 이 수 초 만에
-# `mc` 를 복원한다. 처음부터 다시 계산하려면(진행률은 별도 터미널의 monitor 로):
-#   N=28; seq 0 $((N-1)) | xargs -P $N -I {} python -m module.mc_shards shard {} $N
-#   python -m module.mc_shards monitor $N   # 누적 진행률 n/23151 · 처리율 · ETA 한 줄 갱신
-python -m module.mc_shards combine 28    # els3_dataset.parquet 에 mc + recent_margin 기록 (+ heartbeat 정리)
-
-# 1) 현행 방법론 프라이서 — 시장입력 조립 · mc_B 재현검증 · 경로수별 MC 잡음 · 공정가 격차
 jupyter nbconvert --to notebook --execute --inplace 1_MC_pricer.ipynb
-# 2) 대리모형 학습 — 1·2·3스타 통합 / 3스타 전용, 5시드 x 4폴드 (가중치 없으면 약 6분)
 jupyter nbconvert --to notebook --execute --inplace 2_model_training.ipynb
-# 3) 시각화 — 4개 범주 그림 22장 + 지표·기울기 표
 jupyter nbconvert --to notebook --execute --inplace 3_visualization.ipynb
 ```
+
+별도 CLI 단계는 없다. 각 노트북이 자기 산출물을 만들고, **이미 있으면 건너뛴다**.
+
+| 노트북 | 만드는 것 | 비용 |
+|---|---|---|
+| **0** | `els3_dataset.parquet`(`REBUILD=True`) · `mc`·`mc_seed`·`recent_margin` 열(`mc_shards.combine`) · `ml.csv`·`deeponet.csv`(`data.build_datasets`) · `els12_dataset.parquet` | 수 분 |
+| **1** | `mc_variants12`(1·2스타 15,747) · `mc_variants`(3스타 58,790) · `mc_check_allstar` · `mc_boot_curve_200` | **약 70분** |
+| **2** | `models/ball_d*`·`ball3_d*` 40개 · `nb_training_level.csv` | 약 6분 |
+| **3** | 그림 23장 · 표 13개 (부록에서 7종 비교·전수 횡단면까지) | 수 분 |
+
+다시 만들려면 노트북 0 은 `REBUILD = True`, 노트북 1 은 `REBUILD = True`, 노트북 2 는 `RETRAIN = True`.
+
+**유일한 예외**: 노트북 0 의 `mc` 열은 샤드 캐시(`data/cache/mccal_shard_*.json` 28개)를 합쳐 붙인다.
+그 캐시가 없으면 `python -m module.mc_shards shard <k> 28` 로 재시뮬해야 하고 단일코어 수 시간이 걸린다.
+공정가 시대의 정본 MC 라서 지금은 `mc_seed`(공통난수)와 열 존재만 쓰인다 — `module.mcvar` 가
+`D.MC` 를 변형 B(`mc_B`)로 갈아끼우기 때문이다. 이 결합을 끊으면 재시뮬 없이도 전 과정이 돈다.
 
 모든 하이퍼파라미터는 **`config.yaml`**, 모든 경로는 **`util/file_manager.py`** 로 관리한다.
 `combine` 단계만 분리돼 있는 것은 그것이 유일한 고비용 단계이기 때문이며, 그 외 노트북 0→3 은 위에서

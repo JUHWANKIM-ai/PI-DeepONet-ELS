@@ -126,6 +126,48 @@ print()
 print("구조별:", df.groupby(["opt_type", "ki_yn"]).size().to_dict())
 """))
 
+cells.append(md("""
+### MC 이론가 열과 모델링 데이터셋
+
+`build_source` 가 만드는 parquet 에는 아직 MC 가 없다. 뒤 단계가 쓰려면 두 가지가 더 필요하다.
+
+1. **`mc` · `mc_seed` · `recent_margin` 열** — `module.mc_shards.combine()` 이 캐시된 샤드를 합쳐 붙인다.
+   공정가 시대의 정본 MC 로, 지금은 `mc_seed`(공통난수)와 열 존재만 쓰인다 —
+   `module.mcvar` 가 `D.MC` 를 변형 B(`mc_B`)로 갈아끼우기 때문이다.
+   샤드 캐시(`data/cache/mccal_shard_*.json` 28개)가 없으면 재시뮬이 필요하다(단일코어 수 시간).
+2. **`data/ml.csv` · `data/deeponet.csv`** — `module.data.build_datasets()` 가 parquet 에서 뽑는다.
+   `module.data.load()` 가 읽는 것은 parquet 이 아니라 **이 두 CSV** 다.
+
+둘 다 이미 있으면 건너뛴다.
+"""))
+
+cells.append(code("""
+from module import data as MD
+from module import mc_shards as MS
+
+need_mc = "mc" not in df.columns or df["mc"].isna().all()
+if need_mc:
+    nsh = len(list(fm.CACHE.glob("mccal_shard_*.json")))
+    print("mc 열 없음 | 샤드 캐시 {}개 발견".format(nsh), flush=True)
+    df = MS.combine()                                   # 샤드 수 자동감지, 수 초
+    print("  mc·mc_seed·recent_margin 기록 완료")
+else:
+    print("건너뜀  mc 열 (이미 있음)")
+
+p_ml, p_dn = fm.dataset("ml"), fm.dataset("deeponet")
+if not (p_ml.exists() and p_dn.exists()):
+    print("모델링 데이터셋 생성 중 ...", flush=True)
+    info = MD.build_datasets()
+    print("  ml {:,}행 × {}열 | deeponet {:,}행 × {}열".format(
+        info["ml"], len(info["columns"]["ml"]), info["deeponet"], len(info["columns"]["deeponet"])))
+else:
+    print("건너뜀  ml.csv · deeponet.csv (이미 있음)")
+
+for p in (fm.DATA / "els3_dataset.parquet", p_ml, p_dn):
+    print("  {:1} {:28} {:>8} KB".format(
+        "o" if p.exists() else "X", p.name, int(p.stat().st_size / 1e3) if p.exists() else 0))
+"""))
+
 cells.append(md("## 0-3. 분포 — 계약조건과 시장상태"))
 
 cells.append(code("""
@@ -179,11 +221,18 @@ cells.append(md("""
 
 기초자산이 1~2개인 상품을 **슬롯 중복 패딩**으로 3자산 입력 규약에 수용한다.
 1스타는 A,A,A / 2스타는 A,B,B 로 채우고, 중복쌍의 상관은 정확히 1.0 으로 둔다.
-생성은 `tools/build_12star.py`, 번들 구성은 `module.star.make_all()` 이 한다.
+아래 셀이 `tools/build_12star.main()` 으로 직접 만든다(이미 있으면 건너뛴다).
+MC 라벨(`mc_variants12`)은 노트북 1 의 1-0 이 붙이고, 번들 구성은 `module.star.make_all()` 이 한다.
 """))
 
 cells.append(code("""
+from tools import build_12star
+
 p12 = fm.DATA / "els12_dataset.parquet"
+if not p12.exists():
+    print("els12_dataset.parquet 생성 중 (약 2분) ...", flush=True)
+    build_12star.main()
+
 if p12.exists():
     d12 = pd.read_parquet(p12)
     print("1·2스타 {:,}건 | 기초자산 수별 {}".format(
@@ -192,7 +241,7 @@ if p12.exists():
     print("  리자드 {:,}건 ({:.1f}%)".format(int(lz.sum()), 100 * lz.mean()))
     print("  → 1·2스타 리자드 표본이 얇다. 해당 구간 기울기는 신뢰구간을 함께 볼 것.")
 else:
-    print("els12_dataset.parquet 없음 — tools/build_12star.py 로 생성")
+    print("els12_dataset.parquet 생성 실패 — 원천·캐시를 확인한다")
 """))
 
 cells.append(md("""

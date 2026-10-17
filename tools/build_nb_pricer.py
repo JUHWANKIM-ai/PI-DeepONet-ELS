@@ -56,6 +56,8 @@ cells.append(md("""
 """))
 
 cells.append(code("""
+from pathlib import Path
+
 import numpy as np, pandas as pd
 import matplotlib.pyplot as plt
 from util import file_manager as fm, plot as _plot      # import 만으로 dpi400·투명·PPT 밴드
@@ -68,11 +70,73 @@ NSAMPLE = 40                                            # 재현·잡음 대조 
 C_REF, C_NEW = "#e07a5f", "#1f6f9c"
 
 df = pd.read_parquet(fm.DATA / "els3_dataset.parquet").sort_values("isu_ord").reset_index(drop=True)
-VAR = pd.read_parquet(fm.CACHE / "mcvar" / "mc_variants.parquet").set_index("item")
 mk = load_market()
 RET = mk["RET"]
 KBD = RET["^KS200"].dropna().index                      # KRX 거래일 달력
-print(f"상품 {len(df):,} | 저장된 변형 {VAR.shape} | 수익률 시계열 {len(RET)}종")
+print(f"상품 {len(df):,} | 수익률 시계열 {len(RET)}종")
+"""))
+
+cells.append(md("""
+---
+## 1-0. 재현 준비 — MC 라벨·참값 산출
+
+여기까지가 프라이서의 **검증**이었다면, 이 절은 프라이서로 **뒤 단계가 쓸 자료를 실제로 만드는** 곳이다.
+노트북 2(학습)와 3(시각화)은 전부 여기서 나온 파일을 읽는다.
+
+| 산출물 | 쓰는 곳 |
+|---|---|
+| `data/cache/mcvar/mc_variants12.parquet` | 1·2스타 MC 라벨 |
+| `data/cache/mcvar/mc_variants.parquet` | 3스타 MC 라벨 (`module.mcvar`) |
+| `result/statistics/mc_check_allstar.csv` | 섭동 격자 MC 참값 → 노트북 3 부록 |
+| `result/statistics/mc_boot_curve_200.csv` | ΔMC 요인분해 → 노트북 3 범주 3 |
+
+**이미 있는 산출물은 건너뛴다.** 다시 만들려면 `REBUILD = True`.
+3스타 라벨이 유일한 고비용 구간이고(58,790건 × 40,000 경로, **약 1시간**), 500건마다 중간저장하므로
+중단해도 이어서 돌릴 수 있다. 나머지는 전부 10분 안이다.
+"""))
+
+cells.append(code("""
+import time
+from tools import mc_check_12star, build_decomp
+from tools import build_mc_variants as BMV
+
+REBUILD = False                      # True 면 이미 있는 산출물도 다시 만든다
+MV = fm.CACHE / "mcvar"
+
+
+def build_3star():
+    \"\"\"3스타 라벨: 샤드 산출 -> 합치기 -> 실패행 재계산 + 가격 신선도 표시.\"\"\"
+    BMV.run_shard(0, 1)
+    BMV.combine(1)
+    BMV.fix()
+
+
+STEPS = [
+    ("1·2스타 MC 라벨 15,747건", MV / "mc_variants12.parquet", "8분", BMV.run12),
+    ("3스타 MC 라벨 58,790건", MV / "mc_variants.parquet", "58분", build_3star),
+    ("섭동 격자 MC 참값", fm.stat("mc_check_allstar"), "수 분", mc_check_12star.main),
+    ("ΔMC 요인분해 200건", fm.stat("mc_boot_curve_200"), "1분", lambda: build_decomp.build(200)),
+]
+
+for name, path, est, fn in STEPS:
+    if Path(path).exists() and not REBUILD:
+        print("건너뜀  {:26} (이미 있음)".format(name), flush=True)
+        continue
+    print("산출중  {:26} 예상 {} ...".format(name, est), flush=True)
+    t0 = time.time()
+    fn()
+    print("  완료 {:.1f}분".format((time.time() - t0) / 60), flush=True)
+
+print()
+for name, path, _, _ in STEPS:
+    q = Path(path)
+    print("  {:1} {:26} {:>8} KB".format(
+        "o" if q.exists() else "X", name, int(q.stat().st_size / 1e3) if q.exists() else 0))
+
+# 아래 절들이 대조에 쓰는 저장 라벨 — 1-0 이 끝나야 존재한다
+VAR = pd.read_parquet(MV / "mc_variants.parquet").set_index("item")
+print()
+print("저장된 변형", VAR.shape)
 """))
 
 cells.append(md("""

@@ -45,7 +45,8 @@ def mom6m(rets, dt, win=126):
     return float(np.mean(vals)) if vals else 0.0
 
 
-if __name__ == "__main__":
+def main():
+    """1·2스타 데이터셋을 만들어 data/els12_dataset.parquet 에 저장한다. 노트북에서도 부를 수 있다."""
     CA, RAW = fm.CACHE, fm.RAW
     mapping = json.loads((CA / "udly_ticker_map.json").read_text(encoding="utf-8"))
     RET = {}
@@ -178,3 +179,7 @@ if __name__ == "__main__":
     out = fm.DATA / "els12_dataset.parquet"
     df.to_parquet(out)
     print("saved", out, "rows", len(df))
+
+
+if __name__ == "__main__":
+    main()
