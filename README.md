@@ -1,17 +1,26 @@
 # 오토콜 ELS 이론가 DeepONet 대리모델 (Surrogate Pricing)
 
 한국형 **3-기초자산 worst-of 스텝다운 오토콜 ELS(주가연계증권)**의 **몬테카를로 이론가(MC 이론가)**를
-재현하는 연산자학습(operator-learning) 대리모델 **DeepONet**. 재시뮬레이션 대비 약 **10⁴–10⁵배** 빠르게
-가격을 산출한다. 금융감독 공시(DART)와 시장데이터를 결합해 학습하고, 정보누수 없는 **walk-forward**
+재현하는 연산자학습(operator-learning) 대리모델 **DeepONet**. 재시뮬레이션(10만 경로) 대비
+**약 1,300배**(200개 요청) ~ **37,000배**(북 전량 일괄) 빠르게 가격을 산출한다 — 실측값이며
+배치 크기에 좌우된다. 금융감독 공시(DART)와 시장데이터를 결합해 학습하고, 정보누수 없는 **walk-forward**
 프로토콜로 강력한 테이블형 머신러닝 벤치마크와 비교 평가한다.
 
 ---
 
 ## 무엇을 예측하는가
 
-타깃은 공시 공정가치가 아니라 **MC 이론가 `mc`** 다. MC 엔진(`module/mc.py`, 미래에셋 36449 방식:
-일별 GBM + 촐레스키(180일 역사 상관) + 180일 역사 변동성 + KRW Nelson-Siegel 할인, 40,000 경로)은
-**무보정(k = 1)** 이 정본이다 — 변동성 프리미엄 보정을 탐색했으나 근거·통용성이 약해 기각했다.
+타깃은 공시 공정가치가 아니라 **MC 이론가**다. 정본 라벨은 `mc_B`(`tools/build_mc_variants.py`)이고,
+엔진은 `module/mc_engine.py` 의 일별 GBM + 촐레스키 기하 worst-of 이며 **무보정(k = 1)** 이다
+— 변동성 프리미엄 보정을 탐색했으나 근거·통용성이 약해 기각했다. 시장입력 정의는 아래와 같다.
+
+| 입력 | 현행 정의 | 구현 |
+|---|---|---|
+| 변동성 | 6개월(120 영업일) EWMA, λ = 0.99 | `module.features.vol_ewma_lam` |
+| 상관 | KRX 영업일 120일 창, **쌍별** Pearson | `module.features.corr_bd` |
+| 금리 | CD 91일 + IRS par 부트스트랩 제로커브 (드리프트·할인 양쪽) | `module.curve` |
+| 배당 | **연속 배당수익률 q** (LSEG 일별 지표, 지수는 추종 ETF) | `module.dividend` |
+| 경로 | **100,000** (공통난수 `mc_seed`) | `module.mc_engine.mc_daily_t` |
 학습된 DeepONet은 이 가격을 forward 한 번으로 재현하므로 모델은 **MC 대리모델**이다: 프라이서와 동일한
 입력(바스켓 vol·corr + KRW 곡선 + 전체 계약)을 받아 µs 단위로 추론한다.
 
@@ -27,41 +36,48 @@
 
 ---
 
-## 결과 — walk-forward OOS (n = 23,151; test = 미래 9,261건)
+## 결과 — walk-forward OOS (시험 n = 29,866; 시드 5개 × 폴드 4개 평균 ± SE)
 
-| 모델 | 계열 | R² | MAE | MAPE % | Spearman ρ |
-|---|---|---:|---:|---:|---:|
-| **deeponet_hybrid_l1**    | DeepONet 하이브리드 (L1 앵커)     | **0.964** | 0.0034 | 0.35 | 0.988 |
-| **deeponet_hybrid_s2don** | DeepONet 앵커 + DeepONet 잔차     | **0.961** | 0.0035 | 0.37 | 0.979 |
-| **deeponet_hybrid**       | DeepONet 하이브리드 (MSE 앵커)    | **0.956** | 0.0038 | 0.39 | 0.978 |
-| **deeponet_hybrid_mape**  | DeepONet 하이브리드 (MAPE 앵커)   | **0.954** | 0.0037 | 0.39 | 0.988 |
-| xgb_hybrid                | XGB 앵커 + XGB 잔차               | 0.904 | 0.0061 | 0.63 | 0.963 |
-| bench_catboost            | 직접 (CatBoost)                   | 0.902 | 0.0064 | 0.66 | 0.964 |
-| bench_xgboost             | 직접 (XGBoost)                    | 0.854 | 0.0076 | 0.78 | 0.950 |
-| bench_gbm                 | 직접 (HistGB)                     | 0.842 | 0.0081 | 0.84 | 0.945 |
-| bench_lgbm                | 직접 (LightGBM)                   | 0.836 | 0.0081 | 0.84 | 0.952 |
-| bench_ridge               | 직접 (Ridge)                      | 0.701 | 0.0124 | 1.26 | 0.895 |
+**1단계 성능은 MC 이론가 재현만으로 재며**, 시장 공정가 지표는 섞지 않는다. 전량 재실행으로
+`result/statistics/allstar_level.csv` 에서 그대로 옮긴 값이다.
 
-**핵심 결과.** 4개 DeepONet 하이브리드는 **R² ≈ 0.95–0.96** 로 밀집해 모든 직접 ML 벤치마크를 앞선다.
-최상위 DeepONet 하이브리드는 최상위 직접 벤치마크(CatBoost)를 약 6 R²포인트 앞선다. 잔차모델보다 **2단계
-구조 자체가 더 결정적**이다: XGB 하이브리드(0.904)는 직접 CatBoost(0.902) 바로 위에 놓이지만, DeepONet
-앵커는 하이브리드를 그 둘보다 훨씬 위로 끌어올린다. 앵커 손실함수(MAPE / L1 / MSE) 순위는 신경망
-run-to-run 노이즈 안에서 뒤바뀌므로 하나의 군집으로 본다.
+| 모델 | 바꾼 것 | R² | MAPE % | MAE 원 | RMSE 원 | bias 원 |
+|---|---|---:|---:|---:|---:|---:|
+| **Direct+m (1·2·3)** | — (**기준 모형**) | **0.9496** ± 0.0063 | 0.546 | 52.3 | 84.2 | −20.1 |
+| Direct+m (3스타만) | 학습 풀 | 0.9056 ± 0.0028 | 0.681 | 64.9 | 116.1 | −25.4 |
+| XGBoost (1·2·3) | 아키텍처 | 0.9025 ± 0.0007 | 0.765 | 72.8 | 118.0 | −15.2 |
+| XGBoost (3스타만) | 아키텍처 + 학습 풀 | 0.8344 ± 0.0027 | 0.957 | 91.5 | 153.8 | −46.1 |
+| Resid+f+m (1·2·3) | 잔차 타깃 + `V_base` 피처 | **0.9800** ± 0.0002 | 0.334 | 32.0 | 53.4 | −3.3 |
+| Resid+f+m (3스타만) | 위 + 학습 풀 | 0.9662 ± 0.0020 | 0.427 | 40.8 | 69.4 | −7.5 |
+| Direct+f+m (1·2·3) | `V_base` 피처 | 0.9709 ± 0.0007 | 0.414 | 39.8 | 64.4 | +0.1 |
 
-**단계별 R²(하이브리드).** Stage-1(`mc` 재현) ≈ 0.90–0.96 · Stage-2(잔차 `mc − MC_hat`) ≈ 0.12–0.19
-(DeepONet 하이브리드 기준; `xgb_hybrid` 은 ≈ 0) · Final(`mc`) ≈ 0.90–0.96.
-**속도**(`3_visualization` 3-5절 실측, RTX 3060 Ti · 같은 3스타 OOS 200개 · **가격 산출만**):
+**핵심 결과 세 가지.**
 
-| | 상품당 | MC 40k 대비 |
+1. **통합 학습이 3스타 전용을 이긴다.** 같은 모형을 학습 풀만 바꿔 비교하면 R² 0.9496 대 0.9056 이다.
+   1·2스타를 섞어 배우면 3스타 가격도 더 잘 맞힌다 — 계약 구조가 공유되기 때문이다.
+2. **DeepONet 이 XGBoost 를 앞선다.** 같은 입력(곡선 u0-9 + vol·corr + 전체 계약)에서 0.9496 대 0.9025 다.
+3. **프록시를 피처로 주면 더 오른다.** `V_base`(해석적 근사)를 넣으면 0.9709, 잔차 타깃까지 쓰면 0.9800 이다.
+   단일 시드로 순위를 말하지 않는다 — 위 값은 모두 시드 5개 평균이고 SE 를 함께 적었다.
+
+**기울기.** 수준 지표만으로는 부족하다. 전수 횡단면 OOS 잔차회귀에서 요인별 기울기를 MC 참값과
+나란히 재며(`result/statistics/xsec_slope.csv`), 참값 기울기가 유의한 구간에서 기준 모형의
+기울기 배수는 평균 |배수 − 1| = 0.065 다. 참값 기울기가 0 근처인 요인은 배수의 분모가 폭발하므로
+기울기 수준으로 본다.
+
+**속도** (`3_visualization` 3-5절 실측, RTX 3060 Ti · 같은 3스타 OOS 200개 · **가격 산출만**):
+
+| | 상품당 | MC 10만 대비 |
 |---|---|---|
-| MC 100,000 경로 | 66.0 ms | — |
+| **MC 100,000 경로** (정본 라벨) | 66.2 ms | — |
 | MC 40,000 경로 | 27.5 ms | — |
-| 대리모형 (Direct+단조, 5시드, 200개 요청) | 53.2 µs | **약 516배** |
-| 대리모형 (같은 구성, 전량 29,743개 일괄) | 1.8 µs | **약 15,600배** |
+| 대리모형 (Direct+단조, 5시드, 200개 요청) | 52.5 µs | **약 1,260배** |
+| 대리모형 (같은 구성, 전량 29,866개 일괄) | 1.8 µs | **약 37,200배** |
 
 배속은 배치 크기에 크게 좌우된다 — 200개 요청은 호출 오버헤드가 지배하고, 큰 배치에서는 분산된다.
 시장입력 조립(EWMA·상관·커브 부트스트랩·배당)은 두 경로 모두 똑같이 필요하므로 측정에서 제외했다.
-가격 일치는 corr 0.979 · MAE 42.7원 · RMSE 75.3원.
+**비교 기준은 정본과 같은 10만 경로다** — 대리모형이 재현하려고 배운 가격이 그것이기 때문이다.
+4만 경로를 기준으로 삼으면 배속이 2.4배 과소평가되고, 대리모형을 배운 적 없는 더 시끄러운 가격과
+비교하게 된다. 가격 일치는 corr 0.967 · MAE 54.4원 · RMSE 101.4원 · MAPE 0.57%.
 
 지표: `result/statistics/`  ·  그림: `result/image/`.
 
@@ -86,12 +102,17 @@ paper/                   # 참고 논문 [1]-[5]
 
 ### 데이터 — 추적 대상 vs 재생성 대상
 
-입력은 **`data/cache/`** 와 **`data/raw/`** 뿐이며, `data/` 의 나머지는 파생물로 git-ignore 된다.
+입력은 **원천 두 곳뿐**이다. `data/cache/` 는 입력이 아니라 **산출물**이며, `data/` 의 나머지도 파생물로
+git-ignore 된다. 이 구분은 실제로 검증했다 — 캐시·가중치·결과표를 전부 치우고 원천만 남긴 상태에서
+노트북 4장이 전 과정을 다시 만든다.
 
-- `data/raw/` — raw DART CSV(`AUTO_CALL`, `SCHD_INFO`, `UDLY_INFO`). **git-ignore**(>100 MB); 로컬 보관.
-- `data/cache/` — 기초자산 일별종가 `px_*.parquet`, KRW 곡선, 티커/행사가 매핑, 그리고 40k 경로 MC
-  결과가 캐시된 **28개 `mccal_shard_*.json`**(→ 재시뮬 없이 수 초 만에 `mc` 복원).
-- `data/els3_dataset.parquet`, `data/ml.csv`, `data/deeponet.csv` — 노트북 0–1 이 **재생성**.
+- `data/raw/` — DART 공시 CSV(`AUTO_CALL`, `SCHD_INFO`, `UDLY_INFO`) · `rates/` 금리커브 3파일
+  (CD 91일 · IRS par · NS 노드) · `udly_ticker_map.json`. **git-ignore**(>100 MB); 로컬 보관.
+- `data/share_underlyings_v2/` — 기초자산 187 CSV(일별 종가 + 배당수익률) + `master.csv`.
+  가격은 `Close_Adj`(액면분할만 조정)를 쓴다. 엔진이 배당을 드리프트에서 따로 빼므로
+  배당 역조정 계열을 쓰면 이중계산이 된다.
+- `data/cache/` — **산출물.** MC 라벨(`mcvar/mc_variants*.parquet`), 프록시 `V_base`, 중간 매핑.
+- `data/els3_dataset.parquet`, `els12_dataset.parquet`, `ml.csv`, `deeponet.csv` — 노트북 0 이 **재생성**.
 
 ---
 
@@ -108,19 +129,20 @@ jupyter nbconvert --to notebook --execute --inplace 3_visualization.ipynb
 
 별도 CLI 단계는 없다. 각 노트북이 자기 산출물을 만들고, **이미 있으면 건너뛴다**.
 
-| 노트북 | 만드는 것 | 비용 |
+| 노트북 | 만드는 것 | 실측 비용 |
 |---|---|---|
-| **0** | `els3_dataset.parquet`(`REBUILD=True`) · `mc`·`mc_seed`·`recent_margin` 열(`mc_shards.combine`) · `ml.csv`·`deeponet.csv`(`data.build_datasets`) · `els12_dataset.parquet` | 수 분 |
-| **1** | `mc_variants12`(1·2스타 15,747) · `mc_variants`(3스타 58,790) · `mc_check_allstar` · `mc_boot_curve_200` | **약 70분** |
-| **2** | `models/ball_d*`·`ball3_d*` 40개 · `nb_training_level.csv` | 약 6분 |
-| **3** | 그림 23장 · 표 13개 (부록에서 7종 비교·전수 횡단면까지) | 수 분 |
+| **0** | `els3_dataset.parquet`(58,913) · `els12_dataset.parquet`(15,752) · `ml.csv` · `deeponet.csv` · 그림 3 | 약 3분 |
+| **1** | `mc_variants12`(1·2스타 15,752) · `mc_variants`(3스타 58,913) · `mc_check_allstar` · `mc_boot_curve_200` | **약 160분** |
+| **2** | `models/` 가중치 140개(7종 × 5시드 × 4폴드) · `nb_training_level.csv` | 약 25분 |
+| **3** | 그림 23장 · 표 12개 (7종 비교 · 전수 횡단면 기울기 · 속도) | 수 분 |
 
-다시 만들려면 노트북 0 은 `REBUILD = True`, 노트북 1 은 `REBUILD = True`, 노트북 2 는 `RETRAIN = True`.
+다시 만들려면 노트북 0·1 은 `REBUILD = True`, 노트북 2 는 환경변수 `RETRAIN=1`
+(라벨이 바뀌면 저장된 가중치는 낡는다).
 
-**유일한 예외**: 노트북 0 의 `mc` 열은 샤드 캐시(`data/cache/mccal_shard_*.json` 28개)를 합쳐 붙인다.
-그 캐시가 없으면 `python -m module.mc_shards shard <k> 28` 로 재시뮬해야 하고 단일코어 수 시간이 걸린다.
-공정가 시대의 정본 MC 라서 지금은 `mc_seed`(공통난수)와 열 존재만 쓰인다 — `module.mcvar` 가
-`D.MC` 를 변형 B(`mc_B`)로 갈아끼우기 때문이다. 이 결합을 끊으면 재시뮬 없이도 전 과정이 돈다.
+**샤드 캐시는 더 필요하지 않다.** 종전에는 노트북 0 의 `mc` 열이 `data/cache/mccal_shard_*.json`
+28개에 묶여 있었고 그게 없으면 단일코어 수 시간을 재시뮬해야 했다. 지금은 `module.data.build_datasets`
+가 `mc`·`recent_margin` 열이 없어도 데이터셋을 만들고, 학습 라벨은 `module.mcvar` 가 `mc_B` 로
+직접 공급한다. 그래서 원천만으로 0→3 이 끝까지 돈다.
 
 모든 하이퍼파라미터는 **`config.yaml`**, 모든 경로는 **`util/file_manager.py`** 로 관리한다.
 `combine` 단계만 분리돼 있는 것은 그것이 유일한 고비용 단계이기 때문이며, 그 외 노트북 0→3 은 위에서

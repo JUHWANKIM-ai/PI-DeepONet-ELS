@@ -396,7 +396,7 @@ MC 입력을 바꾸면 이론가가 시장 공정가에 얼마나 가까워지�
 | | 정의 |
 |---|---|
 | **before** | NS 커브 · HV120 · q = 0 (변형 A) |
-| **after** | 부트스트랩 커브 · EWMA120 (λ=0.99) · 이산배당 (변형 B = **현행 방법론**) |
+| **after** | 부트스트랩 커브 · EWMA120 (λ=0.99) · 연속 배당수익률 q (변형 B = **현행 방법론**) |
 
 종전 노트북 14~17 이 쓰던 형식과 같되, **표본 200개가 아니라 3스타 전량**으로 그립니다
 (`mc_A` 는 3스타에만 있습니다).
@@ -427,7 +427,7 @@ print("  after   편향 {:+.0f}원 | MAE {:.0f}원 | MAPE {:.2f}%".format(
 cells.append(md("""
 ### 3-1. 격차 분포 — before vs after
 
-변형 A(종전 입력: NS 커브 · 단순 역사적변동성 · 배당 0)와 변형 B(현행: 부트스트랩 커브 · EWMA · 이산배당)의
+변형 A(종전 입력: NS 커브 · 단순 역사적변동성 · 배당 0)와 변형 B(현행: 부트스트랩 커브 · EWMA · 연속 q)의
 `공정가 − 이론가` 분포를 겹쳐 봅니다. 분포가 0 쪽으로 옮겨갔으면 입력 교체가 시장과의 격차를 줄인 것입니다.
 """))
 cells.append(code("""
@@ -569,7 +569,7 @@ cells.append(md("""
 ### 3-5. 프라이서 속도 — MC vs 대리모형
 
 같은 상품 200개를 두 경로로 가격합니다. **가격 산출만** 잽니다. 시장입력 조립(EWMA 변동성·영업일 상관·
-커브 부트스트랩·이산배당)은 두 경로 모두 똑같이 필요하므로 측정에서 뺐습니다.
+커브 부트스트랩·배당)은 두 경로 모두 똑같이 필요하므로 측정에서 뺐습니다.
 
 대리모형은 **Direct+단조손실 5시드 앙상블**로, 보고 성능과 같은 구성입니다.
 
@@ -642,15 +642,17 @@ t_req = don_time(sel, 20)
 t_book = don_time(oos, 5)
 don_px = don_run(sel)
 
-mcp, dnp = mc_px[40_000] * FACE, don_px * FACE
+NREF = 100_000                      # 정본 라벨과 같은 경로 수 — 대리모델이 재현하려는 가격
+mcp, dnp = mc_px[NREF] * FACE, don_px * FACE
 ds = dnp - mcp
 SPD = pd.DataFrame([
     dict(engine="MC 100,000 paths", ms_per_product=mc_t[100_000], speedup=np.nan),
     dict(engine="MC 40,000 paths", ms_per_product=mc_t[40_000], speedup=np.nan),
     dict(engine="DeepONet (200-product request)", ms_per_product=t_req,
-         speedup=mc_t[40_000] / t_req),
-    dict(engine="DeepONet (full book, 29,743)", ms_per_product=t_book,
-         speedup=mc_t[40_000] / t_book)])
+         speedup=mc_t[NREF] / t_req),
+    dict(engine="DeepONet (full book, {:,})".format(len(oos)), ms_per_product=t_book,
+         speedup=mc_t[NREF] / t_book)])
+SPD["agree_ref"] = "MC {:,} paths".format(NREF)     # 일치도를 어느 가격과 비교했는지 남긴다
 SPD["agree_corr"] = float(np.corrcoef(mcp, dnp)[0, 1])
 SPD["agree_MAE"] = np.abs(ds).mean()
 SPD["agree_RMSE"] = float(np.sqrt((ds ** 2).mean()))
@@ -677,7 +679,7 @@ ax[0].set_xticks(np.arange(4))
 ax[0].set_xticklabels([t.replace("|", chr(10)) for t in LAB], fontsize=8.5)
 ax[0].set_ylabel("time per product [ms, log]")
 ax[0].set_ylim(v.min() / 6, v.max() * 60)
-ax[0].set_title("Pricing latency  (speedup vs MC 40k)", fontweight="bold")
+ax[0].set_title("Pricing latency  (speedup vs MC 100k)", fontweight="bold")
 
 ax[1].scatter(mcp, dnp, s=16, alpha=.45, color=C_NEW, edgecolors="none")
 lo_, hi_ = np.percentile(np.r_[mcp, dnp], [0.5, 99.5])

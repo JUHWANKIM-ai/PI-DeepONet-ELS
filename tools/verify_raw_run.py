@@ -52,6 +52,7 @@ FACE = 10000                                     # mc_B 는 액면 1 기준 — 
 NOISE40, NOISE100 = 6.20, 3.62      # 40만 경로를 준참값으로 한 평균|차이| (원), Task 5 실측
 EXP_MAD = float(np.hypot(NOISE40, NOISE100))   # 독립 두 추정의 기대 평균|차이| = 7.18원
 IMPACT = "source_switch_impact.csv"            # Task 1 의 공통난수 측정 (구본 스냅샷)
+METRICS = ("R2", "MAPE", "MAE")                # 모델 성능 재현을 재는 지표
 COLS = ["subset", "n", "n_cmp", "n_only_new", "mc_corr", "mc_mad", "mc_mad_exp", "mc_bias",
         "px_n", "px_mad", "px_bias", "r2_old", "r2_new", "mape_old", "mape_new"]
 
@@ -148,6 +149,38 @@ def verdict(T):
     return out
 
 
+def _all_row(path):
+    """nb_training_level.csv 의 ALL · 통합학습 행. 없으면 None."""
+    if not Path(path).exists():
+        return None
+    L = pd.read_csv(path)
+    r = L[(L.group == "ALL") & (L.model == ALL_MODEL)]
+    return r.iloc[0] if len(r) else None
+
+
+def model_verdict():
+    """지표 -> (판정, z, 설명). **2표본 검정**이다.
+
+     구본 성능도 시드 5개의 추정값이므로 참값처럼 쓸 수 없다. 계획서는 구본 SE 만으로
+     +-2SE 를 재라고 했는데, 그러면 신본 쪽 시드 분산을 0 으로 가정하는 셈이다.
+     실측에서 신본 MAPE_se(0.0378)가 구본(0.0155)의 2.4배라 차이가 크다 —
+     한쪽만 쓰면 '밖', 결합하면 0.84 SE 로 '안' 이다. mc_mad 게이트와 같은 종류의 오류다.
+
+     z = (신본 - 구본) / hypot(구본 SE, 신본 SE). |z| <= 2 면 재현으로 본다."""
+    ro = _all_row(BASE / "statistics" / LEVEL)
+    rn = _all_row(fm.stat(LEVEL.replace(".csv", "")))
+    out = {}
+    for m in METRICS:
+        if ro is None or rn is None:
+            out[m] = (False, np.nan, "성능 표가 없다")
+            continue
+        se = float(np.hypot(ro[m + "_se"], rn[m + "_se"]))
+        z = float((rn[m] - ro[m]) / se) if se > 0 else np.nan
+        out[m] = (bool(abs(z) <= 2.0), z, "{:.4f}+-{:.4f} -> {:.4f}+-{:.4f} | {:+.4f} = {:.2f} SE".format(
+            ro[m], ro[m + "_se"], rn[m], rn[m + "_se"], rn[m] - ro[m], abs(z)))
+    return out
+
+
 def main():
     T = compare()
     fm.stat(LEVEL.replace(".csv", ""))          # statistics 디렉터리 보장
@@ -161,11 +194,10 @@ def main():
         mark = "기준없음" if ok is None else ("통과" if ok else "미달")
         print("  {:6} {:8} {}".format(s, mark, why))
 
-    r = T.iloc[0]
-    if np.isfinite(r.r2_old) and np.isfinite(r.r2_new):
-        print()
-        print("  모델(ALL · 통합학습)  R2 {:.4f} -> {:.4f} | MAPE {:.3f}% -> {:.3f}%".format(
-            r.r2_old, r.r2_new, r.mape_old, r.mape_new))
+    print()
+    print("  모델 성능 (ALL · 통합학습, 2표본 검정 |z| <= 2)")
+    for m, (ok, z, why) in model_verdict().items():
+        print("    {:5} {:4} {}".format(m, "재현" if ok else "변화", why))
     print()
     print("저장", out)
     return T

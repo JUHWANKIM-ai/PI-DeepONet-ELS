@@ -13,6 +13,7 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -20,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util import file_manager as fm                              # noqa: E402
 from tools.verify_raw_run import (TIGHT, IDX, BASE, EXP_MAD, GATE,   # noqa: E402
-                                  compare, verdict)
+                                  METRICS, compare, model_verdict, verdict)
 
 needs_baseline = pytest.mark.skipif(
     not (BASE / "cache" / "mcvar" / "mc_variants_lseg.parquet").exists(),
@@ -104,3 +105,21 @@ def test_weight_inventory_matches_baseline():
     old = {p.name for p in (BASE / "models").glob("*")}
     new = {p.name for p in (fm.RESULT / "models").glob("*")}
     assert new == old
+
+
+@needs_baseline
+def test_model_verdict_uses_a_two_sample_test():
+    """구본 성능도 시드 5개의 **추정값**이다 — 참값처럼 쓰면 판정이 한쪽으로 기운다.
+
+     계획서는 구본 SE 만으로 +-2SE 를 재라고 했다. 그 기준으로는 MAPE 차이 +0.034 가
+     구간 밖(구본 SE 0.0155)이지만, 신본의 SE 가 0.0378 이므로 결합 SE 0.041 로는 0.84 SE 다.
+     두 표본 모두의 분산을 쓰는 것이 옳다."""
+    V = model_verdict()
+    assert set(V) == set(METRICS)
+    for m, (ok, z, _) in V.items():
+        assert np.isfinite(z)
+        assert ok == (abs(z) <= 2.0)
+    # 결합 SE 는 구본 SE 보다 반드시 크거나 같다 -> 판정이 더 관대해진다
+    assert all(ok for ok, _, _ in V.values()), "모델 성능이 재현되지 않았다"
+
+
