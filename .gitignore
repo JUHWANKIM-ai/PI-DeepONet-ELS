@@ -50,3 +50,4 @@ scratch/
 skills-lock.json
 survivors.json
 to_measure.json
+.mutmut-cache
