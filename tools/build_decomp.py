@@ -58,23 +58,27 @@ def decomp_row(r, ret, cal):
     dz_bt = CV.curve_dz(*CV.bootstrap(mi["cd"], mi["swaps"]))
     strikes, pmts, lzb, lzp = MK.schedule(r)
     ten, B = float(r["tenor"]), float(r["B"])
-    divlog, _, _, _ = DV.build_div(tks, dt, ten)
+    got = DV.div_kwargs(tks, dt, ten)        # 소스 분기는 module.dividend 한 곳
+    if got is None:
+        return None
+    dkw = got[0]
     kw = dict(n=NPATH, seed=int(r["mc_seed"]), c=float(r["coupon"]),
               pmts=pmts, lz_barr=lzb, lz_pmt=lzp)
 
-    def px(sig, beta, divl=None, disc=None):
+    def px(sig, beta, div=False, disc=None):
+        """div=False 가 q=0 기준선 — 배당 성분은 div=True 와의 차이로 잰다."""
         return float(ME.mc_daily_t(sig, rho, beta, B, strikes, ten,
-                                   divlog=divl, disc_beta=disc, **kw))
+                                   disc_beta=disc, **(dkw if div else {}), **kw))
 
     return dict(item=r["item"], isu_dt=dt.date().isoformat(), tenor=ten, fair=float(r["fair"]),
                 hv120=float(np.mean(h120)), ew120=float(np.mean(e120)),
                 rho120=float(np.mean([rho[a, b] for a, b in zip(*np.triu_indices(3, 1))])),
                 ns_zT=float(dz_ns(ten)[0]), bt_zT=float(dz_bt(ten)[0]),
                 ns_h120_q0=px(h120, dz_ns),
-                ns_h120=px(h120, dz_ns, divl=divlog),
-                bt_disc_h120=px(h120, dz_ns, divl=divlog, disc=dz_bt),
-                bt_h120=px(h120, dz_bt, divl=divlog),
-                bt_e120=px(e120, dz_bt, divl=divlog))
+                ns_h120=px(h120, dz_ns, div=True),
+                bt_disc_h120=px(h120, dz_ns, div=True, disc=dz_bt),
+                bt_h120=px(h120, dz_bt, div=True),
+                bt_e120=px(e120, dz_bt, div=True))
 
 
 def components(B):

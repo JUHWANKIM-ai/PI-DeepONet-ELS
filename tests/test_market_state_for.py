@@ -26,7 +26,9 @@ from module import dividend as DV                   # noqa: E402
 from module import features as F                    # noqa: E402
 import module.market as MK                          # noqa: E402
 
-KEYS = {"dt", "tks", "sig", "corr", "dz", "divlog", "qcont", "ndiv", "div"}
+# dkw = mc_engine 에 그대로 풀어 넘길 배당 kwargs. divlog 를 직접 꺼내는 호출부가
+# lseg(기본값)에서 배당을 조용히 잃어서 추가했다 — tests/test_div_source_switch.py 참고.
+KEYS = {"dt", "tks", "sig", "corr", "dz", "dkw", "divlog", "qcont", "ndiv", "div"}
 
 
 @pytest.fixture(scope="module")

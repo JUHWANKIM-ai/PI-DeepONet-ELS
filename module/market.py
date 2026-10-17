@@ -85,7 +85,10 @@ def state_for(row, ret=None, cal=None, div="lseg"):
        이산배당을 만들 수 없다. 그래서 기본값이 연속 q 다.
        LSEG 에는 배당락일·금액이 없어 이산배당을 만들 수 없다. 자세한 이유는 module/dividend.py 참고.
 
-     반환: dt, tks, sig(3), corr(3x3), dz(콜러블), divlog(Nx3 또는 None), qcont(3), ndiv, div."""
+     반환: dt, tks, sig(3), corr(3x3), dz(콜러블), dkw, divlog(Nx3 또는 None), qcont(3), ndiv, div.
+
+     **dkw 를 쓸 것.** mc_engine 에 그대로 풀어 넘길 배당 kwargs 다. divlog 를 직접 꺼내면
+     lseg(기본값)에서 None 이 넘어가 배당이 조용히 사라진다 — build_nb_viz 가 실제로 그랬다."""
     ret = ret if ret is not None else returns()
     cal = cal if cal is not None else calendar(ret)
     dt = pd.Timestamp.fromordinal(int(row["isu_ord"]))
@@ -98,12 +101,9 @@ def state_for(row, ret=None, cal=None, div="lseg"):
     dz = CV.zero_from_date(dt)
     if corr is None or dz is None or np.isnan(sig).any():
         return None
-    if div == "lseg":
-        qc = DV.qcont_lseg(tks, dt)
-        if qc is None:
-            return None
-        divlog, nev = None, 0
-    else:
-        divlog, qc, nev, _ = DV.build_div(tks, dt, float(row["tenor"]))
-    return dict(dt=dt, tks=tks, sig=sig, corr=corr, dz=dz,
-                divlog=divlog, qcont=qc, ndiv=nev, div=div)
+    got = DV.div_kwargs(tks, dt, float(row["tenor"]), div)   # 소스 분기는 module.dividend 한 곳
+    if got is None:
+        return None
+    dkw, qc, nev = got
+    return dict(dt=dt, tks=tks, sig=sig, corr=corr, dz=dz, dkw=dkw,
+                divlog=dkw.get("divlog"), qcont=qc, ndiv=nev, div=div)

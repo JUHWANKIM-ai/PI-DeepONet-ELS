@@ -164,7 +164,7 @@ cells.append(md("""
 
 cells.append(code("""
 def market_for(row):
-    \"\"\"발행일 기준 (변동성 3, 상관 3x3, 제로커브 콜러블, 이산배당 N x 3). 못 만들면 None.\"\"\"
+    \"\"\"발행일 기준 (변동성 3, 상관 3x3, 제로커브 콜러블, 배당). 못 만들면 None.\"\"\"
     dt = pd.Timestamp.fromordinal(int(row["isu_ord"]))
     tks = [row["udl1"], row["udl2"], row["udl3"]]
     rets = [RET.get(t) for t in tks]
@@ -175,8 +175,11 @@ def market_for(row):
     dz = CV.zero_from_date(dt)                          # CD + IRS 부트스트랩
     if corr is None or dz is None or np.isnan(sig).any():
         return None
-    divlog, qc, nev, _ = DV.build_div(tks, dt, float(row["tenor"]))
-    return dict(dt=dt, tks=tks, sig=sig, corr=corr, dz=dz, divlog=divlog, qcont=qc, ndiv=nev)
+    got = DV.div_kwargs(tks, dt, float(row["tenor"]))   # lseg -> 연속 q, yf -> 이산 divlog
+    if got is None:
+        return None
+    dkw, qc, nev = got
+    return dict(dt=dt, tks=tks, sig=sig, corr=corr, dz=dz, dkw=dkw, qcont=qc, ndiv=nev)
 
 
 def contract_for(row):
@@ -199,7 +202,7 @@ def price(row, n_path, seed=None):
     return float(ME.mc_daily_t(m["sig"], m["corr"], m["dz"], k["B"], k["strikes"], k["ten"],
                                n=n_path, seed=int(row["mc_seed"]) if seed is None else seed,
                                c=k["c"], pmts=k["pmts"], lz_barr=k["lz_barr"], lz_pmt=k["lz_pmt"],
-                               divlog=m["divlog"]))
+                               **m["dkw"]))
 
 
 rng = np.random.default_rng(0)

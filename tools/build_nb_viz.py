@@ -603,7 +603,7 @@ for i_ in rng_s.permutation(oos[(D.nstar == 3)[oos]]):
     k_, p_, lb_, lp_ = MK.schedule(r_)
     st_args.append(((s_["sig"], s_["corr"], s_["dz"], float(r_["B"]), k_, float(r_["tenor"])),
                     dict(seed=int(r_["mc_seed"]), c=float(r_["coupon"]), pmts=p_,
-                         lz_barr=lb_, lz_pmt=lp_, divlog=s_["divlog"])))
+                         lz_barr=lb_, lz_pmt=lp_, **s_["dkw"])))
     sel.append(int(i_))
 sel = np.array(sel)
 

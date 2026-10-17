@@ -64,15 +64,42 @@ def test_missing_lseg_yield_returns_none():
     assert DV.div_kwargs(["__NO_SUCH__", "^KS200", "^KS200"], T0, TEN, "lseg") is None
 
 
+# 배당을 엔진에 넘기는 모든 모듈. measure_source_switch 만 예외다 —
+# 그 도구의 목적이 이산/연속을 **한 번에 둘 다** 계산해 배당 요인만 분리하는 것이라서다.
+CALLERS = ("module.market", "tools.build_mc_variants", "tools.mc_check_12star",
+           "tools.build_decomp", "tools.build_nb_pricer")
+
+
 def test_every_caller_uses_the_shared_branch():
-    """분기가 또 복사되면 원천 전용 실행이 같은 자리에서 다시 터진다."""
+    """분기가 또 복사되면 원천 전용 실행이 같은 자리에서 다시 터진다.
+
+     노트북 1 은 이 결함으로 두 번 죽었다 — 3단계가 mc_check_12star, 4단계가 build_decomp 에서."""
+    import importlib
     import inspect
-    import tools.build_mc_variants as BMV
-    import tools.mc_check_12star as MC12
-    for mod in (BMV, MC12):
-        src = inspect.getsource(mod)
-        assert "div_kwargs" in src, "{} 가 공용 분기를 쓰지 않는다".format(mod.__name__)
-        assert "DV.build_div(" not in src, "{} 에 배당 분기가 복사돼 있다".format(mod.__name__)
+    for name in CALLERS:
+        src = inspect.getsource(importlib.import_module(name))
+        assert "div_kwargs" in src, "{} 가 공용 분기를 쓰지 않는다".format(name)
+        assert "DV.build_div(" not in src, "{} 에 배당 분기가 복사돼 있다".format(name)
+
+
+def test_state_for_exposes_engine_kwargs():
+    """state_for 를 쓰는 쪽이 divlog 를 직접 꺼내면 lseg 에서 배당이 조용히 사라진다.
+
+     build_nb_viz 의 속도 비교 그림이 실제로 그랬다: 기본값 lseg -> divlog=None -> 배당 0."""
+    import module.market as MK
+    row = MK.dataset().iloc[0]
+    ret = MK.returns()
+    st = MK.state_for(row, ret, MK.calendar(ret))
+    assert set(st["dkw"]) == {"qcont"}
+    assert np.isfinite(st["dkw"]["qcont"]).all()
+
+
+def test_viz_passes_engine_kwargs_not_divlog():
+    import inspect
+    import tools.build_nb_viz as BNV
+    src = inspect.getsource(BNV)
+    assert 'divlog=s_["divlog"]' not in src, "lseg 에서 배당이 사라지는 호출이 남아 있다"
+    assert '**s_["dkw"]' in src
 
 
 def test_mc_check_12star_honors_the_default_source():
