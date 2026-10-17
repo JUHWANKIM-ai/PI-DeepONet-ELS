@@ -145,8 +145,9 @@ for name, path, _, _ in STEPS:
 # 라벨이 생겼으니 데이터셋의 MC 열을 채운다. 차가운 트리에서는 노트북 0 이 먼저 돌아
 # 그 시점에 라벨이 없어 비어 있다 — 빈 라벨 열이 그대로 배포되면 조용히 오용된다.
 import module.data as DA
-if pd.read_csv(fm.dataset("ml"), usecols=["MC"], encoding=DA.CSV_ENC).MC.isna().all():
-    print("데이터셋 MC 열이 비었다 — 라벨로 다시 쓴다 ...", flush=True)
+if DA.datasets_stale():
+    print("데이터셋이 지금 라벨과 다르다 — 다시 쓴다 ...", flush=True)
+    print("  기록 {} -> 라벨 {}".format(DA.dataset_stamp(), BMV.read_stamp(BMV.OUT / BMV.OUT_NAME)))
     DA.build_datasets()
     print("  ml.csv · deeponet.csv 갱신")
 
@@ -237,7 +238,9 @@ cells.append(md("""
 차이가 0 이 아니면 방법론이 조용히 바뀐 것입니다.
 
 `data/cache/mcvar/mc_variants.parquet` 의 `mc_B` 열이 현행 방법론으로 산출한 이론가입니다.
-같은 경로 수(40,000)·같은 공통난수로 다시 매기면 **비트 단위로 같아야** 합니다.
+같은 경로 수(**100,000**, `BMV.NPATH`)·같은 공통난수로 다시 매기면 **비트 단위로 같아야** 합니다.
+경로 수를 하나라도 다르게 주면 난수열이 달라져 비트 단위 일치가 성립하지 않습니다 —
+그래서 상수를 적어 넣지 않고 라벨을 만든 모듈에서 가져옵니다.
 
 종전에는 이 계산이 `tools/mc_discrete_div.py` 의 엔진 복사본으로만 가능했습니다. 지금은
 `mc_engine` 에 커브 콜러블과 배당 드리프트를 파라미터로 올려, 포크 없이 재현됩니다.
@@ -245,12 +248,27 @@ cells.append(md("""
 
 cells.append(code("""
 ref = VAR.loc[S["item"].values, "mc_B"].values
-got = np.array([price(S.iloc[i], n_path=40_000) for i in range(len(S))])
+got = np.array([price(S.iloc[i], n_path=BMV.NPATH) for i in range(len(S))])   # 라벨과 같은 경로 수
 ok = np.isfinite(ref) & np.isfinite(got)
 gap = np.abs(got[ok] - ref[ok]) * FACE
-print(f"대조 {ok.sum()}건 | 최대 차이 {gap.max():.2e}원 | 평균 {gap.mean():.2e}원")
-print("결과:", "일치 — 추적 패키지만으로 현행 방법론이 재현된다" if gap.max() < 1e-6
-      else f"불일치 — 최대 {gap.max():.4f}원, 입력 정의를 다시 확인할 것")
+print(f"대조 {ok.sum()}건 | 경로 {BMV.NPATH:,} | 최대 차이 {gap.max():.2e}원 | 평균 {gap.mean():.2e}원")
+# 아래 결론 절이 "비트 단위로 일치한다" 고 적고 있다. 불일치를 찍고 넘어가면 그 주장이 거짓이 되므로
+# 여기서 멈춘다 — 검증 셀이 통과를 자처하면서 실패를 출력하는 상태를 만들지 않는다.
+assert gap.max() < 1e-6, (
+    f"비트 단위 재현 실패: 최대 {gap.max():.4f}원. 경로 수·배당 소스·가격 계열 중 하나가 "
+    f"라벨 생성 시점과 다르다 (라벨 경로 {BMV.NPATH:,}, 배당 {BMV.DIV}).")
+print("결과: 일치 — 추적 패키지만으로 현행 방법론이 재현된다")
+
+# 비트 단위 일치가 확인된 지금, 라벨 파일에 **출처 스탬프**를 찍는다.
+# 스탬프는 "무엇으로 만든 라벨인가" 를 파일 안에 남겨, 이후 단계가 "파일이 있는가" 대신
+# "낡았는가" 를 물을 수 있게 한다. 위 assert 가 통과했다는 것이 스탬프의 근거다 —
+# 근거 없이 찍으면 그냥 자기 선언이 된다.
+for _p in (MV / "mc_variants.parquet", MV / "mc_variants12.parquet"):
+    if not _p.exists() or BMV.read_stamp(_p) is not None:
+        continue
+    _d = pd.read_parquet(_p)
+    BMV.write_labeled(_d, _p, n_rows=len(_d))
+    print("  스탬프 기록 {} <- {}".format(_p.name, BMV.read_stamp(_p)))
 """))
 
 cells.append(md("""

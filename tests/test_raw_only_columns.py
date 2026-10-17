@@ -84,3 +84,16 @@ def test_infer_raises_when_mc_is_missing():
     """공정가 2단계는 mc 참값이 있어야 한다 — 없으면 NaN 결과 대신 오류."""
     with pytest.raises(ValueError, match="mc"):
         infer.predict_all_from_weights(_fake_D_without_mc(), {})
+
+
+def test_infer_rejects_a_missing_margin_too():
+    """`recent_margin` 이 없으면 거부해야 한다 — mc 가드만으로는 못 막는다.
+
+     fill_anchor 가 mc 를 정본 라벨로 채운 뒤 mc 가드는 **절대 발동하지 않는다**.
+     그런데 recent_margin 은 원천 전용 트리에서 여전히 전부 NaN 이고, 그대로
+     y = mc + rm + resid 와 resid_true 로 흘러들어 조용히 NaN 을 퍼뜨린다."""
+    D = _fake_D_without_mc()
+    D.MC = np.full(len(D.FAIR), 0.95, dtype="float32")     # mc 는 있다
+    D.rm = np.full(len(D.FAIR), np.nan, dtype="float32")   # 마진만 없다
+    with pytest.raises(ValueError, match="recent_margin"):
+        infer.predict_all_from_weights(D, {})

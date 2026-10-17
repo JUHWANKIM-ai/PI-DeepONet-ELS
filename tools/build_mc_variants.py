@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np, pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+import module.mc as MCM
 from module import curve as CV
 from module import dividend as DV
 from module import features as F
@@ -29,6 +30,56 @@ OUT = fm.CACHE / "mcvar"; OUT.mkdir(exist_ok=True)
 NPATH = 100_000              # 방법론 목표 경로 수 (40,000 대비 잡음 1.71배 감소, 편향 변화 없음)
 DIV = os.environ.get("MCVAR_DIV", "lseg")    # 배당 소스: lseg(연속, 기본) | yf(이산, 비교용)
 TAG = "" if DIV == "lseg" else "_" + DIV          # 기본값이 접미사 없는 이름 — 노트북이 그대로 읽는다
+# ---------------- 출처 스탬프 ----------------
+# `mc_variants.parquet` 는 이름이 그대로인 채 의미가 바뀐다 (yf·40k·58,790 -> lseg·100k·58,913).
+# 파일 안에 무엇으로 만든 것인지 적어 두지 않으면 (1) 되돌림이 깨지고 (2) 데이터셋 갱신과
+# (3) 재학습 판단이 "파일이 있는가" 에 의존해 낡은 산출물을 조용히 재사용한다.
+# parquet **메타데이터**에 실어 보낸다 — 열을 늘리면 기존 소비자가 깨진다.
+_STAMP_KEY = b"els_label_stamp"
+
+
+def stamp(n_rows=None):
+    """이 실행이 만든 라벨의 출처. 소비자는 이걸로 '낡음' 을 판단한다."""
+    return {"npath": NPATH, "div": DIV,
+            "px_source": os.environ.get("PX_SOURCE", MCM.PX_SOURCES[1]),
+            "n_rows": -1 if n_rows is None else int(n_rows),
+            "built_at": date.today().isoformat()}
+
+
+def write_labeled(df, path, n_rows=None):
+    """라벨 DataFrame 을 출처 스탬프와 함께 쓴다."""
+    import json
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    t = pa.Table.from_pandas(df, preserve_index=False)
+    meta = dict(t.schema.metadata or {})
+    meta[_STAMP_KEY] = json.dumps(stamp(len(df) if n_rows is None else n_rows)).encode()
+    pq.write_table(t.replace_schema_metadata(meta), str(path))
+
+
+def read_stamp(path):
+    """저장된 출처. 스탬프가 없으면 None (스탬프 도입 이전 파일)."""
+    import json
+    import pyarrow.parquet as pq
+    path = Path(str(path))
+    if not path.exists():
+        return None
+    md = pq.read_schema(str(path)).metadata or {}
+    raw = md.get(_STAMP_KEY)
+    return json.loads(raw.decode()) if raw else None
+
+
+def stale(path, n_rows):
+    """지금 설정으로 다시 만들어야 하는가. 없거나 스탬프가 없거나 다르면 True.
+
+     "파일이 있는가" 대신 "무엇으로 만든 파일인가" 를 묻는다."""
+    got = read_stamp(path)
+    if got is None:
+        return True
+    want = stamp(n_rows)
+    return any(str(got.get(k)) != str(want[k]) for k in ("npath", "div", "px_source", "n_rows"))
+
+
 OUT_NAME = "mc_variants{}.parquet".format(TAG)
 RET = MK.returns()
 KBD = MK.calendar(RET)
@@ -83,7 +134,7 @@ def run_shard(k, N, limit=None):
     R = pd.DataFrame(rows)
     if limit is not None:
         return R, time.time() - t0
-    R.to_parquet(outp)
+    write_labeled(R, outp)
     if part.exists():
         part.unlink()
     print(f"shard {k}/{N} DONE {len(R):,} in {(time.time()-t0)/60:.1f}분", flush=True)
@@ -92,7 +143,7 @@ def run_shard(k, N, limit=None):
 def combine(N):
     R = pd.concat([pd.read_parquet(OUT / f"shard_{k}of{N}{TAG}.parquet") for k in range(N)]).sort_values("i").reset_index(drop=True)
     assert len(R) == len(MK.dataset()) and (R["item"].values == MK.dataset()["item"].values).all(), "행 불일치"
-    R.to_parquet(OUT / OUT_NAME)
+    write_labeled(R, OUT / OUT_NAME)
     print(f"combined {len(R):,} | fail {int(R.get('fail', pd.Series(dtype=object)).notna().sum())} | "
           f"mc_A {R.mc_A.mean():.4f} | mc_B {R.mc_B.mean():.4f} | fair {MK.dataset().fair.mean():.4f}")
     return R
@@ -173,7 +224,7 @@ def run12(limit=None):
     R = pd.DataFrame(rows).sort_values("i").reset_index(drop=True)
     if limit is not None:
         return R, time.time() - t0
-    R.to_parquet(outp)
+    write_labeled(R, outp)
     if part.exists():
         part.unlink()
     print(f"star12 DONE {len(R):,} | fail {int(R.get('fail', pd.Series(dtype=object)).notna().sum())} | "
@@ -201,7 +252,7 @@ def fix():
     for u in ("udl1", "udl2", "udl3"):
         lag = np.maximum(lag, [(d - RET[t][RET[t].index < d].index[-1]).days for t, d in zip(MK.dataset()[u], dts)])
     R["px_lag_days"] = lag.astype(int); R["stale_px"] = lag > STALE_DAYS
-    R.to_parquet(p)
+    write_labeled(R, p)
     ok = R["fail"].isna() & ~R["stale_px"]
     print(f"재계산 {len(bad)}개 → 남은 실패 {int(R['fail'].notna().sum())} | stale_px {int(R.stale_px.sum())} | "
           f"비교 사용 {int(ok.sum()):,}/{len(R):,} | 남은 실패 ⊂ stale_px: {bool((R['fail'].notna() <= R['stale_px']).all())}")

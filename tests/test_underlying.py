@@ -12,6 +12,7 @@
    4. 데이터셋 기초자산 44종이 모두 매핑된다
    5. 상장 전 구간은 비어 있다 (0 으로 채우지 않는다)
 """
+import json
 import os
 import sys
 
@@ -42,10 +43,36 @@ def test_price_returns_none_for_unknown():
     assert UL.price("__NO_SUCH_TICKER__") is None
 
 
-def test_all_dataset_tickers_are_mapped():
-    d = pd.read_parquet(fm.DATA / "els3_dataset.parquet")
-    tks = set(d.udl1) | set(d.udl2) | set(d.udl3)
-    assert [t for t in sorted(tks) if UL.price(t) is None] == []
+# 가격이 없는 기초자산은 **데이터셋에 들어올 수 없다** — build_source 가 "가격이력 없음" 으로
+# 그 상품을 떨어뜨린다. 그래서 데이터셋을 훑는 커버리지 테스트는 동어반복이고 절대 실패하지 않는다.
+# 검사 대상은 **유니버스**(udly_ticker_map.json)여야 한다.
+#
+# 아래는 지금 해결되지 않는 것들이다. 알려진 공백으로 명시해 두고, **새** 공백만 빨간불이 되게 한다.
+#   ^SX7E  EURO STOXX BANKS — master.csv 에 행은 있으나(EU0009658426, 가격 6,863행 + ETF EXX1.DE)
+#          `가격티커(yfinance)` 가 비어 있어 티커로는 찾을 수 없다. DART 공시 219건이 참조하고
+#          데이터셋에는 0건 들어온다. 어댑터가 UDLY_ID 로도 찾게 하면 복구되지만 유니버스가
+#          바뀌므로(지수 1종·상품 219건 추가) 사람 판단이 필요하다.
+KNOWN_UNMAPPED = {"^SX7E"}
+
+
+def test_every_mapped_ticker_in_the_universe_resolves():
+    """유니버스의 티커가 전부 가격으로 해석돼야 한다 — 안 되면 상품이 조용히 사라진다.
+
+     데이터셋이 아니라 **매핑 파일**을 훑는다. 데이터셋을 훑으면 이미 탈락한 것을 볼 수 없다."""
+    m = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
+    tks = sorted({v for v in m.values() if v})
+    bad = {t for t in tks if UL.price(t) is None}
+    assert bad == KNOWN_UNMAPPED, "새로 해석되지 않는 티커: {}".format(sorted(bad - KNOWN_UNMAPPED))
+
+
+def test_known_unmapped_tickers_cost_is_recorded():
+    """알려진 공백이 실제로 상품을 떨어뜨리고 있다는 사실을 수치로 못박는다.
+
+     공백이 저절로 메워졌다면(그 경우 이 테스트가 빨간불) KNOWN_UNMAPPED 에서 지워야 한다."""
+    d = pd.read_parquet(fm.DATA / "els3_dataset.parquet", columns=["udl1", "udl2", "udl3"])
+    for t in KNOWN_UNMAPPED:
+        assert int((d == t).any(axis=1).sum()) == 0, "{} 가 데이터셋에 들어왔다".format(t)
+        assert UL.price(t) is None, "{} 가 이제 해석된다 — KNOWN_UNMAPPED 에서 지워라".format(t)
 
 
 def test_late_listed_ticker_has_no_prices_before_listing():

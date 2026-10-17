@@ -10,6 +10,7 @@
 """
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -94,12 +95,24 @@ def test_state_for_exposes_engine_kwargs():
     assert np.isfinite(st["dkw"]["qcont"]).all()
 
 
-def test_viz_passes_engine_kwargs_not_divlog():
-    import inspect
-    import tools.build_nb_viz as BNV
-    src = inspect.getsource(BNV)
-    assert 'divlog=s_["divlog"]' not in src, "lseg 에서 배당이 사라지는 호출이 남아 있다"
-    assert '**s_["dkw"]' in src
+def test_no_caller_reads_divlog_out_of_state_for():
+    """`state_for` 결과에서 divlog 를 직접 꺼내면 lseg 기본값에서 배당이 조용히 사라진다.
+
+     한 파일만 이름으로 막으면 다른 파일이 빠진다 — build_nb_viz 를 고친 뒤에도
+     tests/verify_engine_variant_b.py 가 같은 실수를 남기고 있었다. 저장소 전체를 쓸어본다."""
+    import re
+    root = Path(__file__).resolve().parent.parent
+    bad = []
+    pats = ["tools/*.py", "module/*.py", "tests/*.py", "scripts/*.py"]
+    files = [f for pat in pats for f in root.glob(pat)]
+    for f in files:
+        txt = f.read_text(encoding="utf-8", errors="replace")
+        if "state_for" not in txt:
+            continue
+        # st["divlog"] / s_["divlog"] 처럼 state_for 결과에서 divlog 를 꺼내 엔진에 넘기는 패턴
+        for m in re.finditer(r"""divlog\s*=\s*\w+\[["']divlog["']\]""", txt):
+            bad.append("{}: {}".format(f.name, m.group(0)))
+    assert bad == [], "state_for 의 divlog 를 직접 넘기는 호출부: {}".format(bad)
 
 
 def test_mc_check_12star_honors_the_default_source():

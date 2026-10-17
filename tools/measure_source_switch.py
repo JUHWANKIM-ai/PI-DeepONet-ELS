@@ -16,6 +16,8 @@
 import sys
 from pathlib import Path
 
+import os
+
 import numpy as np
 import pandas as pd
 
@@ -51,9 +53,22 @@ def _inputs(rets, dt, cal):
 
 
 def measure(nprod=200):
-    """요인별 영향 표. 지수전용과 개별회사포함을 절반씩 담는다."""
+    """요인별 영향 표. 지수전용과 개별회사포함을 절반씩 담는다.
+
+     **구 계열은 PX_SOURCE=cache 로 못박아 읽는다.** 이 도구의 존재 이유가 구/신 가격계열을
+     한 번에 둘 다 매겨 요인을 분리하는 것이다. PX_SOURCE 기본값이 cache -> underlying 으로
+     바뀐 뒤 MK.returns() 가 **신** 계열을 돌려주게 됐고, 그러면 mc_base == mc_px 가 되어
+     측정이 통째로 공허해진다 (px_mad = 0.00). 실패 방향이 '통과' 라서 눈에 띄지 않는다."""
     df = MK.dataset()
-    RET = MK.returns()
+    prev = os.environ.get("PX_SOURCE")
+    os.environ["PX_SOURCE"] = "cache"          # 구 계열 = 배당 역조정 px_* 캐시
+    try:
+        RET = MK.returns()
+    finally:
+        if prev is None:
+            os.environ.pop("PX_SOURCE", None)
+        else:
+            os.environ["PX_SOURCE"] = prev
     cal = MK.calendar(RET)
     idx_only = df.udl1.str.startswith("^") & df.udl2.str.startswith("^") & df.udl3.str.startswith("^")
     rng = np.random.default_rng(0)

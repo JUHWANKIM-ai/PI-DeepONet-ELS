@@ -53,8 +53,11 @@ NOISE40, NOISE100 = 6.20, 3.62      # 40만 경로를 준참값으로 한 평균
 EXP_MAD = float(np.hypot(NOISE40, NOISE100))   # 독립 두 추정의 기대 평균|차이| = 7.18원
 IMPACT = "source_switch_impact.csv"            # Task 1 의 공통난수 측정 (구본 스냅샷)
 METRICS = ("R2", "MAPE", "MAE")                # 모델 성능 재현을 재는 지표
-COLS = ["subset", "n", "n_cmp", "n_only_new", "mc_corr", "mc_mad", "mc_mad_exp", "mc_bias",
-        "px_n", "px_mad", "px_bias", "r2_old", "r2_new", "mape_old", "mape_new"]
+COLS = ["subset", "n", "n_cmp", "n_only_new", "n_only_old", "mc_corr", "mc_mad", "mc_mad_se",
+        "mc_mad_exp", "mc_bias", "px_n", "px_mad", "px_se", "px_hi", "px_bias",
+        "r2_old", "r2_new", "mape_old", "mape_new", "frozen"]
+FIXTURE = ROOT / "tests" / "fixtures" / "raw_run_verdict.json"   # 기준선 삭제 후의 유일한 근거
+BOOT = 2000                     # px_mad 신뢰구간용 부트스트랩 반복 (분포가 우측으로 길다)
 
 
 def _subset_of(row):
@@ -83,22 +86,86 @@ def px_effect():
      나란히 매긴 결과를 읽는다. 파일이 없으면 전부 nan."""
     p = BASE / "statistics" / IMPACT
     if not p.exists():
-        return {}
+        d = _fixture()
+        if d is None:
+            return {}
+        return {s: (g["n"], g["mad"], g["bias"],
+                    np.nan if g["se"] is None else g["se"],
+                    np.nan if g["hi"] is None else g["hi"])
+                for s, g in d["px_effect"].items()}
     S = pd.read_csv(p)
     d = pd.read_parquet(fm.DATA / "els3_dataset.parquet",
                         columns=["item", "udl1", "udl2", "udl3"]).set_index("item")
     S = S.join(d, on="item")
     S["subset"] = [_subset_of(r) for _, r in S.iterrows()]
     e = S.mc_px - S.mc_base
-    return {s: (len(g), float(e[g.index].abs().mean()), float(e[g.index].mean()))
-            for s, g in S.groupby("subset")}
+    out = {}
+    rng = np.random.default_rng(0)
+    for sub_, g in S.groupby("subset"):
+        a = e[g.index].abs().to_numpy(float)
+        hi = np.nan
+        if len(a) > 2:
+            # 분포가 우측으로 길다(지수전용에서도 최대 135원). 정규 SE 는 구간을 과소추정하므로
+            # 평균의 백분위 부트스트랩 상한(95% 단측)을 함께 낸다.
+            bs = a[rng.integers(0, len(a), size=(BOOT, len(a)))].mean(axis=1)
+            hi = float(np.percentile(bs, 95))
+        out[sub_] = (len(a), float(a.mean()), float(e[g.index].mean()),
+                     float(a.std(ddof=1) / np.sqrt(len(a))) if len(a) > 1 else np.nan, hi)
+    return out
+
+
+def _fixture():
+    """고정된 판정 근거. 없으면 None."""
+    import json
+    if not FIXTURE.exists():
+        return None
+    return json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+
+def _frozen_table():
+    """기준선 스냅샷이 사라진 뒤의 대조표 — tools/freeze_verdict.py 가 고정한 값에서 만든다.
+
+     재계산이 아니라 **기록된 판정 근거**다. frozen 열로 그 사실을 표에 남긴다."""
+    d = _fixture()
+    if d is None:
+        raise FileNotFoundError(
+            "기준선 스냅샷({})도 고정 근거({})도 없다 — 판정을 재구성할 수 없다".format(BASE, FIXTURE))
+    mo = d["model_old"]
+    r2_n, mp_n = _level(fm.stat(LEVEL.replace(".csv", "")))
+    rows = []
+    for sub_ in ("TIGHT", "IDX", "OTHER"):
+        px, lb = d["px_effect"][sub_], d["label_summary"][sub_]
+        rows.append(dict(
+            subset=sub_, n=-1, n_cmp=lb["n_cmp"], n_only_new=lb["n_only_new"],
+            n_only_old=lb["n_only_old"], mc_corr=lb["mc_corr"], mc_mad=lb["mc_mad"],
+            mc_mad_se=lb["mc_mad_se"], mc_mad_exp=EXP_MAD, mc_bias=lb["mc_bias"],
+            px_n=px["n"], px_mad=px["mad"],
+            px_se=np.nan if px["se"] is None else px["se"],
+            px_hi=np.nan if px["hi"] is None else px["hi"], px_bias=px["bias"],
+            r2_old=mo["R2"]["value"], r2_new=r2_n,
+            mape_old=mo["MAPE"]["value"], mape_new=mp_n, frozen=True))
+    return pd.DataFrame(rows)[COLS]
 
 
 def compare():
     """세 부분집합의 MC 라벨 대조표. 열은 COLS 로 고정."""
+    if not (BASE / "cache" / "mcvar" / OLD_LABEL).exists():
+        return _frozen_table()          # 스냅샷이 삭제됐다 — 고정 근거로 판정한다
     d = pd.read_parquet(fm.DATA / "els3_dataset.parquet",
                         columns=["item", "udl1", "udl2", "udl3"])
     d["subset"] = d.apply(_subset_of, axis=1)
+
+    # **구본 데이터셋도 합집합에 넣는다.** 신본 기준으로 조인하면 신본에서 사라진 상품을
+    # 구조적으로 볼 수 없다 — 이 브랜치가 막으려는 위험이 바로 조용한 상품 손실이다.
+    od = pd.read_parquet(BASE / "datasets" / "els3_dataset.parquet",
+                         columns=["item", "udl1", "udl2", "udl3"])
+    d["in_new"] = True
+    lost = od[~od.item.isin(set(d.item))].copy()
+    if len(lost):
+        lost["subset"] = lost.apply(_subset_of, axis=1)
+        lost["in_new"] = False
+        d = pd.concat([d, lost], ignore_index=True)
+    d["in_old"] = d.item.isin(set(od.item))
 
     new = pd.read_parquet(fm.CACHE / "mcvar" / "mc_variants.parquet",
                           columns=["item", "mc_B"]).set_index("item").mc_B
@@ -115,37 +182,79 @@ def compare():
         g = J[J.subset == s]
         both = g.dropna(subset=["new", "old"])
         dif = (both.new - both.old) * FACE
-        pn, pm, pb = PX.get(s, (0, np.nan, np.nan))
+        pn, pm, pb, pse, phi = PX.get(s, (0, np.nan, np.nan, np.nan, np.nan))
+        ad = dif.abs()
         rows.append(dict(
-            subset=s, n=len(g), n_cmp=len(both),
-            n_only_new=int(g.new.notna().sum() - len(both)),
+            subset=s, n=int(g.in_new.sum()), n_cmp=len(both),
+            # 신규/손실은 **데이터셋 소속**으로 센다. 라벨 결측과 섞으면 수가 맞지 않는다
+            # (종전에는 구본 라벨이 NaN 이던 18행까지 더해 141 로 나왔다. 실제 유입은 123).
+            n_only_new=int((g.in_new & ~g.in_old).sum()),
+            n_only_old=int((~g.in_new & g.in_old).sum()),
             mc_corr=float(both.new.corr(both.old)) if len(both) > 2 else np.nan,
-            mc_mad=float(dif.abs().mean()) if len(both) else np.nan,
+            mc_mad=float(ad.mean()) if len(both) else np.nan,
+            mc_mad_se=float(ad.std(ddof=1) / np.sqrt(len(ad))) if len(ad) > 1 else np.nan,
             mc_mad_exp=EXP_MAD,
             mc_bias=float(dif.mean()) if len(both) else np.nan,
-            px_n=pn, px_mad=pm, px_bias=pb,
-            r2_old=r2_o, r2_new=r2_n, mape_old=mp_o, mape_new=mp_n))
+            px_n=pn, px_mad=pm, px_se=pse, px_hi=phi, px_bias=pb,
+            r2_old=r2_o, r2_new=r2_n, mape_old=mp_o, mape_new=mp_n, frozen=False))
     return pd.DataFrame(rows)[COLS]
 
 
 GATE = {"TIGHT": 5.0, "IDX": 10.0}      # px_mad 상한 (원). 계획서의 판정선을 그대로 쓴다.
 
 
+def _residual_note(r):
+    """라벨차와 잡음기대의 차이를 설명하거나 미설명분으로 밝힌다.
+
+     EXP_MAD 의 두 입력은 40만 경로 **준참값 대비** 측정치라 기준 자체의 분산을 이미 품고 있다.
+     따라서 EXP_MAD 는 기대 격차를 과대추정하고, 아래 미설명분은 **하한**이다.
+     또 EXP_MAD 는 스칼라 하나인데 MC 잡음은 가격 분산에 비례하므로 OTHER 에서는 더 크다 —
+     부분집합별로 다시 재지 않았으므로 TIGHT 밖에서는 참고치로만 본다."""
+    resid = r.mc_mad - r.mc_mad_exp
+    if not np.isfinite(r.mc_mad_se) or r.mc_mad_se <= 0:
+        return "라벨차 {:.2f} vs 잡음기대 {:.2f}".format(r.mc_mad, r.mc_mad_exp)
+    z = resid / r.mc_mad_se
+    if abs(z) <= 3:
+        return "라벨차 {:.2f}+-{:.2f} ~ 잡음기대 {:.2f} ({:.1f} SE)".format(
+            r.mc_mad, r.mc_mad_se, r.mc_mad_exp, abs(z))
+    return "라벨차 {:.2f}+-{:.2f} vs 잡음기대 {:.2f} -> {:+.2f}원 미설명 ({:.0f} SE, 하한)".format(
+        r.mc_mad, r.mc_mad_se, r.mc_mad_exp, resid, abs(z))
+
+
 def verdict(T):
-    """부분집합별 (판정, 설명). OTHER 는 기준 없음.
+    """부분집합별 (판정, 설명). True 통과 · None 미결론/기준없음 · False 미달.
 
      판정량은 px_mad — 공통난수로 MC 잡음이 상쇄된 가격계열 단독 효과다.
-     mc_mad 는 구본·신본이 공통난수가 아니라 판정에 쓸 수 없고, 설명에 참고로만 붙인다."""
+     mc_mad 는 구본·신본이 공통난수가 아니라 판정에 쓸 수 없고, 설명에 참고로만 붙인다.
+
+     **점추정이 아니라 구간으로 판정한다.** px_mad 는 200건 표본(TIGHT 11 · IDX 89)의
+     평균이므로 표본오차가 있다. 95% 단측 부트스트랩 상한(px_hi)이 기준을 넘으면 '통과' 가
+     아니라 **미결론**이다 — 점추정만 보면 동전던지기를 통과로 적게 된다.
+
+     **기준선의 유래에 주의.** 5/10원은 계획서가 mc_mad(잡음 포함)에 대해 "10만 경로 잡음
+     3.62원의 약 1.4배" 로 잡은 값이다. px_mad 는 공통난수로 잡음이 상쇄된 **계통 편차**이므로
+     그 근거가 그대로 옮겨오지 않는다. TIGHT(0.10원, 기준의 1/50)는 어떤 기준을 써도 통과지만,
+     IDX(8.15원)는 기준 자체를 다시 유도해야 결론을 낼 수 있다."""
     out = {}
     for _, r in T.iterrows():
+        note = _residual_note(r)
         if r.subset not in GATE:
-            out[r.subset] = (None, "기준 없음 — 가격계열 {:.2f}원 (라벨차 {:.2f})".format(
-                r.px_mad, r.mc_mad))
+            out[r.subset] = (None, "기준 없음 — 가격계열 {:.2f}원 | {}".format(r.px_mad, note))
             continue
         m_max = GATE[r.subset]
-        ok = bool(np.isfinite(r.px_mad) and r.px_mad <= m_max)
-        out[r.subset] = (ok, "가격계열 {:.2f} <= {}원 (n={:.0f}) | 라벨차 {:.2f} ~ 잡음기대 {:.2f}".format(
-            r.px_mad, m_max, r.px_n, r.mc_mad, r.mc_mad_exp))
+        if not np.isfinite(r.px_mad):
+            out[r.subset] = (False, "가격계열을 재지 못했다 | {}".format(note))
+            continue
+        hi = r.px_hi if np.isfinite(r.px_hi) else r.px_mad
+        if hi <= m_max:
+            ok, how = True, "상한 {:.2f} <= {}원".format(hi, m_max)
+        elif r.px_mad <= m_max:
+            ok, how = None, "점추정 {:.2f} <= {}원 이나 상한 {:.2f} 초과 — **미결론**".format(
+                r.px_mad, m_max, hi)
+        else:
+            ok, how = False, "점추정 {:.2f} > {}원".format(r.px_mad, m_max)
+        out[r.subset] = (ok, "가격계열 {:.2f}+-{:.2f} (n={:.0f}) | {} | {}".format(
+            r.px_mad, r.px_se, r.px_n, how, note))
     return out
 
 
@@ -166,18 +275,40 @@ def model_verdict():
      실측에서 신본 MAPE_se(0.0378)가 구본(0.0155)의 2.4배라 차이가 크다 —
      한쪽만 쓰면 '밖', 결합하면 0.84 SE 로 '안' 이다. mc_mad 게이트와 같은 종류의 오류다.
 
-     z = (신본 - 구본) / hypot(구본 SE, 신본 SE). |z| <= 2 면 재현으로 본다."""
+     z = (신본 - 구본) / hypot(구본 SE, 신본 SE).
+
+     **|z| <= 2 는 "구별되지 않는다" 이지 "같다" 가 아니다.** 시드 5개짜리 두 표본이라
+     검정력이 낮다 — 검출 가능한 최소 차이(2 x 결합 SE)를 설명에 함께 적는다. R2 의 경우
+     그 한계가 0.014 인데 실측 하락은 0.0064 로, **관측된 하락의 두 배**가 검출 한계다.
+     그러니 "재현" 은 "학습 난수 변동과 구별되지 않는다" 로 읽어야 한다.
+
+     한 가지 더: 시드 SE 는 **학습 난수**만 재고, 라벨 교체는 다섯 시드에 공통인 고정효과다.
+     즉 이 검정은 검정 대상에 구조적으로 눈을 감는다. 그래서 하락 **방향**도 함께 보고한다 —
+     10만 경로 라벨은 4만보다 덜 시끄러우므로 달성 가능한 R2 는 올라야 하는데 떨어졌다.
+     구별 불가라도 열린 항목이다."""
     ro = _all_row(BASE / "statistics" / LEVEL)
+    if ro is None:
+        d = _fixture()
+        if d is not None:
+            mo = d["model_old"]
+            ro = pd.Series({k: v for m in METRICS
+                            for k, v in ((m, mo[m]["value"]), (m + "_se", mo[m]["se"]))})
     rn = _all_row(fm.stat(LEVEL.replace(".csv", "")))
+    BETTER_IS_UP = {"R2": True, "MAPE": False, "MAE": False}   # 라벨 잡음이 줄면 기대되는 방향
     out = {}
     for m in METRICS:
         if ro is None or rn is None:
             out[m] = (False, np.nan, "성능 표가 없다")
             continue
         se = float(np.hypot(ro[m + "_se"], rn[m + "_se"]))
-        z = float((rn[m] - ro[m]) / se) if se > 0 else np.nan
-        out[m] = (bool(abs(z) <= 2.0), z, "{:.4f}+-{:.4f} -> {:.4f}+-{:.4f} | {:+.4f} = {:.2f} SE".format(
-            ro[m], ro[m + "_se"], rn[m], rn[m + "_se"], rn[m] - ro[m], abs(z)))
+        d = float(rn[m] - ro[m])
+        z = d / se if se > 0 else np.nan
+        worse = (d < 0) if BETTER_IS_UP[m] else (d > 0)
+        note = " | 방향: 예상과 반대(라벨 잡음이 줄었는데 나빠졌다)" if worse else ""
+        out[m] = (bool(abs(z) <= 2.0), z,
+                  "{:.4f}+-{:.4f} -> {:.4f}+-{:.4f} | {:+.4f} = {:.2f} SE "
+                  "| 검출한계 {:.4f}{}".format(
+                      ro[m], ro[m + "_se"], rn[m], rn[m + "_se"], d, abs(z), 2 * se, note))
     return out
 
 

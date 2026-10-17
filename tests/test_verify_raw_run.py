@@ -59,11 +59,34 @@ def test_compare_only_uses_items_present_in_both():
 
 
 @needs_baseline
+def test_compare_counts_products_lost_as_well_as_gained():
+    """**구본에만 있던 상품**도 세야 한다 — 이 브랜치가 막으려는 위험이 바로 조용한 상품 손실이다.
+
+     종전 compare() 는 신본 데이터셋을 기준으로 구본을 조인해서, 신본에서 사라진 상품을
+     구조적으로 볼 수 없었다. 실측 0 이지만 0 임을 **보여야** 의미가 있다."""
+    T = compare()
+    assert "n_only_old" in T.columns
+    assert T.n_only_old.sum() == 0, "구본에만 있는 상품이 생겼다"
+
+
+@needs_baseline
+def test_only_new_counts_dataset_membership_not_label_presence():
+    """n_only_new 는 '새로 들어온 상품' 이어야 한다 — 라벨 결측과 섞으면 수가 맞지 않는다.
+
+     종전에는 구본 라벨이 NaN 이던 18행까지 더해 141 로 나왔는데, 실제 신규 유입은 123 이다."""
+    T = compare()
+    o = pd.read_parquet(BASE / "datasets" / "els3_dataset.parquet", columns=["item"])
+    n = pd.read_parquet(fm.DATA / "els3_dataset.parquet", columns=["item"])
+    assert T.n_only_new.sum() == len(set(n.item) - set(o.item)) == 123
+
+
+@needs_baseline
 def test_compare_columns_are_pinned():
     T = compare()
-    assert list(T.columns) == ["subset", "n", "n_cmp", "n_only_new", "mc_corr", "mc_mad",
-                               "mc_mad_exp", "mc_bias", "px_n", "px_mad", "px_bias",
-                               "r2_old", "r2_new", "mape_old", "mape_new"]
+    assert list(T.columns) == ["subset", "n", "n_cmp", "n_only_new", "n_only_old", "mc_corr",
+                               "mc_mad", "mc_mad_se", "mc_mad_exp", "mc_bias",
+                               "px_n", "px_mad", "px_se", "px_hi", "px_bias",
+                               "r2_old", "r2_new", "mape_old", "mape_new", "frozen"]
 
 
 @needs_baseline
@@ -94,9 +117,36 @@ def test_verdict_judges_on_px_mad_not_label_diff():
     T = compare()
     V = verdict(T)
     assert set(V) == {"TIGHT", "IDX", "OTHER"}
-    assert V["TIGHT"][0] is True                                # 0.10원 << 5원
+    assert V["TIGHT"][0] is True                                # 0.10 +- 0.06, 상한도 5원 밑
     assert V["OTHER"][0] is None                                # 기준 없음
     assert set(GATE) == {"TIGHT", "IDX"}
+
+
+@needs_baseline
+def test_verdict_uses_the_interval_not_the_point_estimate():
+    """점추정이 기준 밑이어도 구간 상한이 넘으면 '통과' 가 아니다.
+
+     IDX 는 px_mad 8.15 +- 1.67 (n=89) 로 점추정은 10원 밑이지만 95% 단측 상한이 10원을
+     넘는다. 분포가 우측으로 길어(최대 135원) 정규 SE 로도 과소추정이다 — 동전던지기를
+     '통과' 로 적으면 안 된다."""
+    T = compare().set_index("subset")
+    V = verdict(compare())
+    assert T.at["IDX", "px_mad"] < GATE["IDX"] < T.at["IDX", "px_hi"]
+    assert V["IDX"][0] is None, "구간 상한이 기준을 넘는데 통과로 판정했다"
+
+
+@needs_baseline
+def test_label_gap_residual_is_reported_not_explained_away():
+    """mc_mad 와 잡음기대의 차이는 SE 에 비해 크다 — '대략 일치' 로 뭉개면 안 된다.
+
+     TIGHT: mc_mad 8.33 (n_cmp 6,659, SE ~0.1) vs EXP_MAD 7.18 -> 1.15원이 설명되지 않는다.
+     게다가 EXP_MAD 의 두 입력은 40만 경로 준참값 대비 측정치라 기준 자체의 분산을 이미
+     품고 있어 기대값을 **과대**추정한다. 즉 미설명분은 하한이다."""
+    T = compare().set_index("subset")
+    r = T.loc["TIGHT"]
+    resid = r.mc_mad - r.mc_mad_exp
+    assert resid > 3 * r.mc_mad_se                      # 잡음으로 설명되지 않는다
+    assert "미설명" in verdict(compare())["TIGHT"][1]
 
 
 @needs_models
@@ -105,6 +155,28 @@ def test_weight_inventory_matches_baseline():
     old = {p.name for p in (BASE / "models").glob("*")}
     new = {p.name for p in (fm.RESULT / "models").glob("*")}
     assert new == old
+
+
+@needs_baseline
+def test_model_verdict_reports_its_own_power():
+    """|z| <= 2 는 '구별되지 않는다' 이지 '같다' 가 아니다 — 검출 가능한 최소 차이를 밝혀야 한다.
+
+     시드 5개 x 2 로 결합 SE 가 R2 0.0072 이므로 이 검정은 0.014 보다 작은 하락을 잡지 못한다.
+     실측 하락이 0.0064 이므로 **관측된 하락의 두 배**가 검출 한계다. 게다가 시드 SE 는 학습
+     난수만 재고 라벨 교체는 다섯 시드에 공통인 고정효과라, 검정 대상에 구조적으로 눈을 감는다."""
+    V = model_verdict()
+    for m, (ok, z, why) in V.items():
+        assert "검출한계" in why, "검정력을 밝히지 않는다: {}".format(why)
+    assert all(v[0] for v in V.values())
+
+
+@needs_baseline
+def test_model_verdict_flags_the_direction_anomaly():
+    """R2 가 **떨어진** 것은 예측 방향과 반대다 — 10만 경로 라벨은 4만보다 덜 시끄러워
+     달성 가능한 R2 가 올라야 한다. 구별 불가라도 열린 항목으로 남겨야 한다."""
+    _, z, why = model_verdict()["R2"]
+    assert z < 0                                    # 신본이 낮다
+    assert "예상과 반대" in why
 
 
 @needs_baseline

@@ -48,3 +48,14 @@ def test_index_only_products_have_unchanged_sigma():
     idx = T[T.is_index_only]
     assert len(idx) > 0
     assert (idx.sig_new - idx.sig_old).abs().max() < 0.005
+
+
+def test_measurement_is_not_vacuous(T5):
+    """구 계열과 신 계열이 실제로 달라야 요인 분리가 의미를 갖는다.
+
+     `PX_SOURCE` 기본값이 cache -> underlying 으로 바뀐 뒤, 이 도구의 '구 계열'(MK.returns())이
+     신 계열과 같아져 측정이 통째로 공허해졌다. 그러면 px_mad 가 0.00 이 되고
+     tools/verify_raw_run.verdict() 가 **공허한 측정 위에서 '통과'** 를 찍는다 —
+     실패 방향이 '통과' 라서 눈에 띄지 않는다."""
+    assert (T5.sig_old != T5.sig_new).any(), "구/신 변동성이 전부 같다 — 구 계열을 못 읽고 있다"
+    assert (T5.mc_base != T5.mc_px).any(), "가격계열 교체 효과가 전부 0 이다 — 측정이 공허하다"

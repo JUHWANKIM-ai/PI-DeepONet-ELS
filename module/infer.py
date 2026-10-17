@@ -68,10 +68,16 @@ def predict_all_from_weights(D, cfg):
      2단계 하이브리드: y = MC_hat + recent_margin + resid, y_true = FAIR,
                       resid_true = FAIR − MC_hat − recent_margin, mc_true = MC(이론가 참값)."""
     FAIR, MC, rm = D.FAIR, D.MC, D.rm
-    if not np.isfinite(np.asarray(MC, dtype="float64")).any():
-        raise ValueError(
-            "mc 참값이 없다 — 공정가 2단계(FAIR = MC_hat + recent_margin + resid) 경로는 "
-            "module.mc_shards 산출물이 있어야 한다. 원천 전용 재현에서는 이 경로를 쓰지 않는다.")
+    # 공정가 2단계는 세 입력이 다 있어야 한다. **두 열을 따로 검사한다** —
+    # module.data.fill_anchor 가 mc 를 정본 라벨로 채우므로 mc 가드만 두면 그 가드는
+    # 영영 발동하지 않고, 원천 전용 트리에서 여전히 비어 있는 recent_margin 이
+    # y = mc + rm + resid 와 resid_true 로 흘러들어 조용히 NaN 을 퍼뜨린다.
+    for nm, v in (("mc", MC), ("recent_margin", rm)):
+        if not np.isfinite(np.asarray(v, dtype="float64")).any():
+            raise ValueError(
+                "{} 참값이 없다 — 공정가 2단계(FAIR = MC_hat + recent_margin + resid) 경로는 "
+                "module.mc_shards 산출물이 있어야 한다. 원천 전용 재현에서는 이 경로를 쓰지 "
+                "않는다.".format(nm))
     out = {}
     # 직접(단일 단계) 벤치마크
     for name in _DIRECT:

@@ -116,6 +116,48 @@ def _label_path():
     return MV.label_path()
 
 
+STAMP_FILE = ".dataset_label_stamp.json"   # 데이터셋이 어떤 라벨로 채워졌는지
+
+
+def dataset_stamp():
+    """데이터셋이 채워진 라벨의 출처. 기록이 없으면 None."""
+    import json
+    p = fm.DATA / STAMP_FILE
+    if not Path(str(p)).exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def record_dataset_stamp(st):
+    """데이터셋을 채운 라벨의 출처를 남긴다.
+
+     라벨에 스탬프가 없으면(스탬프 도입 이전 파일) `{"unstamped": true}` 를 남긴다 —
+     "출처를 모르는 라벨로 채웠다" 는 것도 정보다. datasets_stale 은 이 경우 판단을 보류한다."""
+    import json
+    body = {"unstamped": True} if st is None else st
+    (fm.DATA / STAMP_FILE).write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+
+
+def datasets_stale():
+    """지금 라벨로 데이터셋을 다시 써야 하는가.
+
+     종전 조건은 "MC 가 전부 NaN" 이었다. 그러면 라벨이 **바뀐** 경우는 걸리지 않고
+     낡은 라벨이 조용히 배포된다 — 이 브랜치가 다른 곳에서 고치고 있는 바로 그 결함이다."""
+    from . import mcvar  # noqa: F401  (경로 해석용 늦은 import)
+    import tools.build_mc_variants as BMV
+    want = BMV.read_stamp(_label_path())
+    if want is None:
+        return False                      # 라벨이 없거나 스탬프 이전 파일 — 판단 보류
+    got = dataset_stamp()
+    if got is None:
+        return True
+    keys = ("npath", "div", "px_source", "n_rows")
+    return any(str(got.get(k)) != str(want.get(k)) for k in keys)
+
+
 def fill_anchor(df):
     """`mc` 열의 빈 자리를 정본 라벨(`mc_B`)로 채우고 채운 행 수를 돌려준다.
 
@@ -153,7 +195,9 @@ def build_datasets():
         src_col = INV.get(c, c)
         if src_col not in df.columns:
             df[src_col] = np.nan
-    fill_anchor(df)          # 라벨 파일이 있으면 MC 열을 채운다 (없으면 NaN 으로 남는다)
+    if fill_anchor(df):      # 라벨 파일이 있으면 MC 열을 채운다 (없으면 NaN 으로 남는다)
+        import tools.build_mc_variants as _BMV
+        record_dataset_stamp(_BMV.read_stamp(_label_path()))   # 어떤 라벨로 채웠는지 남긴다
 
     def write(name, new_cols):
         new_cols = list(dict.fromkeys(new_cols))

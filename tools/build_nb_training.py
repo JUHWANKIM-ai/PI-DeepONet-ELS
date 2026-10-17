@@ -58,7 +58,7 @@ cells.append(md("""
 """))
 
 cells.append(code("""
-import copy, os, time, yaml
+import copy, json, os, time, yaml
 from pathlib import Path
 
 import numpy as np
@@ -70,8 +70,27 @@ from module import star as ST
 from module import train as TR
 
 SEEDS = range(5)                 # 시드 수. 빠르게 확인하려면 range(1)
-RETRAIN = os.environ.get("RETRAIN", "0") == "1"   # 기존 가중치를 무시하고 다시 학습
-                                 # 라벨이 바뀌면 저장된 가중치는 낡는다 — RETRAIN=1 로 돌린다
+# 라벨이 바뀌면 저장된 가중치는 낡는다. "파일이 있는가" 로 판단하면 낡은 가중치를 조용히
+# 재사용하므로, 라벨의 **출처 스탬프**와 가중치가 학습된 스탬프를 비교해 자동으로 결정한다.
+# RETRAIN=1 로 강제할 수도 있다.
+from tools import build_mc_variants as BMV
+WSTAMP = MDIR / ".trained_label_stamp.json"
+
+
+def weights_stale():
+    \"\"\"지금 라벨로 다시 학습해야 하는가.\"\"\"
+    want = BMV.read_stamp(BMV.OUT / BMV.OUT_NAME)
+    if want is None:
+        return False
+    if not WSTAMP.exists():
+        return any(MDIR.glob("*"))        # 가중치는 있는데 어떤 라벨로 학습했는지 모른다
+    got = json.loads(WSTAMP.read_text(encoding="utf-8"))
+    return any(str(got.get(k)) != str(want.get(k))
+               for k in ("npath", "div", "px_source", "n_rows"))
+
+
+RETRAIN = os.environ.get("RETRAIN", "0") == "1" or weights_stale()
+print("재학습:", RETRAIN, "| 라벨 스탬프", BMV.read_stamp(BMV.OUT / BMV.OUT_NAME))
 MONO = dict(fixed_w=1.0, kinds=["lz_pmt"], margin_krw=8.0)   # 단조손실 설정
 FACE = 10000
 MDIR = fm.RESULT / "models"; MDIR.mkdir(parents=True, exist_ok=True)
@@ -230,6 +249,8 @@ train_variant("ball_fm",  resid=True,  feat=True,  only3=False)
 train_variant("ball3_fm", resid=True,  feat=True,  only3=True)
 train_xgb("ball_xgb",  only3=False)
 train_xgb("ball3_xgb", only3=True)
+WSTAMP.write_text(json.dumps(BMV.read_stamp(BMV.OUT / BMV.OUT_NAME) or {}, ensure_ascii=False),
+                  encoding="utf-8")        # 어떤 라벨로 학습했는지 남긴다
 print("저장 위치:", MDIR, "| 가중치", len(list(MDIR.glob("*"))), "개")
 """))
 
