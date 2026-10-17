@@ -6,7 +6,7 @@
 import numpy as np
 import torch
 
-from .data import to_tensor, zstats, znorm
+from .data import to_tensor, zstats, znorm, ZCLIP
 from .networks import CurveOperatorV2, CurveOperatorMoE
 
 
@@ -184,7 +184,7 @@ def train_curve_mono(D, cfg, tr, te, target, va=None, save_path=None, target_rat
     Un = to_tensor(znorm(D.CURVE, um, us), dev); Vn = to_tensor(znorm(D.VC, vm, vs), dev)
     Cn = to_tensor(znorm(D.CON, cm, cs), dev)
     cmt, cst = to_tensor(cm, dev), to_tensor(cs, dev)
-    net = CurveOperatorV2(Vn.shape[1], Cn.shape[1], Pdim).to(dev); opt = _opt(net, cfg)
+    net = CurveOperatorV2(Vn.shape[1], Cn.shape[1], P).to(dev); opt = _opt(net, cfg)
     ym, ysd = float(target[tr].mean()), float(target[tr].std() + 1e-8)
     Y = to_tensor((target - ym) / ysd, dev)
     ntr = len(tr); trt = torch.tensor(tr, device=dev)
@@ -228,7 +228,7 @@ def train_curve_mono(D, cfg, tr, te, target, va=None, save_path=None, target_rat
     if save_path:
         import os
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        torch.save({"state": net.state_dict(), "P": Pdim, "nvc": Vn.shape[1], "ncon": Cn.shape[1],
+        torch.save({"state": net.state_dict(), "P": P, "nvc": Vn.shape[1], "ncon": Cn.shape[1],
                     "um": um, "us": us, "vm": vm, "vs": vs, "cm": cm, "cs": cs, "ym": ym, "ysd": ysd,
                     "mono_weight": w_mono, "target_ratio": target_ratio, "kinds": list(KS)},
                    save_path if save_path.endswith(".pt") else save_path + ".pt")

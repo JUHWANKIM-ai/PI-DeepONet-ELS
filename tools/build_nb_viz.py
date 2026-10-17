@@ -1,0 +1,603 @@
+# -*- coding: utf-8 -*-
+"""3_visualization.ipynb 생성 — 4개 범주로 정리한 그림 일체.
+
+   범주 1  스타별(1·2·3) 종합 R²·MAPE + 계약조건 OLS + 계약조건 구간평균
+   범주 2  스타별 기초자산별 · 상품구조별 R²·MAPE
+   범주 3  프라이서 — 공정가와 MC 의 분포 차이
+   범주 4  공정가 관점에서 본 ELS 상품 자체
+
+ 그림 글자는 전부 영문. 성능 막대는 R² 와 MAPE 두 패널만 쓰고 MAE·편향은 표로 낸다.
+ 계약조건 기울기는 수준 지표와 항상 함께 보고한다.
+
+ 실행: python tools/build_nb_viz.py
+"""
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "3_visualization.ipynb"
+
+
+def _src(t):
+    return [l + "\n" for l in t.split("\n")[:-1]] + [t.split("\n")[-1]]
+
+
+def md(t):
+    return {"cell_type": "markdown", "metadata": {}, "source": _src(t.strip())}
+
+
+def code(t):
+    return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
+            "source": _src(t.strip("\n"))}
+
+
+cells = []
+
+cells.append(md("""
+# 3. 시각화
+
+2장이 학습·저장한 가중치와 예측을 읽어 그림을 그린다. 네 범주로 정리한다.
+
+| 범주 | 내용 | 그림 수 |
+|---|---|---|
+| **1** | 스타별(1·2·3) 종합 R²·MAPE · 계약조건 OLS · 계약조건 구간평균 | 9 |
+| **2** | 스타별 기초자산별 · 상품구조별 R²·MAPE | 6 |
+| **3** | 프라이서 — 공정가와 MC 의 분포 차이 | 2 |
+| **4** | 공정가 관점에서 본 ELS 상품 자체 | 2 |
+
+**그림 안의 글자는 전부 영문**이다. 성능 막대는 R² 와 MAPE 두 패널만 쓰고 MAE·편향은 표로 낸다.
+
+⚠ **계약조건 횡단면 기울기는 편미분이 아니라 연관이다.** 배리어가 깊은 상품은 변동성·만기도 같이
+다르다. 절대값을 민감도로 읽지 말고, 같은 상품 위의 MC 선 대비 모델 선의 **차이**만 읽는다.
+"""))
+
+cells.append(code("""
+import numpy as np, pandas as pd
+import matplotlib.pyplot as plt
+
+from util import file_manager as fm, plot as _plot      # import 만으로 dpi400·투명·PPT 밴드
+from module import star as ST
+from module import contract as CT
+from module.schedule import LZ_BARR_NEUTRAL
+
+FACE = 10000
+C_MC, C_NEW, C_OLD = "#e07a5f", "#1f6f9c", "#9b5de5"
+C_IDX, C_EQ = "#1f6f9c", "#e07a5f"
+plt.rcParams.update({"figure.facecolor": "white", "axes.facecolor": "white",
+                     "savefig.facecolor": "white", "savefig.transparent": False,
+                     "axes.grid": True, "grid.color": "#e8e8e8",
+                     "axes.spines.top": False, "axes.spines.right": False})
+
+D = ST.make_all()
+oos = np.concatenate([te for _, _, te in D.WF])
+P_all = np.load(fm.CACHE / "nb_pred_ball_d.npy")
+P_3 = np.load(fm.CACHE / "nb_pred_ball3_d.npy")
+pred, pred3 = np.nanmean(P_all, 0), np.nanmean(P_3, 0)
+mc, fairk = D.MC * FACE, D.FAIR * FACE
+err = pred - mc
+nobs = np.asarray(D.nobs).astype(int)
+K = D.CON[:, CT.iS]
+on = D.CON[:, CT.iLB] < LZ_BARR_NEUTRAL
+has_lz, ki = on.any(1), D.CON[:, CT.iB] < 0.999
+clu = np.asarray(D.ORD).astype(int)
+year = pd.to_datetime([pd.Timestamp.fromordinal(int(o)) for o in D.ORD]).year.values
+sd = np.array([K[i, 0] - K[i, nobs[i] - 1] for i in range(D.n)])
+with np.errstate(invalid="ignore"):
+    lzb_v = np.nanmin(np.where(on, D.CON[:, CT.iLB], np.nan), 1)
+    lzp_v = np.nanmax(np.where(on, D.CON[:, CT.iLP], np.nan), 1)
+TERMS = {"KI barrier": D.CON[:, CT.iB], "coupon (annual)": D.CON[:, CT.iC],
+         "first strike": K[:, 0], "step-down width": sd,
+         "lizard barrier": lzb_v, "lizard payout": lzp_v}
+STARS = [(1, D.nstar == 1), (2, D.nstar == 2), (3, D.nstar == 3)]
+MIN_N = 30
+rng = np.random.default_rng(0)
+saved = []
+
+
+def save(fig, name):
+    p = fm.image(name)
+    fig.savefig(p, dpi=200, bbox_inches="tight", facecolor="white")
+    saved.append(p.name); plt.show()
+
+
+def mets(idx, p=None):
+    p = pred if p is None else p
+    y, e = mc[idx], p[idx] - mc[idx]
+    return dict(n=len(idx), R2=1 - (e ** 2).sum() / ((y - y.mean()) ** 2).sum(),
+                MAE=np.abs(e).mean(), MAPE=(np.abs(e) / np.abs(y)).mean() * 100, bias=e.mean())
+
+
+def seed_se(idx, Pm, key):
+    v = []
+    for si in range(Pm.shape[0]):
+        y, e = mc[idx], Pm[si, idx] - mc[idx]
+        v.append(dict(R2=1 - (e ** 2).sum() / ((y - y.mean()) ** 2).sum(),
+                      MAPE=(np.abs(e) / np.abs(y)).mean() * 100)[key])
+    return float(np.std(v, ddof=1) / np.sqrt(len(v))) if len(v) > 1 else 0.0
+
+
+def ols_cluster(x, y, g):
+    X = np.c_[np.ones(len(x)), x]
+    bet = np.linalg.lstsq(X, y, rcond=None)[0]
+    e = y - X @ bet; XtXi = np.linalg.inv(X.T @ X)
+    uq, inv = np.unique(g, return_inverse=True)
+    S = np.zeros((2, 2))
+    for c in range(len(uq)):
+        m = inv == c; s = X[m].T @ e[m]; S += np.outer(s, s)
+    G, n = len(uq), len(x)
+    V = XtXi @ (G / (G - 1) * (n - 1) / (n - 2) * S) @ XtXi
+    return bet[1], np.sqrt(V[1, 1]), bet[0]
+
+
+def terms_for(idx):
+    \"\"\"그 표본에서 쓸 수 있는 계약조건만 (리자드는 표본이 얇으면 빠진다).\"\"\"
+    out = {}
+    for lab, xv in TERMS.items():
+        i = idx[np.isfinite(xv[idx])]
+        if len(i) >= MIN_N and len(np.unique(xv[i])) >= 3:
+            out[lab] = i
+    return out
+
+
+print("OOS {:,}건 | 스타별 {}".format(
+    len(oos), {s: int(m[oos].sum()) for s, m in STARS}))
+"""))
+
+# ---------------- 범주 1 ----------------
+cells.append(md("""
+---
+# 범주 1. 스타별 종합 성능과 계약조건 반응
+
+기초자산 수별로 **① 종합 R²·MAPE ② 계약조건 산점+OLS ③ 계약조건 구간평균** 세 장씩.
+
+비교군은 **3스타 전용 학습본**이다 — 같은 폴드·같은 시험집합에서 학습 풀만 바꾼 것이라
+통합 학습의 기여를 직접 읽을 수 있다.
+"""))
+
+cells.append(code("""
+# --- 1-A. 스타별 종합 R2 / MAPE ---
+rows = []
+for s, m in STARS:
+    idx = oos[m[oos]]
+    for lab, Pm in [("trained 1·2·3-star", P_all), ("trained 3-star only", P_3)]:
+        p = np.nanmean(Pm, 0)
+        r = mets(idx, p)
+        r.update(star="{}-star".format(s), model=lab,
+                 R2_se=seed_se(idx, Pm, "R2"), MAPE_se=seed_se(idx, Pm, "MAPE"))
+        rows.append(r)
+LV = pd.DataFrame(rows)
+LV.to_csv(fm.stat("cat1_level"), index=False, encoding="utf-8-sig")
+
+for s, _ in STARS:
+    z = LV[LV.star == "{}-star".format(s)].set_index("model")
+    fig, ax = plt.subplots(1, 2, figsize=(11.0, 4.2))
+    for a, col, yl, ttl, fv in [(ax[0], "R2", "R²  (vs MC price)", "Explained variance", "{:.4f}"),
+                                (ax[1], "MAPE", "OOS MAPE  [%]", "Relative error", "{:.3f}%")]:
+        labs = ["trained 1·2·3-star", "trained 3-star only"]
+        v = [z.loc[l, col] for l in labs]; e = [z.loc[l, col + "_se"] for l in labs]
+        b = a.bar(range(2), v, .55, color=[C_NEW, C_OLD], edgecolor="white", lw=1,
+                  yerr=e, capsize=4, error_kw=dict(lw=1.3, ecolor="#444"))
+        for r_, val in zip(b, v):
+            a.text(r_.get_x() + r_.get_width() / 2, val, fv.format(val), ha="center",
+                   va="bottom", fontsize=10, fontweight="bold")
+        a.set_xticks(range(2)); a.set_xticklabels([l.replace(" ", "\\n", 1) for l in labs], fontsize=9.5)
+        a.set_ylabel(yl); a.set_title(ttl, fontweight="bold"); a.margins(y=.20)
+        if col == "R2":
+            a.set_ylim(0, 1.08)
+    fig.suptitle("{}-star - stage-1 accuracy  (n={:,}, 5 seeds ± 1 SE)".format(
+        s, int(z.n.iloc[0])), fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, .91])
+    save(fig, "cat1_{}star_level".format(s))
+
+print(LV[["star", "model", "n", "R2", "R2_se", "MAPE", "MAE", "bias"]].round(4).to_string(index=False))
+"""))
+
+cells.append(code("""
+# --- 1-B. 계약조건 산점 + OLS (스타별) ---
+for s, m in STARS:
+    idx = oos[m[oos]]
+    T = terms_for(idx)
+    nc = 3 if len(T) > 4 else 2
+    nr = int(np.ceil(len(T) / nc))
+    fig, ax = plt.subplots(nr, nc, figsize=(4.4 * nc, 3.3 * nr))
+    axes = np.atleast_1d(ax).ravel()
+    for a, (lab, i) in zip(axes, T.items()):
+        xv = TERMS[lab]
+        pk = i if len(i) <= 5000 else rng.choice(i, 5000, replace=False)
+        a.scatter(xv[pk], mc[pk], s=5, alpha=.09, color=C_MC, edgecolors="none", rasterized=True)
+        lo_, hi_ = np.percentile(xv[i], [0.5, 99.5]); xx = np.linspace(lo_, hi_, 50)
+        for nm, yv, c, ls in [("MC (truth)", mc, C_MC, "-"),
+                              ("model (1·2·3)", pred, C_NEW, "--"),
+                              ("model (3★ only)", pred3, C_OLD, ":")]:
+            b1, se, b0 = ols_cluster(xv[i], yv[i], clu[i])
+            a.plot(xx, b0 + b1 * xx, ls, color=c, lw=2.5 if ls == "-" else 2.0, label=nm, zorder=5)
+        a.set_xlim(lo_, hi_); a.set_ylim(*np.percentile(mc[i], [1, 99]))
+        a.set_xlabel(lab); a.set_ylabel("price [KRW]")
+        a.set_title("{}  (n={:,})".format(lab, len(i)), fontweight="bold", fontsize=10.5)
+    for a in axes[len(T):]:
+        a.axis("off")
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, loc="lower center", ncol=3, frameon=False, bbox_to_anchor=(.5, -.02))
+    fig.suptitle("{}-star - price vs contract terms (dots = MC, lines = OLS fit)".format(s),
+                 fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=[0, .06, 1, .92])
+    save(fig, "cat1_{}star_terms_ols".format(s))
+"""))
+
+cells.append(code("""
+# --- 1-C. 계약조건 구간평균 (선형 가정 없음, 스타별) ---
+res_rows = []
+for s, m in STARS:
+    idx = oos[m[oos]]
+    T = terms_for(idx)
+    nc = 3 if len(T) > 4 else 2
+    nr = int(np.ceil(len(T) / nc))
+    fig, ax = plt.subplots(nr, nc, figsize=(4.4 * nc, 3.3 * nr))
+    axes = np.atleast_1d(ax).ravel()
+    for a, (lab, i) in zip(axes, T.items()):
+        xv = TERMS[lab]; xs = xv[i]
+        qq = np.unique(np.quantile(xs, np.linspace(0, 1, 11)))
+        b = np.clip(np.digitize(xs, qq[1:-1]), 0, len(qq) - 2)
+        cx = np.array([xs[b == j].mean() for j in range(len(qq) - 1)])
+        for nm, yv, c, ls in [("MC (truth)", mc, C_MC, "-"),
+                              ("model (1·2·3)", pred, C_NEW, "--"),
+                              ("model (3★ only)", pred3, C_OLD, ":")]:
+            cy = np.array([yv[i][b == j].mean() for j in range(len(qq) - 1)])
+            a.plot(cx, cy, ls, marker="o", color=c, ms=4,
+                   lw=2.5 if ls == "-" else 2.0, label=nm)
+        a.set_xlabel(lab); a.set_ylabel("mean price [KRW]")
+        a.set_title("{}  (n={:,}, {} bins)".format(lab, len(i), len(qq) - 1),
+                    fontweight="bold", fontsize=10.5)
+        # 잔차회귀도 같이 기록 (수치는 아래 표)
+        smc, _, _ = ols_cluster(xv[i], mc[i], clu[i])
+        for nm, yv in [("model (1·2·3)", pred), ("model (3★ only)", pred3)]:
+            b1, se, _ = ols_cluster(xv[i], (yv - mc)[i], clu[i])
+            res_rows.append(dict(star="{}-star".format(s), factor=lab, model=nm, n=len(i),
+                                 MC_slope=smc, resid=b1, se=se,
+                                 rel_pct=b1 / smc * 100 if abs(smc) > 1e-9 else np.nan,
+                                 t=b1 / se))
+    for a in axes[len(T):]:
+        a.axis("off")
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, loc="lower center", ncol=3, frameon=False, bbox_to_anchor=(.5, -.02))
+    fig.suptitle("{}-star - decile bins (no linearity assumed)".format(s),
+                 fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=[0, .06, 1, .92])
+    save(fig, "cat1_{}star_terms_binned".format(s))
+
+RS = pd.DataFrame(res_rows)
+RS.to_csv(fm.stat("cat1_resid"), index=False, encoding="utf-8-sig")
+print("잔차회귀 (모델 − MC) ~ 조건.  rel_pct 가 0 이면 MC 와 동일 반응")
+print(RS[RS.model == "model (1·2·3)"][
+    ["star", "factor", "n", "MC_slope", "resid", "se", "rel_pct", "t"]].round(2).to_string(index=False))
+"""))
+
+# ---------------- 범주 2 ----------------
+cells.append(md("""
+---
+# 범주 2. 스타별 기초자산별 · 상품구조별 성능
+
+같은 모형을 **기초자산**(지수 vs 개별주식)과 **상품구조**(STEP/LIZARD × 낙인/노낙인)로 갈라서 본다.
+1·2스타는 표본이 작으므로 n 을 함께 읽어야 한다.
+"""))
+
+cells.append(code("""
+d3 = pd.read_parquet(fm.DATA / "els3_dataset.parquet")[["item", "udl1", "udl2", "udl3"]]
+d12 = pd.read_parquet(fm.DATA / "els12_dataset.parquet")[["item", "udl1", "udl2", "udl3"]]
+UD = pd.concat([d3, d12], ignore_index=True).drop_duplicates("item").set_index("item")
+tk_of = {it: sorted({t for t in UD.loc[it].tolist() if isinstance(t, str)})
+         for it in D.ITEM if it in UD.index}
+struct = (np.where(has_lz, "LIZARD", "STEP") + np.where(ki, "·KI", "·no-KI"))
+
+
+def grouped_bar(G, title, fname, color_fn=None):
+    \"\"\"R² · MAPE 두 패널 막대. G 는 label/n/R2/MAPE 열을 가진 DataFrame.\"\"\"
+    fig, ax = plt.subplots(1, 2, figsize=(max(9.0, 1.5 * len(G) + 4), 4.2))
+    cols = color_fn(G) if color_fn else [C_NEW] * len(G)
+    for a, col, yl, fv in [(ax[0], "R2", "R²  (vs MC price)", "{:.3f}"),
+                           (ax[1], "MAPE", "OOS MAPE  [%]", "{:.2f}%")]:
+        b = a.bar(np.arange(len(G)), G[col], .6, color=cols, edgecolor="white", lw=.8)
+        for r_, v in zip(b, G[col]):
+            a.text(r_.get_x() + r_.get_width() / 2, v, fv.format(v), ha="center",
+                   va="bottom", fontsize=8.5, fontweight="bold")
+        a.set_xticks(np.arange(len(G)))
+        a.set_xticklabels(["{}\\n(n={:,})".format(l, n) for l, n in zip(G.label, G.n)],
+                          fontsize=8.5, rotation=0)
+        a.set_ylabel(yl); a.margins(y=.22)
+        if col == "R2":
+            a.set_ylim(0, 1.08)
+    fig.suptitle(title, fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, .90])
+    save(fig, fname)
+
+
+UDR, STR = [], []
+for s, m in STARS:
+    idx = oos[m[oos]]
+    # 기초자산별
+    bucket = {}
+    for i in idx:
+        for t in tk_of.get(D.ITEM[i], []):
+            bucket.setdefault(t, []).append(i)
+    rows = [dict(label=t, **mets(np.array(v))) for t, v in bucket.items()
+            if len(v) >= max(MIN_N, 50)]
+    if rows:
+        G = pd.DataFrame(rows).sort_values("MAE")
+        G["star"] = "{}-star".format(s)
+        G["kind"] = np.where(G.label.str.startswith("^"), "index", "single stock")
+        UDR.append(G)
+        grouped_bar(G, "{}-star - accuracy by underlying  (blue = index, orange = single stock)".format(s),
+                    "cat2_{}star_by_underlying".format(s),
+                    color_fn=lambda g: [C_IDX if k == "index" else C_EQ for k in g.kind])
+    # 상품구조별
+    rows = [dict(label=g, **mets(idx[struct[idx] == g])) for g in np.unique(struct[idx])
+            if (struct[idx] == g).sum() >= MIN_N]
+    if rows:
+        G = pd.DataFrame(rows).sort_values("MAE")
+        G["star"] = "{}-star".format(s)
+        STR.append(G)
+        grouped_bar(G, "{}-star - accuracy by product structure".format(s),
+                    "cat2_{}star_by_structure".format(s))
+
+U = pd.concat(UDR, ignore_index=True); S2 = pd.concat(STR, ignore_index=True)
+U.to_csv(fm.stat("cat2_by_underlying"), index=False, encoding="utf-8-sig")
+S2.to_csv(fm.stat("cat2_by_structure"), index=False, encoding="utf-8-sig")
+print(U[["star", "label", "kind", "n", "R2", "MAPE", "MAE", "bias"]].round(4).to_string(index=False))
+print()
+print(S2[["star", "label", "n", "R2", "MAPE", "MAE", "bias"]].round(4).to_string(index=False))
+"""))
+
+# ---------------- 범주 3 ----------------
+cells.append(md("""
+---
+# 범주 3. 프라이서 — 공정가와 MC 의 분포 차이
+
+MC 입력을 바꾸면 이론가가 시장 공정가에 얼마나 가까워지는가. **before vs after** 로 본다.
+
+| | 정의 |
+|---|---|
+| **before** | NS 커브 · HV120 · q = 0 (변형 A) |
+| **after** | 부트스트랩 커브 · EWMA120 (λ=0.99) · 이산배당 (변형 B = **현행 방법론**) |
+
+종전 노트북 14~17 이 쓰던 형식과 같되, **표본 200개가 아니라 3스타 전량**으로 그린다
+(`mc_A` 는 3스타에만 있다).
+
+이론가는 무차익 값이므로 공정가와 일치할 이유가 없다. 보는 것은 **격차가 체계적으로 줄었는가** 다.
+"""))
+
+cells.append(code("""
+V = pd.read_parquet(fm.CACHE / "mcvar" / "mc_variants.parquet").set_index("item")
+S3 = pd.read_parquet(fm.DATA / "els3_dataset.parquet")[["item", "fair", "isu_ord", "tenor"]]
+S3 = S3.join(V[["mc_A", "mc_B"]], on="item")
+S3 = S3[np.isfinite(S3.mc_A) & np.isfinite(S3.mc_B)].reset_index(drop=True)
+S3["e_bef"] = (S3.fair - S3.mc_A) * FACE
+S3["e_aft"] = (S3.fair - S3.mc_B) * FACE
+S3["year"] = pd.to_datetime([pd.Timestamp.fromordinal(int(o)) for o in S3.isu_ord]).year
+
+LB = "before: NS · HV120 · q = 0"
+LA = "after: bootstrap · EWMA120 (λ=0.99) · discrete div"
+CB, CA = "#e07a5f", "#1f6f9c"
+print("3스타 전량 {:,}건".format(len(S3)))
+print("  before  편향 {:+.0f}원 | MAE {:.0f}원 | MAPE {:.2f}%".format(
+    S3.e_bef.mean(), S3.e_bef.abs().mean(), (S3.e_bef.abs() / (S3.fair * FACE)).mean() * 100))
+print("  after   편향 {:+.0f}원 | MAE {:.0f}원 | MAPE {:.2f}%".format(
+    S3.e_aft.mean(), S3.e_aft.abs().mean(), (S3.e_aft.abs() / (S3.fair * FACE)).mean() * 100))
+"""))
+
+cells.append(md("### 3-1. 격차 분포 — before vs after"))
+cells.append(code("""
+lo_, hi_ = np.percentile(np.r_[S3.e_bef, S3.e_aft], [0.5, 99.5])
+bins = np.linspace(lo_, hi_, 60)
+fig, a = plt.subplots(figsize=(13.2, 4.6))
+a.hist(S3.e_bef, bins=bins, color=CB, alpha=.62,
+       label="fair - mc ({}), mean {:+.0f} KRW".format(LB, S3.e_bef.mean()))
+a.hist(S3.e_aft, bins=bins, color=CA, alpha=.62,
+       label="fair - mc ({}), mean {:+.0f} KRW".format(LA, S3.e_aft.mean()))
+a.axvline(S3.e_bef.mean(), color="#c0392b", lw=1.8, ls="--")
+a.axvline(S3.e_aft.mean(), color="#1b4f72", lw=1.8, ls="--")
+a.axvline(0, color="#666", lw=1.0, ls=":")
+a.set_xlabel("Fair Value - MC  (KRW, per 10,000 face)")
+a.set_ylabel("number of products")
+a.set_title("Fair minus MC theoretical price - before vs after  (n={:,})".format(len(S3)),
+            fontweight="bold")
+a.legend(frameon=False, fontsize=9.5, loc="upper right")
+fig.tight_layout()
+save(fig, "cat3_fair_minus_mc_hist")
+"""))
+
+cells.append(md("### 3-2. 공정가 구간별 오차"))
+cells.append(code("""
+q = np.unique(np.quantile(S3.fair, np.linspace(0, 1, 7)))
+b = np.clip(np.digitize(S3.fair, q[1:-1]), 0, len(q) - 2)
+labs = ["{:.3f}~{:.3f}".format(q[j], q[j + 1]) for j in range(len(q) - 1)]
+xp = np.arange(len(labs)); w = .38
+fig, ax = plt.subplots(1, 2, figsize=(13.2, 4.6))
+for j, (nm, col, c) in enumerate([(LB, "e_bef", CB), (LA, "e_aft", CA)]):
+    ax[0].bar(xp + (j - .5) * w, [S3[col][b == k].mean() for k in range(len(labs))], w,
+              color=c, edgecolor="white", lw=.8, label=nm)
+    ax[1].bar(xp + (j - .5) * w,
+              [(S3[col][b == k].abs() / (S3.fair[b == k] * FACE)).mean() * 100
+               for k in range(len(labs))], w, color=c, edgecolor="white", lw=.8, label=nm)
+ax[0].axhline(0, color="#444", lw=1.1)
+ax[0].set_ylabel("mean (fair - MC)  [KRW]")
+ax[0].set_title("Pricing error (fair - MC) by price segment", fontweight="bold")
+ax[0].legend(frameon=False, fontsize=9, loc="lower right")
+ax[1].set_ylabel("MAPE (%)")
+ax[1].set_title("|fair - MC| / fair  by price segment", fontweight="bold")
+for a in ax:
+    a.set_xticks(xp); a.set_xticklabels(labs, rotation=20, fontsize=9)
+    a.set_xlabel("fair value segment (low -> high)")
+fig.tight_layout()
+save(fig, "cat3_err_by_price_seg")
+"""))
+
+cells.append(md("### 3-3. 발행연도별 오차"))
+cells.append(code("""
+fig, ax = plt.subplots(1, 2, figsize=(13.2, 4.4))
+for nm, col, c in [(LB, "e_bef", CB), (LA, "e_aft", CA)]:
+    g = S3.groupby("year")[col]
+    ax[0].plot(g.mean().index, g.mean().values, "-o", color=c, ms=5, label=nm)
+    ax[1].plot(g.mean().index, g.apply(lambda s: s.abs().mean()).values, "-o", color=c, ms=5,
+               label=nm)
+ax[0].axhline(0, color="#444", lw=1.1)
+ax[0].set_ylabel("mean (fair - MC)  [KRW]")
+ax[0].set_title("Mean error by issue year", fontweight="bold")
+ax[0].legend(frameon=False, fontsize=9)
+ax[1].axhline(0, color="#444", lw=1.1)
+ax[1].set_ylabel("MAE  [KRW]")
+ax[1].set_title("MAE by issue year", fontweight="bold")
+for a in ax:
+    a.set_xlabel("issue year")
+fig.tight_layout()
+save(fig, "cat3_by_year")
+
+print(S3.groupby("year")[["e_bef", "e_aft"]].agg(["mean", "count"]).round(0).to_string())
+"""))
+
+cells.append(md("""
+### 3-4. 어느 입력이 격차를 줄였나 — ΔMC 분해
+
+before → after 는 세 가지를 동시에 바꾼다(커브 · 변동성 · 배당). 각각의 기여를 떼어 본다.
+중간 조합(할인만 부트스트랩, 드리프트까지 부트스트랩)이 필요해 **표본 200개**로만 가능하다
+— 위 세 그림(전량 58,772건)과 표본이 다르다.
+"""))
+
+cells.append(code("""
+BC = pd.read_csv(fm.stat("mc_boot_curve_200"), encoding="utf-8-sig")
+comp = {"dividends": (BC.ns_h120 - BC.ns_h120_q0) * FACE,
+        "curve: discount": (BC.bt_disc_h120 - BC.ns_h120) * FACE,
+        "curve: drift": (BC.bt_h120 - BC.bt_disc_h120) * FACE,
+        "curve: net": (BC.bt_h120 - BC.ns_h120) * FACE,
+        "HV -> EWMA": (BC.bt_e120 - BC.bt_h120) * FACE,
+        "total": (BC.bt_e120 - BC.ns_h120_q0) * FACE}
+TICK = ["dividends", "curve:|discount", "curve:|drift", "curve:|net", "HV ->|EWMA", "total"]
+COL = ["#1f6f9c", "#2a9d8f", "#e9c46a", "#264653", "#9b5de5", "#333333"]
+labs = list(comp)
+
+fig, ax = plt.subplots(1, 3, figsize=(13.2, 4.2))
+b = ax[0].bar(np.arange(len(labs)), [comp[k].abs().mean() for k in labs], .62,
+              color=COL, edgecolor="white", lw=.8)
+for r_, k in zip(b, labs):
+    ax[0].text(r_.get_x() + r_.get_width() / 2, r_.get_height(),
+               "{:.0f}".format(comp[k].abs().mean()) + chr(10) + "({:+.0f})".format(comp[k].mean()),
+               ha="center", va="bottom", fontsize=9, fontweight="bold")
+ax[0].set_xticks(np.arange(len(labs)))
+ax[0].set_xticklabels([t.replace("|", chr(10)) for t in TICK], fontsize=8.5)
+ax[0].set_ylabel("mean |delta MC price|  [KRW]"); ax[0].margins(y=.24)
+ax[0].set_title("Mean |delta MC| (signed mean)", fontweight="bold")
+
+dz = (BC.bt_zT - BC.ns_zT) * 1e4
+for nm, c in [("curve: discount", "#2a9d8f"), ("curve: drift", "#e9c46a"),
+              ("curve: net", "#264653")]:
+    ax[1].scatter(dz, comp[nm], s=14, alpha=.75, color=c, edgecolors="none", label=nm)
+ax[1].axhline(0, color="#444", lw=1.1); ax[1].axvline(0, color="#444", lw=1.1)
+ax[1].set_xlabel("bootstrap - NS zero rate at maturity  [bp]")
+ax[1].set_ylabel("change in MC price  [KRW]")
+ax[1].set_title("Curve: discount and drift cancel", fontweight="bold")
+ax[1].legend(frameon=False, fontsize=9)
+
+ax[2].scatter((BC.ew120 - BC.hv120) * 100, comp["HV -> EWMA"], s=14, alpha=.75,
+              color="#9b5de5", edgecolors="none")
+ax[2].axhline(0, color="#444", lw=1.1); ax[2].axvline(0, color="#444", lw=1.1)
+ax[2].set_xlabel("EWMA120 - HV120  (basket mean vol, %p)")
+ax[2].set_ylabel("change in MC price  [KRW]")
+ax[2].set_title("EWMA effect follows the vol gap", fontweight="bold")
+fig.suptitle("Which input closed the gap - decomposition of the MC price change  (n={:,})".format(len(BC)),
+             fontsize=13, fontweight="bold")
+fig.tight_layout(rect=[0, 0, 1, .90])
+save(fig, "cat3_decomposition")
+
+print(pd.DataFrame(comp).describe().T[["mean", "std", "min", "max"]].round(1).to_string())
+"""))
+
+# ---------------- 범주 4 ----------------
+cells.append(md("""
+---
+# 범주 4. 공정가 관점에서 본 ELS 상품
+
+모형이 아니라 **상품 자체**를 본다. 공정가비율이 계약조건·구조·시점에 따라 어떻게 분포하는가.
+"""))
+
+cells.append(code("""
+fr = D.FAIR[oos]
+fig, ax = plt.subplots(2, 3, figsize=(13.2, 6.2))
+ax[0, 0].hist(fr, bins=70, color=C_NEW, alpha=.85)
+ax[0, 0].axvline(1.0, color="#444", lw=1.3, ls="--")
+ax[0, 0].axvline(fr.mean(), color=C_MC, lw=2, label="mean {:.3f}".format(fr.mean()))
+ax[0, 0].set_xlabel("fair value ratio"); ax[0, 0].set_ylabel("products")
+ax[0, 0].set_title("Fair value ratio", fontweight="bold"); ax[0, 0].legend(frameon=False)
+
+st_o = struct[oos]
+lab = sorted(np.unique(st_o))
+ax[0, 1].boxplot([fr[st_o == l] for l in lab], labels=[l.replace("·", "\\n") for l in lab],
+                 showfliers=False)
+ax[0, 1].axhline(1.0, color="#444", lw=1.1, ls="--")
+ax[0, 1].set_ylabel("fair value ratio")
+ax[0, 1].set_title("By structure", fontweight="bold")
+ax[0, 1].tick_params(axis="x", labelsize=8.5)
+
+ns_o = D.nstar[oos]
+ax[0, 2].boxplot([fr[ns_o == s] for s, _ in STARS],
+                 labels=["{}-star".format(s) for s, _ in STARS], showfliers=False)
+ax[0, 2].axhline(1.0, color="#444", lw=1.1, ls="--")
+ax[0, 2].set_ylabel("fair value ratio")
+ax[0, 2].set_title("By number of underlyings", fontweight="bold")
+
+for a, (xv, xl) in zip(ax[1], [(D.CON[oos, CT.iC], "coupon (annual)"),
+                               (D.CON[oos, CT.iB], "KI barrier"),
+                               (D.CON[oos, CT.iT], "tenor [years]")]):
+    qq = np.unique(np.quantile(xv, np.linspace(0, 1, 11)))
+    b = np.clip(np.digitize(xv, qq[1:-1]), 0, len(qq) - 2)
+    a.plot([xv[b == j].mean() for j in range(len(qq) - 1)],
+           [fr[b == j].mean() for j in range(len(qq) - 1)], "-o", color=C_NEW)
+    a.axhline(1.0, color="#444", lw=1.1, ls="--")
+    a.set_xlabel(xl); a.set_ylabel("mean fair value ratio")
+    a.set_title(xl.split(" [")[0].split(" (")[0].title(), fontweight="bold")
+fig.suptitle("The ELS universe seen through fair value", fontsize=13.5, fontweight="bold")
+fig.tight_layout(rect=[0, 0, 1, .93])
+save(fig, "cat4_universe_fair")
+"""))
+
+cells.append(code("""
+# 발행 추이와 구성 변화
+dt = pd.to_datetime([pd.Timestamp.fromordinal(int(o)) for o in D.ORD])
+fig, ax = plt.subplots(1, 3, figsize=(13.2, 4.0))
+cnt = pd.Series(1, index=dt).resample("QE").sum()
+ax[0].bar(cnt.index, cnt.values, width=70, color=C_NEW, edgecolor="white", lw=.4)
+ax[0].set_xlabel("issue quarter"); ax[0].set_ylabel("products")
+ax[0].set_title("Issuance", fontweight="bold")
+
+mix = pd.crosstab(dt.to_period("Y"), struct, normalize="index") * 100
+for c in mix.columns:
+    ax[1].plot(mix.index.year, mix[c], "-o", ms=3.5, label=c)
+ax[1].set_xlabel("issue year"); ax[1].set_ylabel("share [%]")
+ax[1].set_title("Structure mix", fontweight="bold"); ax[1].legend(frameon=False, fontsize=8.5)
+
+sf = pd.Series(D.FAIR, index=dt).resample("QE").mean()
+ax[2].plot(sf.index, sf.values, "-o", color=C_MC, ms=3.5)
+ax[2].axhline(1.0, color="#444", lw=1.1, ls="--")
+ax[2].set_xlabel("issue quarter"); ax[2].set_ylabel("mean fair value ratio")
+ax[2].set_title("Fair value ratio over time", fontweight="bold")
+fig.suptitle("ELS universe over time  ({} - {})".format(dt.min().date(), dt.max().date()),
+             fontsize=13.5, fontweight="bold")
+fig.tight_layout(rect=[0, 0, 1, .91])
+save(fig, "cat4_universe_time")
+"""))
+
+cells.append(md("## 저장된 그림"))
+cells.append(code("""
+for i, n in enumerate(saved, 1):
+    print("{:2d}. {}".format(i, n))
+print()
+print("총 {}장 | 위치 {}".format(len(saved), fm.image("x").parent))
+"""))
+
+nb = {"cells": cells,
+      "metadata": {"kernelspec": {"display_name": "els-abacus", "language": "python",
+                                  "name": "els-abacus"},
+                   "language_info": {"name": "python"}},
+      "nbformat": 4, "nbformat_minor": 5}
+
+if __name__ == "__main__":
+    OUT.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("wrote", OUT.name, "| cells", len(cells))
