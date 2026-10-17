@@ -139,11 +139,24 @@ print("  → 프록시의 역할은 '맞히는 것' 이 아니라 '구조를 떼
 """))
 
 cells.append(md("""
-## 2-3. 학습 — 두 벌을 같은 조건에서
+## 2-3. 학습 — 일곱 벌을 같은 조건에서
 
-**`ball_d` (기준)**: 1·2·3스타 **통합** 학습 · Direct 타깃 · 단조손실.
-**`ball3_d` (비교군)**: 똑같은데 **3스타만** 학습. 학습 풀만 바꾼 대조군이라, 둘의 차이가 곧
-통합 학습의 기여입니다.
+**기준 모형은 `ball_d` 입니다**: 1·2·3스타 **통합** 학습 · Direct 타깃 · 단조손실.
+나머지 여섯 벌은 한 번에 한 가지만 바꾼 대조군이고, 노트북 3 의 비교 그림에서 막대 하나씩을
+차지합니다. 노트북 3 은 가중치를 **불러올 뿐 학습하지 않으므로**, 여기서 일곱 벌이 다 나와야
+그림이 완성됩니다.
+
+| 접두사 | 바꾼 것 | 역할 |
+|---|---|---|
+| `ball_d` | — | **기준** (Direct + 단조손실, 통합 학습) |
+| `ball3_d` | 학습 풀 3스타만 | 통합 학습의 기여를 분리 |
+| `ball_dm` | V_base 를 피처로 추가 | 프록시를 피처로 주면 나아지나 |
+| `ball_fm` | 타깃을 잔차로 + 피처 추가 | 잔차학습 대조 |
+| `ball3_fm` | 위 + 3스타만 | 잔차학습의 학습 풀 효과 |
+| `ball_xgb` | 아키텍처 XGBoost | 표형 벤치마크 (같은 입력) |
+| `ball3_xgb` | 위 + 3스타만 | |
+
+XGBoost 두 벌은 `.pkl`, DeepONet 다섯 벌은 `.pt` 로 저장됩니다 — 5벌 × 20 + 2벌 × 20 = **140개**.
 
 **단조손실이 하는 일.** 리자드 지급률을 1.25배로 올린 가짜 입력을 함께 넣어보고,
 가격이 **내려가면 벌점**을 줍니다. 금융 상식상 뒤집히면 안 되는 방향을 손실로 강제하는 장치입니다.
@@ -189,10 +202,34 @@ def train_variant(tag, resid=False, feat=False, only3=False, seeds=SEEDS):
     return tag
 
 
-# 기준 모형 + 비교군 (학습 풀만 바꾼 3스타 전용)
-train_variant("ball_d", resid=False, feat=False, only3=False)
-train_variant("ball3_d", resid=False, feat=False, only3=True)
-print("저장 위치:", MDIR)
+def train_xgb(tag, only3=False, seeds=SEEDS):
+    \"\"\"XGBoost 앵커를 학습·저장한다 (.pkl). 입력은 DeepONet 앵커와 같은 [곡선|vol·corr|계약].\"\"\"
+    from model.benchmark import _xgb_anchor
+    is3 = D.nstar == 3
+    made, t0 = 0, time.time()
+    for s in seeds:
+        cfg = copy.deepcopy(cfg0); cfg["seed"] = s
+        for k, (tr, va, te) in enumerate(D.WF):
+            base = str(MDIR / "{}_anchor_seed{}_fold{}".format(tag, s, k))
+            if Path(base + ".pkl").exists() and not RETRAIN:
+                continue
+            _xgb_anchor(D, cfg, tr[is3[tr]] if only3 else tr,
+                        va[is3[va]] if only3 else va, te, save_path=base)
+            made += 1
+    print("  [{}] 신규 {}개 ({:.1f}분)".format(tag, made, (time.time() - t0) / 60))
+    return tag
+
+
+# 일곱 벌 — 노트북 3 의 eval_all_stars / eval_cross_section 가 이 접두사들을 읽는다.
+# 하나라도 빠지면 그림에서 막대가 조용히 사라지므로 목록을 여기서 못박는다.
+train_variant("ball_d",   resid=False, feat=False, only3=False)   # 기준
+train_variant("ball3_d",  resid=False, feat=False, only3=True)
+train_variant("ball_dm",  resid=False, feat=True,  only3=False)
+train_variant("ball_fm",  resid=True,  feat=True,  only3=False)
+train_variant("ball3_fm", resid=True,  feat=True,  only3=True)
+train_xgb("ball_xgb",  only3=False)
+train_xgb("ball3_xgb", only3=True)
+print("저장 위치:", MDIR, "| 가중치", len(list(MDIR.glob("*"))), "개")
 """))
 
 cells.append(md("""
