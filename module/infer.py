@@ -68,6 +68,10 @@ def predict_all_from_weights(D, cfg):
      2단계 하이브리드: y = MC_hat + recent_margin + resid, y_true = FAIR,
                       resid_true = FAIR − MC_hat − recent_margin, mc_true = MC(이론가 참값)."""
     FAIR, MC, rm = D.FAIR, D.MC, D.rm
+    if not np.isfinite(np.asarray(MC, dtype="float64")).any():
+        raise ValueError(
+            "mc 참값이 없다 — 공정가 2단계(FAIR = MC_hat + recent_margin + resid) 경로는 "
+            "module.mc_shards 산출물이 있어야 한다. 원천 전용 재현에서는 이 경로를 쓰지 않는다.")
     out = {}
     # 직접(단일 단계) 벤치마크
     for name in _DIRECT:

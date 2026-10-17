@@ -101,6 +101,17 @@ def test_only_eligible_products_survive(raw_universe):
         "통과해야 할 상품은 P_OK 하나다. 실제: {}".format(list(df["item"])))
 
 
+def test_build_source_assigns_mc_seed(raw_universe):
+    """mc_seed 는 발행일 정렬 후 행 인덱스 — MC 를 돌리지 않아도 정해지는 결정적 값이다.
+
+     종전에는 module.mc_shards.combine() 이 붙였다. 그 샤드 캐시가 없는 원천 전용 재현에서는
+     여기서 나와야 한다."""
+    df = BS.build_source(save=False, verbose=False)
+    assert "mc_seed" in df.columns
+    assert (df.mc_seed.values == np.arange(len(df))).all()
+    assert df.mc_seed.dtype == np.int32
+
+
 def test_save_false_writes_nothing(raw_universe):
     BS.build_source(save=False, verbose=False)
     assert not (fm.DATA / "els3_dataset.parquet").exists(), \

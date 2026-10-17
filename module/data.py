@@ -113,6 +113,13 @@ def build_datasets():
     fm.ensure_dirs()
     df = _load_source()
     common = [INDEX, ORDER, TARGET, ANCHOR, MARGIN]   # INDEX(ITEM_CD) 선두 — 모든 데이터셋에 인덱스 컬럼
+    # 공정가 시대 열(mc · recent_margin)은 module.mc_shards.combine 이 붙인다. 원천 전용
+    # 재현에서는 그 샤드 캐시가 없으므로 **열만 만들고 NaN 으로 둔다** — module.data.load 의
+    # 스키마가 깨지면 안 되고, D.MC 는 어차피 module.mcvar.make_D 가 변형 B 로 갈아끼운다.
+    for c in (ANCHOR, MARGIN):
+        src_col = INV.get(c, c)
+        if src_col not in df.columns:
+            df[src_col] = np.nan
 
     def write(name, new_cols):
         new_cols = list(dict.fromkeys(new_cols))

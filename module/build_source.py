@@ -234,6 +234,10 @@ def build_source(save=True, verbose=True, strict=False):
         if drops:
             print("  탈락 사유:", dict(sorted(drops.items(), key=lambda x: -x[1])))
     df["recent_mktvol"] = _recent_mktvol(df)
+    # MC 공통난수 — 발행일 정렬 후 행 인덱스. MC 를 돌리지 않아도 정해지는 결정적 값이라
+    # 여기서 부여한다 (종전에는 module.mc_shards.combine 이 붙였고, 그 샤드 캐시가 없는
+    # 원천 전용 재현에서는 얻을 길이 없었다).
+    df["mc_seed"] = np.arange(len(df), dtype="int32")
     df.attrs["drops"] = drops
     if save:
         out = fm.DATA / "els3_dataset.parquet"
