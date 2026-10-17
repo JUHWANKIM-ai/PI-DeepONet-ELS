@@ -149,9 +149,15 @@ def test_label_gap_residual_is_reported_not_explained_away():
     assert "미설명" in verdict(compare())["TIGHT"][1]
 
 
+@needs_baseline
 @needs_models
 def test_weight_inventory_matches_baseline():
-    """개수와 이름 규약은 일치해야 한다 (텐서 값은 라벨이 달라 다를 수밖에 없다)."""
+    """개수와 이름 규약은 일치해야 한다 (텐서 값은 라벨이 달라 다를 수밖에 없다).
+
+     **기준선 스냅샷이 삭제되면 건너뛴다.** 이 요구사항 자체는 사라지지 않는다 —
+     tests/test_notebook_model_inventory.py::test_weight_count_matches_the_contract 가
+     기대 집합(7변형 x 5시드 x 4폴드 = 140)을 **구성해서** 대조하므로 스냅샷보다 강하다.
+     이 테스트는 스냅샷이 있던 동안 그 구성이 실제 구본과 같았음을 확인한 역할이다."""
     # **가중치만** 센다. result/models/ 에는 `.trained_label_stamp.json`(어떤 라벨로 학습했는지)
     # 같은 메타데이터도 함께 있고, 그건 가중치 목록의 일부가 아니다.
     def names(d):
