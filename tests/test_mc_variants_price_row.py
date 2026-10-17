@@ -82,8 +82,11 @@ def test_price_row_fails_on_missing_curve(monkeypatch, row):
     assert BMV.price_row(0, row)["fail"] == "inputs"
 
 
-def test_price_row_yf_passes_discrete_divlog(stub_engine, row):
-    """yf(정본)는 이산배당 divlog 를 넘기고 qcont 는 넘기지 않는다."""
+def test_price_row_yf_passes_discrete_divlog(monkeypatch, stub_engine, row):
+    """yf 분기는 이산배당 divlog 를 넘기고 qcont 는 넘기지 않는다.
+
+     기본값이 lseg(연속 q)로 바뀌었으므로 이 분기는 명시해서 부른다."""
+    monkeypatch.setattr(BMV, "DIV", "yf")
     BMV.price_row(0, row)
     b_kw = stub_engine[-1]                      # 변형 B 호출
     assert b_kw.get("divlog") is not None and "qcont" not in b_kw

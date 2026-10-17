@@ -49,7 +49,7 @@ def test_returns_full_state(row, mkt):
     assert len(st["sig"]) == 3 and np.isfinite(st["sig"]).all()
     assert np.asarray(st["corr"]).shape == (3, 3)
     assert callable(st["dz"])
-    assert st["div"] == "yf"
+    assert st["div"] == "lseg"
     assert st["tks"] == [row["udl1"], row["udl2"], row["udl3"]]
 
 
@@ -67,13 +67,16 @@ def test_corr_is_symmetric_with_unit_diagonal(row, mkt):
 
 
 def test_divlog_window_follows_tenor(row, mkt):
-    """divlog 창 길이는 그 상품의 tenor 에서 온다 (build_div 의 N = round(ten*365))."""
-    st = MK.state_for(row, *mkt)
+    """divlog 창 길이는 그 상품의 tenor 에서 온다 (build_div 의 N = round(ten*365)).
+
+     기본값이 연속 q 로 바뀌었으므로 이산배당 분기를 명시해서 부른다."""
+    st = MK.state_for(row, *mkt, div="yf")
     assert st["divlog"].shape == (int(round(float(row["tenor"]) * 365)), 3)
 
 
 def test_yf_branch_passes_tenor_to_build_div(monkeypatch, row, mkt):
     """yf 분기는 그 상품의 tenor 로 이산배당을 만든다 — 고정 만기를 쓰지 않는다."""
+    # 기본값이 lseg 로 바뀌었으므로 이 분기는 명시해서 부른다
     seen = {}
     real = DV.build_div
 
@@ -82,7 +85,7 @@ def test_yf_branch_passes_tenor_to_build_div(monkeypatch, row, mkt):
         return real(tks, t0, ten, **kw)
 
     monkeypatch.setattr(DV, "build_div", spy)
-    st = MK.state_for(row, *mkt)
+    st = MK.state_for(row, *mkt, div="yf")
     assert seen["ten"] == pytest.approx(float(row["tenor"]))
     assert seen["t0"] == st["dt"] and seen["tks"] == st["tks"]
 
@@ -132,13 +135,15 @@ def test_lseg_none_when_yield_missing(monkeypatch, row, mkt):
     assert MK.state_for(row, *mkt, div="lseg") is None
 
 
-def test_yf_is_the_default_source(row, mkt):
-    """div 를 안 주면 yf(이산) 이다 — 정본 경로."""
+def test_lseg_is_the_default_source(row, mkt):
+    """div 를 안 주면 lseg(연속 q) 다 — 원천 전용 재현 경로.
+
+     Underlying 폴더에 배당락일·금액이 없어 이산배당을 만들 수 없기 때문이다."""
     a = MK.state_for(row, *mkt)
-    b = MK.state_for(row, *mkt, div="yf")
-    assert a["div"] == b["div"] == "yf"
-    assert a["divlog"] is not None
-    assert np.array_equal(a["divlog"], b["divlog"])
+    b = MK.state_for(row, *mkt, div="lseg")
+    assert a["div"] == b["div"] == "lseg"
+    assert a["divlog"] is None
+    assert np.allclose(a["qcont"], b["qcont"])
 
 
 def test_market_data_loaded_lazily_when_not_passed(row):

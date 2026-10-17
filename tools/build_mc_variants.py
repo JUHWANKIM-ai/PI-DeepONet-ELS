@@ -26,9 +26,9 @@ from module.features import MSAMP
 from util import file_manager as fm
 
 OUT = fm.CACHE / "mcvar"; OUT.mkdir(exist_ok=True)
-NPATH = 40_000               # 정본 mc_A/mc_B 의 경로 수
-DIV = os.environ.get("MCVAR_DIV", "yf")      # 배당 소스: yf(이산, 정본) | lseg(연속)
-TAG = "" if DIV == "yf" else "_" + DIV            # 샤드·산출물 이름을 소스별로 분리
+NPATH = 100_000              # 방법론 목표 경로 수 (40,000 대비 잡음 1.71배 감소, 편향 변화 없음)
+DIV = os.environ.get("MCVAR_DIV", "lseg")    # 배당 소스: lseg(연속, 기본) | yf(이산, 비교용)
+TAG = "" if DIV == "lseg" else "_" + DIV          # 기본값이 접미사 없는 이름 — 노트북이 그대로 읽는다
 OUT_NAME = "mc_variants{}.parquet".format(TAG)
 RET = MK.returns()
 KBD = MK.calendar(RET)

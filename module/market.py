@@ -75,12 +75,14 @@ def schedule(row):
             [float(row[f"lz_pmt_{j}"]) for j in range(k)])
 
 
-def state_for(row, ret=None, cal=None, div="yf"):
+def state_for(row, ret=None, cal=None, div="lseg"):
     """**현행 방법론**의 발행일 시장상태. 하나라도 못 만들면 None.
 
      div: 배당 소스
-       "yf"    yfinance 배당 이벤트 -> 이산배당 divlog  (divlog 를 엔진에 넘긴다)
-       "lseg"  LSEG 배당수익률 -> 연속 q               (qcont 를 엔진에 넘긴다)
+       "lseg"  LSEG 배당수익률 -> 연속 q               (qcont 를 엔진에 넘긴다) — **기본값**
+       "yf"    yfinance 배당 이벤트 -> 이산배당 divlog  (divlog 를 엔진에 넘긴다) — 비교용
+       원천 전용 재현은 share_underlyings_v2 만 쓰는데 거기에는 배당락일·금액이 없어
+       이산배당을 만들 수 없다. 그래서 기본값이 연속 q 다.
        LSEG 에는 배당락일·금액이 없어 이산배당을 만들 수 없다. 자세한 이유는 module/dividend.py 참고.
 
      반환: dt, tks, sig(3), corr(3x3), dz(콜러블), divlog(Nx3 또는 None), qcont(3), ndiv, div."""

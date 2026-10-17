@@ -42,8 +42,8 @@ def vc_block(s, rho, q=None):
     return np.concatenate(cols, axis=1).astype("float32")
 
 
-DIV = os.environ.get("MCVAR_DIV", "yf")          # 배당 소스: yf(이산, 정본) | lseg(연속)
-TAG = "" if DIV == "yf" else "_" + DIV
+DIV = os.environ.get("MCVAR_DIV", "lseg")        # 배당 소스: lseg(연속, 기본) | yf(이산, 비교용)
+TAG = "" if DIV == "lseg" else "_" + DIV
 
 
 def label_path(name="mc_variants"):
