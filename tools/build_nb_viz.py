@@ -106,21 +106,28 @@ def save(fig, name):
     saved.append(p.name); plt.show()
 
 
-def mets(idx, p=None):
-    p = pred if p is None else p
+def _one(idx, p):
     y, e = mc[idx], p[idx] - mc[idx]
-    return dict(n=len(idx), R2=1 - (e ** 2).sum() / ((y - y.mean()) ** 2).sum(),
+    return dict(R2=1 - (e ** 2).sum() / ((y - y.mean()) ** 2).sum(),
                 MAPE=(np.abs(e) / np.abs(y)).mean() * 100, MAE=np.abs(e).mean(),
-                RMSE=float(np.sqrt((e ** 2).mean())), MSE=float((e ** 2).mean()), bias=e.mean())
+                RMSE=float(np.sqrt((e ** 2).mean())), MSE=float((e ** 2).mean()),
+                bias=e.mean())
 
 
-def seed_se(idx, Pm, key):
-    v = []
-    for si in range(Pm.shape[0]):
-        y, e = mc[idx], Pm[si, idx] - mc[idx]
-        v.append(dict(R2=1 - (e ** 2).sum() / ((y - y.mean()) ** 2).sum(),
-                      MAPE=(np.abs(e) / np.abs(y)).mean() * 100)[key])
-    return float(np.std(v, ddof=1) / np.sqrt(len(v))) if len(v) > 1 else 0.0
+def mets_seed(idx, Pm):
+    \"\"\"**시드별 지표를 낸 뒤 평균한다** — 보고하는 것은 단일 모형의 평균 성능이다.
+
+     시드 예측을 먼저 평균하면(np.nanmean(Pm, 0)) 그건 5-모형 **앙상블**의 성능이고,
+     분산이 줄어 더 좋게 나온다. 두 양을 섞으면 표마다 다른 것을 재게 된다 —
+     실제로 같은 3스타에서 cat1 0.9576 vs allstar_level 0.9460 으로 갈려 있었다.
+     오차막대(시드 SE)와도 같은 대상이어야 한 패널 안에서 말이 된다.\"\"\"
+    per = [_one(idx, Pm[si]) for si in range(Pm.shape[0])]
+    out = dict(n=len(idx))
+    for k in per[0]:
+        v = [q[k] for q in per]
+        out[k] = float(np.mean(v))
+        out[k + "_se"] = float(np.std(v, ddof=1) / np.sqrt(len(v))) if len(v) > 1 else 0.0
+    return out
 
 
 def ols_cluster(x, y, g):
@@ -182,10 +189,8 @@ rows = []
 for s, m in STARS:
     idx = oos[m[oos]]
     for lab, Pm in [("trained 1·2·3-star", P_all), ("trained 3-star only", P_3)]:
-        p = np.nanmean(Pm, 0)
-        r = mets(idx, p)
-        r.update(star="{}-star".format(s), model=lab,
-                 R2_se=seed_se(idx, Pm, "R2"), MAPE_se=seed_se(idx, Pm, "MAPE"))
+        r = mets_seed(idx, Pm)                      # 단일 모형 평균 (앙상블 아님)
+        r.update(star="{}-star".format(s), model=lab)
         rows.append(r)
 LV = pd.DataFrame(rows)
 LV.to_csv(fm.stat("cat1_level"), index=False, encoding="utf-8-sig")
@@ -206,7 +211,7 @@ for s, _ in STARS:
         a.set_ylabel(yl); a.set_title(ttl, fontweight="bold"); a.margins(y=.20)
         if col == "R2":
             a.set_ylim(0, 1.08)
-    fig.suptitle("{}-star - stage-1 accuracy  (n={:,}, 5 seeds ± 1 SE)".format(
+    fig.suptitle("{}-star - stage-1 accuracy  (n={:,}, mean of 5 single models ± 1 SE)".format(
         s, int(z.n.iloc[0])), fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, .91])
     save(fig, "cat1_{}star_level".format(s))
@@ -358,7 +363,7 @@ for s, m in STARS:
     for i in idx:
         for t in tk_of.get(D.ITEM[i], []):
             bucket.setdefault(t, []).append(i)
-    rows = [dict(label=t, **mets(np.array(v))) for t, v in bucket.items()
+    rows = [dict(label=t, **mets_seed(np.array(v), P_all)) for t, v in bucket.items()
             if len(v) >= max(MIN_N, 50)]
     if rows:
         G = pd.DataFrame(rows).sort_values("MAE")
@@ -369,8 +374,8 @@ for s, m in STARS:
                     "cat2_{}star_by_underlying".format(s),
                     color_fn=lambda g: [C_IDX if k == "index" else C_EQ for k in g.kind])
     # 상품구조별
-    rows = [dict(label=g, **mets(idx[struct[idx] == g])) for g in np.unique(struct[idx])
-            if (struct[idx] == g).sum() >= MIN_N]
+    rows = [dict(label=g, **mets_seed(idx[struct[idx] == g], P_all))
+            for g in np.unique(struct[idx]) if (struct[idx] == g).sum() >= MIN_N]
     if rows:
         G = pd.DataFrame(rows).sort_values("MAE")
         G["star"] = "{}-star".format(s)
