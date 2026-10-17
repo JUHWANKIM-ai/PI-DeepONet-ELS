@@ -122,6 +122,8 @@ DART 원천 공시 → 학습 데이터셋. `module.build_source` 를 불러와 
 """))
 
 cells.append(code("""
+import os
+
 import numpy as np, pandas as pd
 import matplotlib.pyplot as plt
 
@@ -134,7 +136,19 @@ plt.rcParams.update({"figure.facecolor": "white", "axes.facecolor": "white",
                      "axes.grid": True, "grid.color": "#e8e8e8",
                      "axes.spines.top": False, "axes.spines.right": False})
 C1, C2 = "#1f6f9c", "#e07a5f"
-REBUILD = False        # True 면 원천에서 다시 빌드 (수 분). False 면 저장본을 읽는다
+# 저장본이 지금 코드가 만들 것과 다르면 다시 빌드한다. "파일이 있는가" 로 판단하면
+# 시드 정의를 바꿔도 저장본이 남아 라벨 재생성이 헛돈다 — 실제로 그랬다.
+# 유니버스가 늘어난 경우는 빌드해 봐야 알므로 REBUILD=1 로 강제한다.
+def _stale_saved():
+    from module.seeds import seeds_stale
+    p_ = fm.DATA / "els3_dataset.parquet"
+    if not p_.exists():
+        return True
+    return seeds_stale(pd.read_parquet(p_, columns=["item", "mc_seed"]))
+
+
+REBUILD = os.environ.get("REBUILD", "0") == "1" or _stale_saved()
+print("재빌드:", REBUILD)
 print("원천:", fm.RAW)
 """))
 

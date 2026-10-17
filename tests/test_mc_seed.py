@@ -78,3 +78,26 @@ def test_every_assignment_site_uses_the_shared_helper():
         src = inspect.getsource(importlib.import_module(name))
         assert "mc_seed_for" in src, "{} 가 공용 헬퍼를 쓰지 않는다".format(name)
         assert 'mc_seed"] = np.arange' not in src, "{} 에 행 번호 시드가 남아 있다".format(name)
+
+
+def test_seeds_stale_detects_a_changed_seed_definition():
+    """저장된 데이터셋이 지금의 시드 정의와 다르면 낡은 것이다.
+
+     노트북 0 은 `REBUILD=False` 면 저장본을 그대로 읽었다. 그래서 시드 정의를 바꿔도
+     데이터셋이 갱신되지 않았고, 행 번호 시드가 그대로 남아 라벨 재생성이 헛돌았다 —
+     라벨 스탬프에서 고친 것과 같은 결함("파일이 있는가" vs "낡았는가")이 여기 또 있었다."""
+    from module.seeds import seeds_stale
+    d = pd.DataFrame({"item": ITEMS})
+    d["mc_seed"] = mc_seed_for(d.item)
+    assert seeds_stale(d) is False
+    d["mc_seed"] = np.arange(len(d), dtype="int32")      # 행 번호로 되돌린 상태
+    assert seeds_stale(d) is True
+    assert seeds_stale(pd.DataFrame({"item": ITEMS})) is True      # 열이 아예 없다
+
+
+def test_notebook0_keys_rebuild_on_seed_staleness():
+    import inspect
+    import tools.build_nb_data as BND
+    src = inspect.getsource(BND)
+    assert "seeds_stale" in src, "노트북 0 이 저장본의 시드를 검사하지 않는다"
+    assert "REBUILD = False" not in src, "REBUILD 가 상수로 고정돼 있다"

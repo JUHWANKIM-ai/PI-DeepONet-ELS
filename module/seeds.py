@@ -33,3 +33,19 @@ def mc_seed_for(items):
     return np.array(
         [int(hashlib.sha1(str(it).encode("utf-8")).hexdigest()[:8], 16) % SEED_MAX
          for it in items], dtype="int32")
+
+
+def seeds_stale(df):
+    """저장된 데이터셋의 mc_seed 가 지금의 정의와 다른가 (열이 없으면 낡은 것으로 본다).
+
+     "파일이 있는가" 가 아니라 "무엇으로 만든 파일인가" 를 묻기 위한 것이다. 시드 정의를
+     바꿔도 저장본을 그대로 읽으면 라벨 재생성이 헛돈다 — 실제로 행 번호 시드가 남은 채
+     노트북 0 이 재빌드를 건너뛰었다.
+
+     유니버스가 늘어난 경우(새 상품)는 이것으로 잡히지 않는다. 그건 빌드해 봐야 알 수 있고,
+     환경변수 REBUILD=1 로 강제한다."""
+    import numpy as _np
+    if "mc_seed" not in df.columns or "item" not in df.columns:
+        return True
+    return not bool(_np.array_equal(_np.asarray(df["mc_seed"], dtype="int64"),
+                                    mc_seed_for(df["item"]).astype("int64")))
