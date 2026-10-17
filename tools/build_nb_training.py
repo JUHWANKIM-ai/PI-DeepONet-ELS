@@ -70,6 +70,10 @@ from module import star as ST
 from module import train as TR
 
 SEEDS = range(5)                 # 시드 수. 빠르게 확인하려면 range(1)
+MONO = dict(fixed_w=1.0, kinds=["lz_pmt"], margin_krw=8.0)   # 단조손실 설정
+FACE = 10000
+MDIR = fm.RESULT / "models"; MDIR.mkdir(parents=True, exist_ok=True)
+
 # 라벨이 바뀌면 저장된 가중치는 낡는다. "파일이 있는가" 로 판단하면 낡은 가중치를 조용히
 # 재사용하므로, 라벨의 **출처 스탬프**와 가중치가 학습된 스탬프를 비교해 자동으로 결정한다.
 # RETRAIN=1 로 강제할 수도 있다.
@@ -91,9 +95,6 @@ def weights_stale():
 
 RETRAIN = os.environ.get("RETRAIN", "0") == "1" or weights_stale()
 print("재학습:", RETRAIN, "| 라벨 스탬프", BMV.read_stamp(BMV.OUT / BMV.OUT_NAME))
-MONO = dict(fixed_w=1.0, kinds=["lz_pmt"], margin_krw=8.0)   # 단조손실 설정
-FACE = 10000
-MDIR = fm.RESULT / "models"; MDIR.mkdir(parents=True, exist_ok=True)
 
 cfg0 = yaml.safe_load(open(fm.ROOT / "config.yaml", encoding="utf-8"))
 print("장치", "cuda" if torch.cuda.is_available() else "cpu",
