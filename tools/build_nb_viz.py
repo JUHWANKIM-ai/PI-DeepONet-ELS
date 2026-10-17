@@ -528,6 +528,146 @@ save(fig, "cat3_decomposition")
 print(pd.DataFrame(comp).describe().T[["mean", "std", "min", "max"]].round(1).to_string())
 """))
 
+cells.append(md("""
+### 3-5. 프라이서 속도 — MC vs 대리모형
+
+같은 상품 200개를 두 경로로 가격한다. **가격 산출만** 잰다 — 시장입력 조립(EWMA 변동성·영업일 상관·
+커브 부트스트랩·이산배당)은 두 경로 모두 똑같이 필요하므로 측정 밖에 둔다.
+
+대리모형은 **Direct+단조손실 5시드 앙상블**(보고 성능과 같은 구성)이다. 배치가 커질수록 상품당
+비용이 떨어지므로 '200개 요청' 과 '전량 일괄' 두 가지를 함께 낸다 — 하나만 내면 오해를 부른다.
+"""))
+
+cells.append(code("""
+import time
+from module import anchors as AN, market as MK, mc_engine as ME
+
+NSPD = 200
+fold_s = np.full(D.n, -1, int)
+for k_, (_, _, te_) in enumerate(D.WF):
+    fold_s[te_] = k_
+dfr = MK.dataset().set_index("item")
+RET_s = MK.returns(); KBD_s = MK.calendar(RET_s)
+rng_s = np.random.default_rng(0)
+
+sel, st_args = [], []
+for i_ in rng_s.permutation(oos[(D.nstar == 3)[oos]]):
+    if len(sel) >= NSPD:
+        break
+    it_ = D.ITEM[i_]
+    if it_ not in dfr.index:
+        continue
+    r_ = dfr.loc[it_]
+    s_ = MK.state_for(r_, ret=RET_s, cal=KBD_s)
+    if s_ is None:
+        continue
+    k_, p_, lb_, lp_ = MK.schedule(r_)
+    st_args.append(((s_["sig"], s_["corr"], s_["dz"], float(r_["B"]), k_, float(r_["tenor"])),
+                    dict(seed=int(r_["mc_seed"]), c=float(r_["coupon"]), pmts=p_,
+                         lz_barr=lb_, lz_pmt=lp_, divlog=s_["divlog"])))
+    sel.append(int(i_))
+sel = np.array(sel)
+
+mc_t, mc_px = {}, {}
+for npath in (40_000, 100_000):
+    t0 = time.perf_counter()
+    mc_px[npath] = np.array([float(ME.mc_daily_t(*a, n=npath, **kw)) for a, kw in st_args])
+    mc_t[npath] = (time.perf_counter() - t0) / len(sel) * 1e3          # ms/상품
+
+FN = {(s, k): AN.load_don(AN.path("ball_d", s, k))
+      for s in range(5) for k in range(len(D.WF))}
+
+
+def don_run(ix):
+    \"\"\"5시드 앙상블 전방계산. 폴드별 가중치로 그 폴드의 시험 상품만 예측한다.\"\"\"
+    Cx, Vx, Nx, fx = D.CURVE[ix], D.VC[ix], D.CON[ix].astype("float32"), fold_s[ix]
+    acc = np.zeros(len(ix), "float64")
+    for s in range(5):
+        for k in range(len(D.WF)):
+            m = fx == k
+            if m.any():
+                acc[m] += FN[(s, k)](Cx[m], Vx[m], Nx[m])
+    return acc / 5
+
+
+def don_time(ix, rep):
+    for _ in range(3 if len(ix) < 5000 else 2):
+        don_run(ix)
+    ts = [0.0] * rep
+    for j in range(rep):
+        t0 = time.perf_counter(); don_run(ix); ts[j] = time.perf_counter() - t0
+    return float(np.median(ts)) / len(ix) * 1e3                        # ms/상품
+
+
+t_req = don_time(sel, 20)
+t_book = don_time(oos, 5)
+don_px = don_run(sel)
+
+mcp, dnp = mc_px[40_000] * FACE, don_px * FACE
+ds = dnp - mcp
+SPD = pd.DataFrame([
+    dict(engine="MC 100,000 paths", ms_per_product=mc_t[100_000], speedup=np.nan),
+    dict(engine="MC 40,000 paths", ms_per_product=mc_t[40_000], speedup=np.nan),
+    dict(engine="DeepONet (200-product request)", ms_per_product=t_req,
+         speedup=mc_t[40_000] / t_req),
+    dict(engine="DeepONet (full book, 29,743)", ms_per_product=t_book,
+         speedup=mc_t[40_000] / t_book)])
+SPD["agree_corr"] = float(np.corrcoef(mcp, dnp)[0, 1])
+SPD["agree_MAE"] = np.abs(ds).mean()
+SPD["agree_RMSE"] = float(np.sqrt((ds ** 2).mean()))
+SPD["agree_MSE"] = float((ds ** 2).mean())
+SPD["agree_MAPE"] = (np.abs(ds) / np.abs(mcp)).mean() * 100
+SPD["agree_R2"] = 1 - (ds ** 2).sum() / ((mcp - mcp.mean()) ** 2).sum()
+SPD["agree_bias"] = ds.mean()
+SPD.to_csv(fm.stat("cat3_speed"), index=False, encoding="utf-8-sig")
+
+LAB = ["MC|100k paths", "MC|40k paths", "DeepONet|batch 200", "DeepONet|batch 29,743"]
+COLS = [C_MC, "#f0a58c", C_NEW, "#2a9d8f"]
+fig, ax = plt.subplots(1, 3, figsize=(13.8, 4.3))
+
+v = SPD.ms_per_product.values
+b = ax[0].bar(np.arange(4), v, .62, color=COLS, edgecolor="white", lw=.8)
+ax[0].set_yscale("log")
+for j, (r_, sp) in enumerate(zip(b, SPD.speedup.values)):
+    txt = "{:.3g} ms".format(v[j]) if v[j] >= 1 else "{:.1f} us".format(v[j] * 1e3)
+    if np.isfinite(sp):
+        txt += chr(10) + "{:,.0f}x".format(sp)
+    ax[0].text(r_.get_x() + r_.get_width() / 2, r_.get_height() * 1.25, txt,
+               ha="center", va="bottom", fontsize=9, fontweight="bold")
+ax[0].set_xticks(np.arange(4))
+ax[0].set_xticklabels([t.replace("|", chr(10)) for t in LAB], fontsize=8.5)
+ax[0].set_ylabel("time per product [ms, log]")
+ax[0].set_ylim(v.min() / 6, v.max() * 60)
+ax[0].set_title("Pricing latency  (speedup vs MC 40k)", fontweight="bold")
+
+ax[1].scatter(mcp, dnp, s=16, alpha=.45, color=C_NEW, edgecolors="none")
+lo_, hi_ = np.percentile(np.r_[mcp, dnp], [0.5, 99.5])
+ax[1].plot([lo_, hi_], [lo_, hi_], "--", color=C_MC, lw=1.8, label="45 deg")
+ax[1].set_xlim(lo_, hi_); ax[1].set_ylim(lo_, hi_)
+ax[1].set_xlabel("MC price [KRW]"); ax[1].set_ylabel("DeepONet price [KRW]")
+ax[1].legend(frameon=False, fontsize=9)
+ax[1].set_title("Price agreement  (corr = {:.3f}, n = {:,})".format(
+    SPD.agree_corr.iloc[0], len(sel)), fontweight="bold")
+
+ax[2].hist(ds, bins=40, color=C_NEW, alpha=.85)
+ax[2].axvline(0, color=C_MC, lw=1.6)
+ax[2].set_xlabel("DeepONet - MC  [KRW]"); ax[2].set_ylabel("products")
+ax[2].set_title("Price difference  (MAE {:.1f}, RMSE {:.1f})".format(
+    SPD.agree_MAE.iloc[0], SPD.agree_RMSE.iloc[0]), fontweight="bold")
+
+fig.suptitle("MC pricer vs DeepONet surrogate (Direct + monotonicity, 5-seed) "
+             "- pricing step only", fontsize=13, fontweight="bold")
+fig.tight_layout(rect=[0, 0, 1, .90])
+save(fig, "cat3_speed")
+
+print("가격 산출만 측정 (시장입력 조립 제외) | 표본 {:,}개 3스타 OOS".format(len(sel)))
+print(SPD[["engine", "ms_per_product", "speedup"]].round(5).to_string(index=False))
+print()
+print("일치도  corr {:.4f} | R2 {:.4f} | MAPE {:.3f}% | MAE {:.1f}원 | RMSE {:.1f}원 | 편향 {:+.1f}원".format(
+    SPD.agree_corr.iloc[0], SPD.agree_R2.iloc[0], SPD.agree_MAPE.iloc[0],
+    SPD.agree_MAE.iloc[0], SPD.agree_RMSE.iloc[0], SPD.agree_bias.iloc[0]))
+"""))
+
 # ---------------- 범주 4 ----------------
 cells.append(md("""
 ---

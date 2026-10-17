@@ -50,8 +50,18 @@ run-to-run 노이즈 안에서 뒤바뀌므로 하나의 군집으로 본다.
 
 **단계별 R²(하이브리드).** Stage-1(`mc` 재현) ≈ 0.90–0.96 · Stage-2(잔차 `mc − MC_hat`) ≈ 0.12–0.19
 (DeepONet 하이브리드 기준; `xgb_hybrid` 은 ≈ 0) · Final(`mc`) ≈ 0.90–0.96.
-**속도**(`2_DeepONet_model` 2-4절 실측, CUDA): MC 40,000 경로 ≈ 26.5 ms/상품 vs
-대리모형 전방계산 ≈ 0.135 µs/상품(배치 8,192) → **약 196,000배 빠름**.
+**속도**(`3_visualization` 3-5절 실측, RTX 3060 Ti · 같은 3스타 OOS 200개 · **가격 산출만**):
+
+| | 상품당 | MC 40k 대비 |
+|---|---|---|
+| MC 100,000 경로 | 66.0 ms | — |
+| MC 40,000 경로 | 27.5 ms | — |
+| 대리모형 (Direct+단조, 5시드, 200개 요청) | 53.2 µs | **약 516배** |
+| 대리모형 (같은 구성, 전량 29,743개 일괄) | 1.8 µs | **약 15,600배** |
+
+배속은 배치 크기에 크게 좌우된다 — 200개 요청은 호출 오버헤드가 지배하고, 큰 배치에서는 분산된다.
+시장입력 조립(EWMA·상관·커브 부트스트랩·배당)은 두 경로 모두 똑같이 필요하므로 측정에서 제외했다.
+가격 일치는 corr 0.979 · MAE 42.7원 · RMSE 75.3원.
 
 지표: `result/statistics/`  ·  그림: `result/image/`.
 
@@ -61,10 +71,10 @@ run-to-run 노이즈 안에서 뒤바뀌므로 하나의 군집으로 본다.
 
 ```
 config.yaml              # 모든 하이퍼파라미터의 단일 출처
-0_data.ipynb             # raw + cache  -> data/els3_dataset.parquet (base, MC 없음)
-1_MC_pricer.ipynb        # 현행 방법론 프라이서: 시장입력 · 재현검증 · 경로잡음 · 공정가 격차
-2_DeepONet_model.ipynb   # 대리모형: 수준 정확도 · 계약조건 반응 · 기초자산별 · 속도 · 가격오차
-EDA_raw_filter.ipynb     # raw 필터 퍼널 + 공정가비율 / 만기 EDA
+0_data_preprocessing.ipynb  # raw + cache -> data/els3_dataset.parquet + 탈락 퍼널 · 분포 · 시계열
+1_MC_pricer.ipynb           # 현행 방법론 프라이서: 시장입력 · 재현검증 · 경로잡음 · 공정가 격차
+2_model_training.ipynb      # 대리모형 학습(1·2·3스타 통합 / 3스타 전용) + OOS 수준 지표
+3_visualization.ipynb       # 그림 일체 4개 범주: 스타별 성능 · 계약조건 반응 · 프라이서 · 상품
 
 model/                   # 모델 플러그인(레지스트리 자동발견): benchmark, deeponet, stage2, _template
 module/                  # 데이터 + 특성/MC 엔진 + 네트워크 + 학습 + 추론
@@ -91,7 +101,7 @@ paper/                   # 참고 논문 [1]-[5]
 pip install -r requirements.txt          # Python 3.11 (conda env `abacus`), JAX/PyTorch CPU
 
 # 0) raw + cache 로 base 데이터셋 재유도 (아직 MC 없음)
-jupyter nbconvert --to notebook --execute --inplace 0_data.ipynb
+jupyter nbconvert --to notebook --execute --inplace 0_data_preprocessing.ipynb
 
 # --- MC 이론가 ---
 # 전량 재계산은 무겁다(단일코어 ~14h). 샤드 결과가 data/cache/ 에 캐시돼 있어 `combine` 이 수 초 만에
@@ -102,12 +112,14 @@ python -m module.mc_shards combine 28    # els3_dataset.parquet 에 mc + recent_
 
 # 1) 현행 방법론 프라이서 — 시장입력 조립 · mc_B 재현검증 · 경로수별 MC 잡음 · 공정가 격차
 jupyter nbconvert --to notebook --execute --inplace 1_MC_pricer.ipynb
-# 2) 대리모형 — 수준 정확도 · 계약조건 반응 · 기초자산별 · 추론속도 · 가격오차
-jupyter nbconvert --to notebook --execute --inplace 2_DeepONet_model.ipynb
+# 2) 대리모형 학습 — 1·2·3스타 통합 / 3스타 전용, 5시드 x 4폴드 (가중치 없으면 약 6분)
+jupyter nbconvert --to notebook --execute --inplace 2_model_training.ipynb
+# 3) 시각화 — 4개 범주 그림 22장 + 지표·기울기 표
+jupyter nbconvert --to notebook --execute --inplace 3_visualization.ipynb
 ```
 
 모든 하이퍼파라미터는 **`config.yaml`**, 모든 경로는 **`util/file_manager.py`** 로 관리한다.
-`combine` 단계만 분리돼 있는 것은 그것이 유일한 고비용 단계이기 때문이며, 그 외 노트북 0→4 는 위에서
+`combine` 단계만 분리돼 있는 것은 그것이 유일한 고비용 단계이기 때문이며, 그 외 노트북 0→3 은 위에서
 아래로 순차 실행된다.
 
 ---
@@ -229,7 +241,8 @@ walk-forward OOS 예측 조립 + 폴드별 가중치를 `result/models/<name>_fo
   `load_tab_predictor(D, path)` 로 재로드 → `predict(idx)`.
 
 ### `module/infer.py`
-저장 가중치로 예측 재현(`2_DeepONet_model` 이 예측 CSV 대신 이걸 사용).
+저장 가중치로 **공정가(FAIR) 2단계 하이브리드** 예측 재현. 최종목표가 MC 이론가로 바뀐 뒤
+현행 노트북 4장은 이 경로를 쓰지 않는다 — 가중치·예측은 `scratch/result_unused/` 에 있다.
 - `_DIRECT`(직접 5종)·`_HYBRID`(2단계 5종) 레지스트리.
 - `predict_all_from_weights(D, cfg)` → 각 모델의 폴드 가중치를 로드해 OOS test 인덱스를 forward,
   파이프라인과 동일 스키마의 DataFrame 반환(`y_true = mc`; 하이브리드는 단계별 R² 용 컬럼도 포함).
