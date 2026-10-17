@@ -12,6 +12,7 @@
  kmap=None 이면 미보정(pre-calibration) 버전 = 원래 MC.
 """
 import json
+import os
 from datetime import date
 
 import numpy as np
@@ -29,16 +30,34 @@ def _safe(t):
     return "px_" + t.replace("^", "_").replace(".", "_") + ".parquet"
 
 
+PX_SOURCES = ("cache", "underlying")
+
+
 def load_market():
-    """cache/raw → 시장데이터 dict(RET 로그수익률, KRW 곡선, 상품→기초자산·행사가 매핑)."""
+    """cache/raw → 시장데이터 dict(RET 로그수익률, KRW 곡선, 상품→기초자산·행사가 매핑).
+
+     가격 공급원은 환경변수 PX_SOURCE 로 고른다.
+       cache       data/cache/px_*.parquet   배당 역조정(총수익) — 기본값, 저장 라벨과 일치
+       underlying  share_underlyings_v2 의 Close_Adj  액면분할만 조정 — 원천 전용 재현용
+     기본값을 바꾸지 않으므로 저장된 mc_A/mc_B 의 비트 단위 재현이 유지된다."""
     CA, RAW = fm.CACHE, fm.RAW
+    src = os.environ.get("PX_SOURCE", "cache")
+    if src not in PX_SOURCES:
+        raise ValueError("PX_SOURCE 는 {} 중 하나여야 한다 (받은 값: {!r})".format(
+            " | ".join(PX_SOURCES), src))
     mapping = json.loads((CA / "udly_ticker_map.json").read_text(encoding="utf-8"))
     RET = {}
     for _uid, t in mapping.items():
-        if not t:
+        if not t or t in RET:
+            continue
+        if src == "underlying":
+            from . import underlying as UL
+            u = UL.price(t)
+            if u is not None:
+                RET[t] = np.log(u).diff()
             continue
         f = CA / _safe(t)
-        if t in RET or not f.exists():
+        if not f.exists():
             continue
         s = pd.read_parquet(f)["close"].dropna(); s = s[~s.index.duplicated()]
         RET[t] = np.log(s).diff()
