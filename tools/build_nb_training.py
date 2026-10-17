@@ -58,7 +58,7 @@ cells.append(md("""
 """))
 
 cells.append(code("""
-import copy, time, yaml
+import copy, os, time, yaml
 from pathlib import Path
 
 import numpy as np
@@ -70,7 +70,8 @@ from module import star as ST
 from module import train as TR
 
 SEEDS = range(5)                 # 시드 수. 빠르게 확인하려면 range(1)
-RETRAIN = False                  # True 면 기존 가중치를 무시하고 다시 학습
+RETRAIN = os.environ.get("RETRAIN", "0") == "1"   # 기존 가중치를 무시하고 다시 학습
+                                 # 라벨이 바뀌면 저장된 가중치는 낡는다 — RETRAIN=1 로 돌린다
 MONO = dict(fixed_w=1.0, kinds=["lz_pmt"], margin_krw=8.0)   # 단조손실 설정
 FACE = 10000
 MDIR = fm.RESULT / "models"; MDIR.mkdir(parents=True, exist_ok=True)

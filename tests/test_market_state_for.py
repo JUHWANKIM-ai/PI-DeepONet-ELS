@@ -25,10 +25,18 @@ from module import curve as CV                      # noqa: E402
 from module import dividend as DV                   # noqa: E402
 from module import features as F                    # noqa: E402
 import module.market as MK                          # noqa: E402
+from util import file_manager as fm                  # noqa: E402
 
 # dkw = mc_engine 에 그대로 풀어 넘길 배당 kwargs. divlog 를 직접 꺼내는 호출부가
 # lseg(기본값)에서 배당을 조용히 잃어서 추가했다 — tests/test_div_source_switch.py 참고.
 KEYS = {"dt", "tks", "sig", "corr", "dz", "dkw", "divlog", "qcont", "ndiv", "div"}
+
+# yf 이산배당 분기는 `data/cache/div_*.parquet` 이 있어야만 돌 수 있다. 원천 전용 트리에서는
+# 그 캐시가 격리돼 있으므로 실패가 아니라 건너뛴다 — 못 도는 테스트를 빨간불로 두면
+# 진짜 실패가 묻힌다.
+needs_divcache = pytest.mark.skipif(
+    not (fm.CACHE / "div_SPY.parquet").exists(),
+    reason="div_* 캐시가 없다 (원천 전용 트리)")
 
 
 @pytest.fixture(scope="module")
@@ -68,6 +76,7 @@ def test_corr_is_symmetric_with_unit_diagonal(row, mkt):
     assert np.allclose(C, C.T)
 
 
+@needs_divcache
 def test_divlog_window_follows_tenor(row, mkt):
     """divlog 창 길이는 그 상품의 tenor 에서 온다 (build_div 의 N = round(ten*365)).
 
@@ -76,6 +85,7 @@ def test_divlog_window_follows_tenor(row, mkt):
     assert st["divlog"].shape == (int(round(float(row["tenor"]) * 365)), 3)
 
 
+@needs_divcache
 def test_yf_branch_passes_tenor_to_build_div(monkeypatch, row, mkt):
     """yf 분기는 그 상품의 tenor 로 이산배당을 만든다 — 고정 만기를 쓰지 않는다."""
     # 기본값이 lseg 로 바뀌었으므로 이 분기는 명시해서 부른다

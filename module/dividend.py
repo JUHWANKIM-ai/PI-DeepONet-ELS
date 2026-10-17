@@ -16,7 +16,13 @@ import pandas as pd
 from util import file_manager as fm
 
 PROXY = {"^STOXX50E": "FEZ", "^GSPC": "SPY", "^HSCE": "FXI", "^KS200": "069500.KS",
-         "^N225": "1321.T", "^HSI": "2800.HK", "^NDX": "QQQ"}
+         "^N225": "1321.T", "^HSI": "2800.HK", "^NDX": "QQQ",
+         # CSI 300 은 LSEG 가 지수 자체의 배당수익률을 주지 않는다(배당수익률_행수 0).
+         # 추종 ETF 510300.SS(Huatai-PB CSI 300 ETF, 벤치마크 CSI 300 TR)로 조회한다 —
+         # 다른 지수와 같은 규약이다. 이 항목이 없어 CSI 300 상품 123건이 전부
+         # "lseg div" 로 탈락했다. ETF 수익률은 2014-01-21 부터 있고, 해당 상품의
+         # 발행일은 2019-03-08 ~ 2020-01-23 로 모두 범위 안이다.
+         "000300.SS": "510300.SS"}
 WINDOW_DAYS = 320                  # 최근 분배일로 끝나는 1년 창 (분기배당 4회를 담되 중복은 피하는 폭)
 ZERO_DIV = frozenset({"^GDAXI"})   # 총수익지수 — 배당이 이미 지수에 반영돼 있어 배당 이력이 없다
 _HIST = {}

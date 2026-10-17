@@ -24,6 +24,12 @@ from util import file_manager as fm          # noqa: E402
 from module import dividend as DV             # noqa: E402
 import module.market as MK                    # noqa: E402
 
+# 이산배당(yf) 분기는 `data/cache/div_*.parquet` 이 있어야만 돌 수 있다. 원천 전용 트리에서는
+# 격리돼 있으므로 실패가 아니라 건너뛴다.
+needs_divcache = pytest.mark.skipif(
+    not (fm.CACHE / "div_SPY.parquet").exists(),
+    reason="div_* 캐시가 없다 (원천 전용 트리)")
+
 
 @pytest.fixture(scope="module")
 def mkt():
@@ -53,6 +59,7 @@ def test_state_for_defaults_to_continuous_q(row, mkt):
     assert np.isfinite(st["qcont"]).all()
 
 
+@needs_divcache
 def test_discrete_dividend_is_still_reachable(row, mkt):
     """정본 비교용으로 이산배당 경로는 남아 있어야 한다."""
     st = MK.state_for(row, *mkt, div="yf")
