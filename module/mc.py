@@ -45,7 +45,7 @@ def load_market():
     if src not in PX_SOURCES:
         raise ValueError("PX_SOURCE 는 {} 중 하나여야 한다 (받은 값: {!r})".format(
             " | ".join(PX_SOURCES), src))
-    mapping = json.loads((CA / "udly_ticker_map.json").read_text(encoding="utf-8"))
+    mapping = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
     RET = {}
     for _uid, t in mapping.items():
         if not t or t in RET:

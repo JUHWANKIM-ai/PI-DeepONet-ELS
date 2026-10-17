@@ -49,3 +49,12 @@ def test_ns_zero_reads_from_raw():
     dz = MK.ns_zero(pd.Timestamp("2024-06-03"))
     assert dz is not None
     assert float(dz([3.0])[0]) == pytest.approx(0.03, abs=0.02)
+
+
+def test_udly_ticker_map_lives_in_raw():
+    """기초자산 ID -> 티커 매핑은 **선별된 원천**이지 산출물이 아니다.
+
+     master.csv 로 재생성하면 유니버스가 바뀐다 — 100개 중 53개가 다르고, 지도가 None 으로
+     비워둔 항목에 master 는 티커를 갖고 있다(예: US67066G1040 -> NVDA). 그 선별을 보존해야 한다."""
+    assert (fm.RAW / "udly_ticker_map.json").exists()
+    assert not (fm.CACHE / "udly_ticker_map.json").exists()

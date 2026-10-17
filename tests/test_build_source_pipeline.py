@@ -63,7 +63,7 @@ def raw_universe(tmp_path, monkeypatch):
     for d in (cache, raw, data):
         d.mkdir(parents=True)
 
-    (cache / "udly_ticker_map.json").write_text(
+    (raw / "udly_ticker_map.json").write_text(
         json.dumps(dict(zip(UDLY, TICKERS))), encoding="utf-8")
     for i, t in enumerate(TICKERS):
         _prices(i).to_parquet(cache / BS._safe(t))

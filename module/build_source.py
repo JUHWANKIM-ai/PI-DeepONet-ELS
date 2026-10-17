@@ -76,7 +76,7 @@ def load_inputs(verbose=False):
      반환 필드: mapping, RET(티커→로그수익률), KRW, SCHED, u3map, barr_pct, cand(후보 행).
      경로는 호출 시점의 fm.CACHE / fm.RAW 를 본다 (테스트에서 monkeypatch 가능)."""
     CA, RAW = fm.CACHE, fm.RAW
-    mapping = json.loads((CA / "udly_ticker_map.json").read_text(encoding="utf-8"))
+    mapping = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
     RET = {}
     for uid, t in mapping.items():
         if not t:
