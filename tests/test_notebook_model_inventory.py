@@ -46,10 +46,16 @@ def test_xgb_variants_are_pickles_and_others_are_torch():
     assert xgb == {"ball_xgb", "ball3_xgb"}
 
 
-@pytest.mark.skipif(not any((fm.RESULT / "models").glob("*")),
+def weight_names():
+    """가중치 파일 이름만. `.trained_label_stamp.json` 같은 메타데이터는 제외한다."""
+    d = fm.RESULT / "models"
+    return {p.name for p in list(d.glob("*.pt")) + list(d.glob("*.pkl"))}
+
+
+@pytest.mark.skipif(not any((fm.RESULT / "models").glob("*.pt")),
                     reason="가중치가 없다 (노트북 2 미실행)")
 def test_weight_count_matches_the_contract():
-    got = {p.name for p in (fm.RESULT / "models").glob("*")}
+    got = weight_names()
     want = set()
     for t in consumed():
         ext = ".pkl" if t.endswith("_xgb") else ".pt"

@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 from module import features as F
 from module import mc as MCM
 from module.build_source import (STRUCTS, FAIR_LO, FAIR_HI, TEN_LO, TEN_HI,
-                                 encode_barrier, needs_linear_pmt, _safe)
+                                 encode_barrier, needs_linear_pmt)
 from module.schedule import load_schedules, NSTRK, SCHED_COLS
 from util import file_manager as fm
 

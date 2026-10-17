@@ -21,7 +21,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util import file_manager as fm                      # noqa: E402
-import module.build_source as BS
+import module.build_source as BS                     # noqa: E402
 import module.underlying as UL                       # noqa: E402
 
 TICKERS = ["^AAA", "BBB.KS", "CCC.T"]

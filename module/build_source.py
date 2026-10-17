@@ -14,8 +14,7 @@ import bisect
 
 from util import file_manager as fm
 from . import features as F
-from . import mc as MCM                  # PX_SOURCES 규약 공유
-from . import underlying as UL
+from . import mc as MCM                  # 가격 적재 · PX_SOURCES 규약
 from .schedule import load_schedules, NSTRK, SCHED_COLS
 
 STRUCTS = (("STEP", 1), ("STEP", 0), ("LIZARD", 1), ("LIZARD", 0))
@@ -56,10 +55,6 @@ def structure_mask(ac, three_index):
             & ac["fair"].between(FAIR_LO, FAIR_HI) & ac["tenor"].between(TEN_LO, TEN_HI))
 
 
-def _safe(t):
-    return "px_" + t.replace("^", "_").replace(".", "_") + ".parquet"
-
-
 def _mom6m(rets, dt, win=126):
     """발행 전 win 거래일 누적 로그수익률의 3자산 평균. 자료 부족이면 0.0."""
     vals = []
@@ -77,9 +72,10 @@ def load_inputs(verbose=False):
     """raw CSV 3종 + cache(티커맵·가격·KRW커브)를 읽어 빌드에 필요한 것만 묶어 돌려준다.
 
      반환 필드: mapping, RET(티커→로그수익률), KRW, SCHED, u3map, barr_pct, cand(후보 행).
-     경로는 호출 시점의 fm.CACHE / fm.RAW 를 본다 (테스트에서 monkeypatch 가능)."""
-    CA, RAW = fm.CACHE, fm.RAW
-    mapping = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
+     가격은 `module.mc.returns_by_ticker` 한 곳에서만 적재한다 (PX_SOURCE 기본값 underlying).
+     그 밖의 경로는 호출 시점의 fm.DATA / fm.RAW 를 본다 (테스트에서 monkeypatch 가능)."""
+    RAW = fm.RAW
+    mapping = json.loads((RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
     RET = MCM.returns_by_ticker(mapping)        # 가격 적재는 module.mc 한 곳에서만
     KRW = pd.read_parquet(fm.rate("krw_curve.parquet"))[["call", "m3", "y10"]]
 

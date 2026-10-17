@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """MC 이론가 엔진 (미래에셋 36449 방식) — 노트북(1_MC_pricer)·병렬 샤드 스크립트 공용(DRY).
- 일별 GBM + 촐레스키(180일 역사 상관) + 180일 역사 변동성(cache px_*) + KRW Nelson-Siegel 할인 + q=0 + 일별 KI.
+ 일별 GBM + 촐레스키 기하 worst-of + 일별 KI. **시장입력 정의는 호출부가 정한다** —
+ 정본 라벨(`mc_B`)은 EWMA120(λ=0.99) · KRX 영업일 120일 쌍별 상관 · CD+IRS 부트스트랩 커브 ·
+ 연속 배당수익률 q · 100,000 경로이고, `tools/build_mc_variants.py` 가 조립한다.
+ 이 모듈이 맡는 것은 **가격 계열 적재**(returns_by_ticker)와 데이터셋 조립뿐이다.
  곡선·vol·corr 정의는 module.features 사용.
 
  *** 이 모듈(numpy)은 프로덕션 재산출에서 퇴역했다. 페이오프 규칙의 정본은 module/mc_engine.py (torch) 다.

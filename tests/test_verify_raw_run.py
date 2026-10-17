@@ -152,9 +152,11 @@ def test_label_gap_residual_is_reported_not_explained_away():
 @needs_models
 def test_weight_inventory_matches_baseline():
     """개수와 이름 규약은 일치해야 한다 (텐서 값은 라벨이 달라 다를 수밖에 없다)."""
-    old = {p.name for p in (BASE / "models").glob("*")}
-    new = {p.name for p in (fm.RESULT / "models").glob("*")}
-    assert new == old
+    # **가중치만** 센다. result/models/ 에는 `.trained_label_stamp.json`(어떤 라벨로 학습했는지)
+    # 같은 메타데이터도 함께 있고, 그건 가중치 목록의 일부가 아니다.
+    def names(d):
+        return {p.name for p in list(Path(d).glob("*.pt")) + list(Path(d).glob("*.pkl"))}
+    assert names(fm.RESULT / "models") == names(BASE / "models")
 
 
 @needs_baseline

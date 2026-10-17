@@ -4,8 +4,8 @@
  `cache`      현행 `data/cache/px_*.parquet` (배당 역조정 = 총수익 계열)
  `underlying` `data/share_underlyings_v2` 의 Close_Adj (액면분할만 조정)
 
- 기본값은 `cache` 로 둔다 — 그래야 저장된 라벨의 비트 단위 재현이 유지된다.
- 전환은 원천 전용 재현(Task 6)에서만 켠다.
+ **기본값은 `underlying` 이다.** 캐시는 입력이 아니라 산출물이므로, 캐시를 격리한 뒤에도
+ 아무것도 막히지 않아야 한다. `cache` 는 구 계열과의 대조(tools/measure_source_switch.py)에서만 쓴다.
 
  두 계열은 개별주식에서 실제로 다르다(삼성전자 2015-01-02: 20,419 vs 26,600).
  지수는 거의 같다(^KS200 수익률 상관 0.99994).
