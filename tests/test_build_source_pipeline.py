@@ -69,8 +69,9 @@ def raw_universe(tmp_path, monkeypatch):
         _prices(i).to_parquet(cache / BS._safe(t))
 
     kidx = pd.bdate_range("2023-01-02", periods=400)
+    (raw / "rates").mkdir()
     pd.DataFrame({"call": 3.0, "m3": 3.3, "y10": 3.6}, index=kidx).to_parquet(
-        cache / "krw_curve.parquet")
+        raw / "rates" / "krw_curve.parquet")      # 금리는 원천 (fm.rate)
 
     ac = [_autocall_row("P_OK"),
           _autocall_row("P_BADSTRUCT", opt_type="OTHER"),     # structure_mask 에서 제외

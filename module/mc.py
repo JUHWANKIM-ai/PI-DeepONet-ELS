@@ -42,7 +42,7 @@ def load_market():
             continue
         s = pd.read_parquet(f)["close"].dropna(); s = s[~s.index.duplicated()]
         RET[t] = np.log(s).diff()
-    KRW = pd.read_parquet(CA / "krw_curve.parquet")[["call", "m3", "y10"]]
+    KRW = pd.read_parquet(fm.rate("krw_curve.parquet"))[["call", "m3", "y10"]]
     if not (CA / "_u3map.json").exists() or not (CA / "_strk_by.json").exists():
         ud = pd.read_csv(RAW / "LAKE_V2_DART_UDLY_INFO.csv", low_memory=False)
         sc = pd.read_csv(RAW / "LAKE_V2_DART_SCHD_INFO.csv", low_memory=False)

@@ -86,7 +86,7 @@ def load_inputs(verbose=False):
             continue
         s = pd.read_parquet(f)["close"].dropna(); s = s[~s.index.duplicated()]
         RET[t] = np.log(s).diff()
-    KRW = pd.read_parquet(CA / "krw_curve.parquet")[["call", "m3", "y10"]]
+    KRW = pd.read_parquet(fm.rate("krw_curve.parquet"))[["call", "m3", "y10"]]
 
     ac = pd.read_csv(RAW / "LAKE_V2_DART_AUTO_CALL.csv", low_memory=False)
     sc = pd.read_csv(RAW / "LAKE_V2_DART_SCHD_INFO.csv", low_memory=False)

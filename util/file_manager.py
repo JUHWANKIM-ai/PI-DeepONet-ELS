@@ -164,6 +164,15 @@ def dataset(name: str) -> Path:
     return Path(PATH.get_dataset_file(name))
 
 
+def rate(name: str) -> Path:
+    """금리 커브 **원천** 경로 (data/raw/rates/).
+
+     CD 91일(krw_curve.parquet 의 m3) · IRS par(irs_bondweb.parquet) ·
+     NS 노드(krw_curve_fred.parquet)는 ECOS·본드웹·FRED 에서 받아오는 수집물이지
+     우리 코드의 산출물이 아니다. Underlying 폴더에는 금리가 없어 원천에 따로 둔다."""
+    return RAW / "rates" / name
+
+
 def source() -> Path:
     """원천(피처 완성본) 경로."""
     return Path(PATH.get_source_file())

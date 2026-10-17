@@ -9,7 +9,7 @@
  mc_engine.mc_daily_t 의 beta 인자가 콜러블을 받으므로 curve_dz(...) 를 그대로 넘기면 된다.
 
  인과성: market_inputs(dt) 는 발행일 dt **이전**에 공시된 값만 본다.
- 산출물 아님 — 캐시(irs_bondweb.parquet, krw_curve.parquet)를 읽기만 한다.
+ 산출물 아님 — 원천(data/raw/rates/ 의 irs_bondweb.parquet, krw_curve.parquet)을 읽기만 한다.
 """
 import numpy as np
 import pandas as pd
@@ -31,8 +31,8 @@ def _load():
     """캐시 지연 적재. 테스트에서 fm.CACHE 를 monkeypatch 할 수 있도록 호출 시점에 읽는다."""
     global _IRS, _CD_M
     if _IRS is None:
-        _IRS = pd.read_parquet(fm.CACHE / "irs_bondweb.parquet")
-        _CD_M = pd.read_parquet(fm.CACHE / "krw_curve.parquet")["m3"].dropna()
+        _IRS = pd.read_parquet(fm.rate("irs_bondweb.parquet"))
+        _CD_M = pd.read_parquet(fm.rate("krw_curve.parquet"))["m3"].dropna()
     return _IRS, _CD_M
 
 

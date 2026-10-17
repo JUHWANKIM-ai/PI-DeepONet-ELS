@@ -49,7 +49,7 @@ def calendar(ret=None):
 
 def ns_zero(dt, krw_file="krw_curve_fred.parquet"):
     """FRED 3노드에 Nelson-Siegel 을 맞춘 제로커브 콜러블 (변형 A 비교용). 결측이면 None."""
-    K = pd.read_parquet(fm.CACHE / krw_file)
+    K = pd.read_parquet(fm.rate(krw_file))
     krow = K.asof(dt).values
     if np.isnan(krow).any():
         return None
