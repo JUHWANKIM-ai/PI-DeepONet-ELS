@@ -50,8 +50,9 @@ SHORT = ["Direct+m\n(trained 1·2·3)", "Direct+m\n(trained 3★ only)",
 
 def met(p, y):
     e = p - y
-    return dict(R2=1 - (e ** 2).sum() / ((y - y.mean()) ** 2).sum(), MAE=np.abs(e).mean(),
-                MAPE=(np.abs(e) / np.abs(y)).mean() * 100, bias=e.mean())
+    return dict(R2=1 - (e ** 2).sum() / ((y - y.mean()) ** 2).sum(),
+                MAPE=(np.abs(e) / np.abs(y)).mean() * 100, MAE=np.abs(e).mean(),
+                RMSE=float(np.sqrt((e ** 2).mean())), MSE=float((e ** 2).mean()), bias=e.mean())
 
 
 if __name__ == "__main__":

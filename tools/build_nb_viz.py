@@ -104,7 +104,8 @@ def mets(idx, p=None):
     p = pred if p is None else p
     y, e = mc[idx], p[idx] - mc[idx]
     return dict(n=len(idx), R2=1 - (e ** 2).sum() / ((y - y.mean()) ** 2).sum(),
-                MAE=np.abs(e).mean(), MAPE=(np.abs(e) / np.abs(y)).mean() * 100, bias=e.mean())
+                MAPE=(np.abs(e) / np.abs(y)).mean() * 100, MAE=np.abs(e).mean(),
+                RMSE=float(np.sqrt((e ** 2).mean())), MSE=float((e ** 2).mean()), bias=e.mean())
 
 
 def seed_se(idx, Pm, key):
@@ -189,7 +190,8 @@ for s, _ in STARS:
     fig.tight_layout(rect=[0, 0, 1, .91])
     save(fig, "cat1_{}star_level".format(s))
 
-print(LV[["star", "model", "n", "R2", "R2_se", "MAPE", "MAE", "bias"]].round(4).to_string(index=False))
+print(LV[["star", "model", "n", "R2", "R2_se", "MAPE", "MAPE_se", "MAE", "RMSE", "MSE", "bias"]]
+      .round(4).to_string(index=False))
 """))
 
 cells.append(code("""
@@ -253,7 +255,9 @@ for s, m in STARS:
         for nm, yv in [("model (1·2·3)", pred), ("model (3★ only)", pred3)]:
             b1, se, _ = ols_cluster(xv[i], (yv - mc)[i], clu[i])
             res_rows.append(dict(star="{}-star".format(s), factor=lab, model=nm, n=len(i),
-                                 MC_slope=smc, resid=b1, se=se,
+                                 MC_slope=smc, model_slope=smc + b1,
+                                 ratio=(smc + b1) / smc if abs(smc) > 1e-9 else np.nan,
+                                 resid=b1, se=se,
                                  rel_pct=b1 / smc * 100 if abs(smc) > 1e-9 else np.nan,
                                  t=b1 / se))
     for a in axes[len(T):]:
@@ -265,11 +269,25 @@ for s, m in STARS:
     fig.tight_layout(rect=[0, .06, 1, .92])
     save(fig, "cat1_{}star_terms_binned".format(s))
 
+# 스타 구분 없는 전수(ALL)도 같은 정의로 기록한다 — 그림은 스타별로만 내고 수치는 표에 담는다
+for lab, i in terms_for(oos).items():
+    xv = TERMS[lab]
+    smc, _, _ = ols_cluster(xv[i], mc[i], clu[i])
+    for nm, yv in [("model (1·2·3)", pred), ("model (3★ only)", pred3)]:
+        b1, se, _ = ols_cluster(xv[i], (yv - mc)[i], clu[i])
+        res_rows.append(dict(star="ALL", factor=lab, model=nm, n=len(i),
+                             MC_slope=smc, model_slope=smc + b1,
+                             ratio=(smc + b1) / smc if abs(smc) > 1e-9 else np.nan,
+                             resid=b1, se=se,
+                             rel_pct=b1 / smc * 100 if abs(smc) > 1e-9 else np.nan,
+                             t=b1 / se))
+
 RS = pd.DataFrame(res_rows)
 RS.to_csv(fm.stat("cat1_resid"), index=False, encoding="utf-8-sig")
-print("잔차회귀 (모델 − MC) ~ 조건.  rel_pct 가 0 이면 MC 와 동일 반응")
+print("계약조건 기울기.  ratio = b(모델)/b(MC) 로 1.0 이 완벽, resid 는 0 이 완벽 (발행일 군집보정 SE)")
 print(RS[RS.model == "model (1·2·3)"][
-    ["star", "factor", "n", "MC_slope", "resid", "se", "rel_pct", "t"]].round(2).to_string(index=False))
+    ["star", "factor", "n", "MC_slope", "model_slope", "ratio", "resid", "se", "t"]]
+    .round(3).to_string(index=False))
 """))
 
 # ---------------- 범주 2 ----------------
@@ -342,9 +360,9 @@ for s, m in STARS:
 U = pd.concat(UDR, ignore_index=True); S2 = pd.concat(STR, ignore_index=True)
 U.to_csv(fm.stat("cat2_by_underlying"), index=False, encoding="utf-8-sig")
 S2.to_csv(fm.stat("cat2_by_structure"), index=False, encoding="utf-8-sig")
-print(U[["star", "label", "kind", "n", "R2", "MAPE", "MAE", "bias"]].round(4).to_string(index=False))
+print(U[["star", "label", "kind", "n", "R2", "MAPE", "MAE", "RMSE", "MSE", "bias"]].round(4).to_string(index=False))
 print()
-print(S2[["star", "label", "n", "R2", "MAPE", "MAE", "bias"]].round(4).to_string(index=False))
+print(S2[["star", "label", "n", "R2", "MAPE", "MAE", "RMSE", "MSE", "bias"]].round(4).to_string(index=False))
 """))
 
 # ---------------- 범주 3 ----------------

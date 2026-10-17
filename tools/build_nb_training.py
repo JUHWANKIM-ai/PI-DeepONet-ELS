@@ -195,7 +195,8 @@ def metrics(pred, idx):
     for si in range(pred.shape[0]):
         e = pred[si, idx] - y
         r.append(dict(R2=1 - (e ** 2).sum() / ((y - y.mean()) ** 2).sum(),
-                      MAE=np.abs(e).mean(), MAPE=(np.abs(e) / np.abs(y)).mean() * 100,
+                      MAPE=(np.abs(e) / np.abs(y)).mean() * 100, MAE=np.abs(e).mean(),
+                      RMSE=float(np.sqrt((e ** 2).mean())), MSE=float((e ** 2).mean()),
                       bias=e.mean()))
     return {k: (float(np.mean([x[k] for x in r])),
                 float(np.std([x[k] for x in r], ddof=1) / np.sqrt(len(r))) if len(r) > 1 else 0.0)
@@ -218,7 +219,8 @@ for gl, gm in [("1star", D.nstar == 1), ("2star", D.nstar == 2),
                          **{k + "_se": v[1] for k, v in m.items()}))
 T = pd.DataFrame(rows)
 T.to_csv(fm.stat("nb_training_level"), index=False, encoding="utf-8-sig")
-print(T[["group", "model", "n", "R2", "R2_se", "MAPE", "MAE", "bias"]].round(4).to_string(index=False))
+print(T[["group", "model", "n", "R2", "R2_se", "MAPE", "MAPE_se", "MAE", "RMSE", "MSE", "bias"]]
+      .round(4).to_string(index=False))
 """))
 
 cells.append(md("""
