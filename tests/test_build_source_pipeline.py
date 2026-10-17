@@ -119,14 +119,17 @@ def test_only_eligible_products_survive(raw_universe):
 
 
 def test_build_source_assigns_mc_seed(raw_universe):
-    """mc_seed 는 발행일 정렬 후 행 인덱스 — MC 를 돌리지 않아도 정해지는 결정적 값이다.
+    """mc_seed 는 **상품 내용**에서 유도한다 — MC 를 돌리지 않아도 정해지는 결정적 값이다.
 
-     종전에는 module.mc_shards.combine() 이 붙였다. 그 샤드 캐시가 없는 원천 전용 재현에서는
-     여기서 나와야 한다."""
+     종전에는 module.mc_shards.combine() 이 붙였고 값은 발행일 정렬 후 행 인덱스였다.
+     행 번호면 유니버스가 바뀔 때 전부 재배치돼 라벨 대조가 불가능해지므로
+     module.seeds.mc_seed_for(item) 로 바꿨다."""
+    from module.seeds import mc_seed_for
     df = BS.build_source(save=False, verbose=False)
     assert "mc_seed" in df.columns
-    assert (df.mc_seed.values == np.arange(len(df))).all()
+    assert (df.mc_seed.values == mc_seed_for(df["item"])).all()
     assert df.mc_seed.dtype == np.int32
+    assert not (df.mc_seed.values == np.arange(len(df))).all(), "행 번호로 되돌아갔다"
 
 
 def test_save_false_writes_nothing(raw_universe):

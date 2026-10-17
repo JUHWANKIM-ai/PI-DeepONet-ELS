@@ -48,11 +48,8 @@ def test_price_returns_none_for_unknown():
 # 검사 대상은 **유니버스**(udly_ticker_map.json)여야 한다.
 #
 # 아래는 지금 해결되지 않는 것들이다. 알려진 공백으로 명시해 두고, **새** 공백만 빨간불이 되게 한다.
-#   ^SX7E  EURO STOXX BANKS — master.csv 에 행은 있으나(EU0009658426, 가격 6,863행 + ETF EXX1.DE)
-#          `가격티커(yfinance)` 가 비어 있어 티커로는 찾을 수 없다. DART 공시 219건이 참조하고
-#          데이터셋에는 0건 들어온다. 어댑터가 UDLY_ID 로도 찾게 하면 복구되지만 유니버스가
-#          바뀌므로(지수 1종·상품 219건 추가) 사람 판단이 필요하다.
-KNOWN_UNMAPPED = {"^SX7E"}
+# 사람 승인(2026-10-18)으로 UDLY_ID 해석을 추가해 ^SX7E 를 복구했다. 지금은 비어 있어야 한다.
+KNOWN_UNMAPPED = set()
 
 
 def test_every_mapped_ticker_in_the_universe_resolves():
@@ -60,8 +57,8 @@ def test_every_mapped_ticker_in_the_universe_resolves():
 
      데이터셋이 아니라 **매핑 파일**을 훑는다. 데이터셋을 훑으면 이미 탈락한 것을 볼 수 없다."""
     m = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
-    tks = sorted({v for v in m.values() if v})
-    bad = {t for t in tks if UL.price(t) is None}
+    # module.mc.returns_by_ticker 와 **같은 방식**으로 해석한다: 티커 우선, UDLY_ID 대체.
+    bad = {t for uid, t in m.items() if t and UL.price(t, udly=uid) is None}
     assert bad == KNOWN_UNMAPPED, "새로 해석되지 않는 티커: {}".format(sorted(bad - KNOWN_UNMAPPED))
 
 
@@ -87,3 +84,31 @@ def test_late_listed_ticker_has_no_prices_before_listing():
 def test_prices_returns_only_mapped():
     got = UL.prices(["^KS200", "__NO_SUCH_TICKER__", "005930.KS"])
     assert set(got) == {"^KS200", "005930.KS"}
+
+
+def test_price_resolves_by_udly_id_when_the_ticker_column_is_empty():
+    """LSEG 가 yfinance 티커를 주지 않는 기초자산이 있다 — master.csv 의 키는 UDLY_ID 다.
+
+     ^SX7E(EURO STOXX Banks)가 그 경우다: `가격티커(yfinance)` 가 비어 있어 티커로는 못 찾지만
+     UDLY_ID EU0009658426 행에 가격 6,863행이 있다. 티커로만 찾으면 DART 공시 219건이
+     조용히 사라진다."""
+    assert UL.price("^SX7E") is None                      # 티커로는 여전히 못 찾는다
+    s = UL.price("^SX7E", udly="EU0009658426")
+    assert s is not None and len(s) > 6000
+    assert str(s.index.min().date()) == "2000-01-03"
+
+
+def test_udly_fallback_does_not_override_a_ticker_match():
+    """티커로 찾히면 그 결과를 쓴다 — UDLY_ID 가 다른 자산을 가리켜도 덮어쓰지 않는다."""
+    a = UL.price("005930.KS")
+    b = UL.price("005930.KS", udly="EU0009658426")
+    assert a is not None and b is not None
+    assert (a == b).all()
+
+
+def test_sx7e_has_a_dividend_yield_through_its_etf():
+    """배당도 풀려야 상품이 산다 — qcont_lseg 가 None 을 주면 그 상품은 'lseg div' 로 탈락한다."""
+    from module import dividend as DV
+    assert DV.PROXY.get("^SX7E") == "EXX1.DE"
+    y = DV.lseg_yield("EXX1.DE")
+    assert y is not None and len(y) > 4000

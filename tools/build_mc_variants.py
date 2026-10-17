@@ -22,6 +22,7 @@ from module import curve as CV
 from module import dividend as DV
 from module import features as F
 from module import market as MK
+from module.seeds import mc_seed_for
 from module import mc_engine as ME
 from module.features import MSAMP
 from util import file_manager as fm
@@ -161,7 +162,7 @@ OUT12_NAME = "mc_variants12{}.parquet".format(TAG)
 def dataset12():
     """els12_dataset (발행일 정렬) + 행번호 seed. mc_seed 열이 원천에 없어 여기서 만든다."""
     d = pd.read_parquet(fm.DATA / "els12_dataset.parquet").sort_values("isu_ord").reset_index(drop=True)
-    d["mc_seed"] = np.arange(len(d), dtype="int32")
+    d["mc_seed"] = mc_seed_for(d["item"])       # 상품 내용에서 유도 (행 번호 아님)
     return d
 
 

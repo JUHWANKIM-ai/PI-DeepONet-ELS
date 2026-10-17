@@ -20,6 +20,7 @@ from module import curve as CV
 from module import dividend as DV
 from module import features as F
 from module import market as MK
+from module.seeds import mc_seed_for
 from module import mc_engine as ME
 from module.data import CONTRACT
 from module.schedule import LZ_BARR_NEUTRAL, LZ_PMT_NEUTRAL
@@ -97,7 +98,7 @@ def main(nper=12):
      nper: 스타당 기준상품 수 (리자드/스텝 절반씩)."""
     NPER = nper
     d12 = pd.read_parquet(fm.DATA / "els12_dataset.parquet").sort_values("isu_ord").reset_index(drop=True)
-    d12["mc_seed"] = np.arange(len(d12), dtype="int32")
+    d12["mc_seed"] = mc_seed_for(d12["item"])   # 상품 내용에서 유도 (행 번호 아님)
     d3 = MK.dataset().copy()
     d3["nstar"] = 3
     rng = np.random.default_rng(0)

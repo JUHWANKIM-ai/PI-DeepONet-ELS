@@ -50,12 +50,14 @@ def returns_by_ticker(mapping):
         raise ValueError("PX_SOURCE 는 {} 중 하나여야 한다 (받은 값: {!r})".format(
             " | ".join(PX_SOURCES), src))
     out = {}
-    for _uid, t in mapping.items():
+    for uid, t in mapping.items():
         if not t or t in out:
             continue
         if src == "underlying":
             from . import underlying as UL
-            u = UL.price(t)
+            # UDLY_ID 를 대체 키로 넘긴다. LSEG 가 yfinance 티커를 주지 않는 기초자산이 있고
+            # (^SX7E) master.csv 의 키는 UDLY_ID 다 — 안 넘기면 그 상품들이 조용히 사라진다.
+            u = UL.price(t, udly=uid)
             if u is not None:
                 out[t] = np.log(u).diff()
             continue

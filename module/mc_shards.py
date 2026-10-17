@@ -24,6 +24,7 @@ import json, time, gc, bisect
 import numpy as np
 import pandas as pd
 from util import file_manager as fm
+from .seeds import mc_seed_for
 from module import mc as MC
 from module.mc_engine import price_one_t, DEFAULT_DEV
 
@@ -97,7 +98,7 @@ def combine(N=None, verbose=True, engine="cuda"):
     for c in MC.MC_COLS:
         df[c] = arr[c].astype("float32")
     df["mc_engine"] = engine
-    df["mc_seed"] = np.arange(len(df), dtype="int32")     # seed = isu_ord 정렬 후 행 인덱스
+    df["mc_seed"] = mc_seed_for(df["item"])     # 상품 내용에서 유도 (행 번호 아님)
     df["fair_minus_mc"] = (df["fair"] - df["mc"]).astype("float32")
     df["mc_krw"] = (df["mc"] * FACE).round().astype("float32")
     df["fair_krw"] = (df["fair"] * FACE).round().astype("float32")

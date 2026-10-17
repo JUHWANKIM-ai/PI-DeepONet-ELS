@@ -33,25 +33,41 @@ def master():
     return _MASTER
 
 
-def price(tk):
+def _read_px(fn):
+    """share_underlyings_v2 의 CSV 하나 -> Close_Adj Series. 비어 있으면 None."""
+    d = pd.read_csv(fm.DATA / SU_DIR / fn)
+    d["Date"] = pd.to_datetime(d.Date)
+    s = d.set_index("Date")["Close_Adj"].dropna()
+    return s[~s.index.duplicated()].sort_index() if len(s) else None
+
+
+def price(tk, udly=None):
     """티커 -> 일별 종가 Series (Close_Adj, DatetimeIndex 오름차순). 매핑 없으면 None.
 
      상장 전 구간은 **비어 있다** — 0 으로 채우지 않는다. 그래야 변동성이 NaN 이 되어
-     그 상품이 명시적으로 탈락한다."""
-    if tk in _PX:
-        return _PX[tk]
+     그 상품이 명시적으로 탈락한다.
+
+     `udly`: 티커로 못 찾을 때 쓸 UDLY_ID. LSEG 가 yfinance 티커를 주지 않는 기초자산이 있고
+     (^SX7E = EURO STOXX Banks 는 `가격티커(yfinance)` 가 비어 있다) master.csv 의 키는
+     UDLY_ID 다. 티커로만 찾으면 그런 자산을 참조하는 상품이 조용히 사라진다 — ^SX7E 는
+     DART 공시 219건이 참조하는데 데이터셋에 0건 들어왔다.
+     티커로 찾히면 그 결과가 이긴다 — UDLY_ID 는 **대체 경로**지 우선 경로가 아니다."""
+    key = (tk, udly)
+    if key in _PX:
+        return _PX[key]
     M = master()
     out = None
     for tcol, fcol in [("가격티커(yfinance)", "파일"), ("ETF티커(yfinance)", "ETF_파일")]:
         r = M[M[tcol].astype(str) == tk]
         if len(r) and isinstance(r.iloc[0][fcol], str):
-            d = pd.read_csv(fm.DATA / SU_DIR / r.iloc[0][fcol])
-            d["Date"] = pd.to_datetime(d.Date)
-            s = d.set_index("Date")["Close_Adj"].dropna()
-            if len(s):
-                out = s[~s.index.duplicated()].sort_index()
+            out = _read_px(r.iloc[0][fcol])
+            if out is not None:
                 break
-    _PX[tk] = out
+    if out is None and udly is not None:
+        r = M[M["UDLY_ID"].astype(str) == str(udly)]
+        if len(r) and isinstance(r.iloc[0]["파일"], str):
+            out = _read_px(r.iloc[0]["파일"])
+    _PX[key] = out
     return out
 
 

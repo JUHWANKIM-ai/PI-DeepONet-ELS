@@ -14,6 +14,7 @@ import bisect
 
 from util import file_manager as fm
 from . import features as F
+from .seeds import mc_seed_for
 from . import mc as MCM                  # 가격 적재 · PX_SOURCES 규약
 from .schedule import load_schedules, NSTRK, SCHED_COLS
 
@@ -228,7 +229,7 @@ def build_source(save=True, verbose=True, strict=False):
     # MC 공통난수 — 발행일 정렬 후 행 인덱스. MC 를 돌리지 않아도 정해지는 결정적 값이라
     # 여기서 부여한다 (종전에는 module.mc_shards.combine 이 붙였고, 그 샤드 캐시가 없는
     # 원천 전용 재현에서는 얻을 길이 없었다).
-    df["mc_seed"] = np.arange(len(df), dtype="int32")
+    df["mc_seed"] = mc_seed_for(df["item"])     # 상품 내용에서 유도 (행 번호 아님)
     df.attrs["drops"] = drops
     if save:
         out = fm.DATA / "els3_dataset.parquet"
