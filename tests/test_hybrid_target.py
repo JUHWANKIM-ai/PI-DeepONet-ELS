@@ -81,6 +81,10 @@ def test_infer_assembles_fair_with_margin(monkeypatch):
     resid = np.array([0.001, 0.002], dtype="float32")
     monkeypatch.setattr(infer, "_DIRECT", {})
     monkeypatch.setattr(infer, "_HYBRID", {"fake": ("curve", "xgb")})
+    # _ROUTED 도 비워야 한다 — 비우지 않으면 result/models 에 라우팅 가중치가 있는 환경에서만
+    # 세 번째 루프가 돌아 가짜 D(DEV 없음)에 실제 가중치를 물리고 터진다. 테스트 결과가
+    # 저장소 상태에 따라 바뀌면 안 된다.
+    monkeypatch.setattr(infer, "_ROUTED", {})
     monkeypatch.setattr(infer, "_anchor_loader", lambda D, a, b: (lambda idx: mc_hat[np.asarray(idx)]))
     monkeypatch.setattr(infer, "_resid_loader", lambda D, r, b: (lambda idx: resid))
     out = infer.predict_all_from_weights(D, {})["fake"]
