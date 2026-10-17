@@ -33,34 +33,48 @@ def _safe(t):
 PX_SOURCES = ("cache", "underlying")
 
 
-def load_market():
-    """cache/raw → 시장데이터 dict(RET 로그수익률, KRW 곡선, 상품→기초자산·행사가 매핑).
+def returns_by_ticker(mapping):
+    """기초자산 ID->티커 매핑 -> {티커: 로그수익률 Series}. **가격 적재의 유일한 출처.**
 
-     가격 공급원은 환경변수 PX_SOURCE 로 고른다.
-       cache       data/cache/px_*.parquet   배당 역조정(총수익) — 기본값, 저장 라벨과 일치
-       underlying  share_underlyings_v2 의 Close_Adj  액면분할만 조정 — 원천 전용 재현용
-     기본값을 바꾸지 않으므로 저장된 mc_A/mc_B 의 비트 단위 재현이 유지된다."""
-    CA, RAW = fm.CACHE, fm.RAW
-    src = os.environ.get("PX_SOURCE", "cache")
+     공급원은 환경변수 PX_SOURCE 로 고른다.
+       underlying  share_underlyings_v2 의 Close_Adj  액면분할만 조정 — 기본값
+       cache       data/cache/px_*.parquet            배당 역조정(총수익) — 종전 라벨 재현용
+
+     종전에는 같은 로직이 load_market · build_source.load_inputs · build_12star.main
+     세 곳에 복사돼 있었고, 원천 전용 실행에서 한 곳씩 차례로 터졌다."""
+    src = os.environ.get("PX_SOURCE", "underlying")
     if src not in PX_SOURCES:
         raise ValueError("PX_SOURCE 는 {} 중 하나여야 한다 (받은 값: {!r})".format(
             " | ".join(PX_SOURCES), src))
-    mapping = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
-    RET = {}
+    out = {}
     for _uid, t in mapping.items():
-        if not t or t in RET:
+        if not t or t in out:
             continue
         if src == "underlying":
             from . import underlying as UL
             u = UL.price(t)
             if u is not None:
-                RET[t] = np.log(u).diff()
+                out[t] = np.log(u).diff()
             continue
-        f = CA / _safe(t)
+        f = fm.CACHE / _safe(t)
         if not f.exists():
             continue
-        s = pd.read_parquet(f)["close"].dropna(); s = s[~s.index.duplicated()]
-        RET[t] = np.log(s).diff()
+        c = pd.read_parquet(f)["close"].dropna()
+        out[t] = np.log(c[~c.index.duplicated()]).diff()
+    return out
+
+
+def load_market():
+    """cache/raw → 시장데이터 dict(RET 로그수익률, KRW 곡선, 상품→기초자산·행사가 매핑).
+
+     가격 공급원은 환경변수 PX_SOURCE 로 고른다.
+       underlying  share_underlyings_v2 의 Close_Adj  액면분할만 조정 — **기본값**
+       cache       data/cache/px_*.parquet   배당 역조정(총수익) — 종전 라벨 재현용
+     원천 전용 재현이 기본 경로다. 저장된 mc_A/mc_B 를 비트 단위로 재현하려면
+     scratch 백업을 되돌리고 PX_SOURCE=cache 로 돌려야 한다."""
+    CA, RAW = fm.CACHE, fm.RAW
+    mapping = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
+    RET = returns_by_ticker(mapping)
     KRW = pd.read_parquet(fm.rate("krw_curve.parquet"))[["call", "m3", "y10"]]
     if not (CA / "_u3map.json").exists() or not (CA / "_strk_by.json").exists():
         ud = pd.read_csv(RAW / "LAKE_V2_DART_UDLY_INFO.csv", low_memory=False)

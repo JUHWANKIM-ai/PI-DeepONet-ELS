@@ -238,11 +238,16 @@ from module import data as MD
 from module import mc_shards as MS
 
 need_mc = "mc" not in df.columns or df["mc"].isna().all()
-if need_mc:
-    nsh = len(list(fm.CACHE.glob("mccal_shard_*.json")))
+nsh = len(list(fm.CACHE.glob("mccal_shard_*.json")))
+if need_mc and nsh:
     print("mc 열 없음 | 샤드 캐시 {}개 발견".format(nsh), flush=True)
     df = MS.combine()                                   # 샤드 수 자동감지, 수 초
     print("  mc·mc_seed·recent_margin 기록 완료")
+elif need_mc:
+    # 샤드 캐시가 없는 원천 전용 트리. mc 는 공정가 시대의 정본 MC 라서 지금 쓰이는 것은
+    # mc_seed(build_source 가 부여)뿐이고, D.MC 는 module.mcvar 가 변형 B 로 갈아끼운다.
+    # 공정가 2단계 경로만 못 쓰며, module.infer 가 그 경우 명시적으로 거부한다.
+    print("mc 열 없음 | 샤드 캐시 0개 — 건너뛴다 (공정가 2단계 경로는 이 트리에서 쓸 수 없다)")
 else:
     print("건너뜀  mc 열 (이미 있음)")
 

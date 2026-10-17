@@ -18,6 +18,7 @@ import numpy as np, pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from module import features as F
+from module import mc as MCM
 from module.build_source import (STRUCTS, FAIR_LO, FAIR_HI, TEN_LO, TEN_HI,
                                  encode_barrier, needs_linear_pmt, _safe)
 from module.schedule import load_schedules, NSTRK, SCHED_COLS
@@ -49,15 +50,7 @@ def main():
     """1·2스타 데이터셋을 만들어 data/els12_dataset.parquet 에 저장한다. 노트북에서도 부를 수 있다."""
     CA, RAW = fm.CACHE, fm.RAW
     mapping = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
-    RET = {}
-    for uid, t in mapping.items():
-        if not t:
-            continue
-        f = CA / _safe(t)
-        if t in RET or not f.exists():
-            continue
-        s = pd.read_parquet(f).iloc[:, 0].dropna()
-        RET[t] = np.log(s).diff()
+    RET = MCM.returns_by_ticker(mapping)        # 가격 적재는 module.mc 한 곳에서만
     KRW = pd.read_parquet(fm.rate("krw_curve.parquet"))[["call", "m3", "y10"]]
 
     ac = pd.read_csv(RAW / "LAKE_V2_DART_AUTO_CALL.csv", low_memory=False)
