@@ -25,7 +25,9 @@ from .data import CONTRACT, walk_forward
 from .schedule import LZ_BARR_NEUTRAL, LZ_PMT_NEUTRAL
 from .vbase import vbase_els
 
-CACHE_VB = fm.CACHE / "els_vbase_clark_all.npy"
+# V_base 캐시도 배당 소스별로 나눈다 — VC 의 q 가 소스마다 달라서,
+# 한 파일을 쓰면 길이가 같다는 이유로 다른 소스의 프록시를 조용히 집어온다.
+CACHE_VB = fm.CACHE / "els_vbase_clark_all{}.npy".format(MV.TAG)
 
 
 def _con12(d):
@@ -49,7 +51,7 @@ def make_all(var="B"):
     D3 = MV.make_D(var)
     ok3 = MV.state()["OK"]
     d12 = pd.read_parquet(fm.DATA / "els12_dataset.parquet").sort_values("isu_ord").reset_index(drop=True)
-    V12 = pd.read_parquet(fm.CACHE / "mcvar" / "mc_variants12.parquet")
+    V12 = pd.read_parquet(MV.label_path("mc_variants12"))   # 3스타와 같은 배당 소스로 맞춘다
     V12 = V12.set_index("item").reindex(d12.item.values)
     ok12 = V12["mc_B"].notna().values & (V12.get("fail", pd.Series(index=V12.index, dtype=object)).isna().values)
     ok12 &= np.isfinite(V12[["sB_1", "sB_2", "sB_3"]].values).all(1)

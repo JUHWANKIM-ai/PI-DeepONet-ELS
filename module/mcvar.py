@@ -42,17 +42,28 @@ def vc_block(s, rho, q=None):
     return np.concatenate(cols, axis=1).astype("float32")
 
 
+DIV = os.environ.get("MCVAR_DIV", "yf")          # 배당 소스: yf(이산, 정본) | lseg(연속)
+TAG = "" if DIV == "yf" else "_" + DIV
+
+
+def label_path(name="mc_variants"):
+    """라벨 파일 경로. MCVAR_DIV 한 손잡이로 3스타(mc_variants)와 1·2스타(mc_variants12)를
+     **함께** 바꾼다 — 두 파일의 배당 소스가 어긋나면 합친 데이터가 조용히 섞인다."""
+    return fm.CACHE / "mcvar" / "{}{}.parquet".format(name, TAG)
+
+
 def state():
     """지연 적재 — import 만으로 데이터셋을 읽지 않는다.
 
-     MCVAR_FILE 환경변수로 라벨 파일을 바꿀 수 있다 (config.yaml 밖의 설정 통로라 권장하지 않음)."""
+     라벨 파일은 MCVAR_DIV(배당 소스)로 고르고, MCVAR_FILE 로 직접 지정하면 그쪽이 이긴다
+     (둘 다 config.yaml 밖의 설정 통로라 상시 사용은 권장하지 않음)."""
     global _ST
     if _ST is not None:
         return _ST
     cfg0 = yaml.safe_load(open(fm.ROOT / "config.yaml", encoding="utf-8"))
     D0 = MD.load(cfg0)
     V = pd.read_parquet(os.environ.get(
-        "MCVAR_FILE", fm.CACHE / "mcvar" / "mc_variants.parquet")).set_index("item").loc[D0.ITEM]
+        "MCVAR_FILE", label_path())).set_index("item").loc[D0.ITEM]
     S = pd.read_parquet(fm.source()).set_index("item").loc[D0.ITEM]
     assert np.allclose(S.fair.values, D0.FAIR, atol=1e-6), "공정가 정렬 불일치"
     # 비교 사용 행: MC 입력 정상 & 가격 캐시 신선

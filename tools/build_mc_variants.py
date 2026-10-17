@@ -6,7 +6,11 @@
  stage-1 입력도 함께 저장: 자산별 σ(A: HV120, B: EWMA120) · 쌍별 상관 · 자산별 배당수익률 q · 부트스트랩 제로금리(MSAMP 노드).
  배당: DAX(^GDAXI)는 총수익지수라 0, 삼성바이오로직스·LG에너지솔루션은 무배당(분배 기록 0)이라 자연히 0.
 
- 실행 (프로젝트 루트):  python tools/mc_full_variants.py shard <k> <N>   |   bench [n]   |   combine <N>"""
+ 1·2스타(els12_dataset)는 star12 모드가 mc_variants12 를 만든다 — 변형 B 만.
+
+ 실행 (프로젝트 루트):  python tools/build_mc_variants.py shard <k> <N>   |   bench [n]
+                       |   combine <N>   |   fix   |   star12
+ 배당 소스는 MCVAR_DIV 환경변수 (yf 기본 = 이산, 정본 / lseg = 연속). 소스별로 파일명이 갈린다."""
 import os, sys, time
 from datetime import date
 from pathlib import Path
@@ -99,6 +103,94 @@ def combine(N):
     return R
 
 
+# ---------------- 1·2스타 (els12_dataset) ----------------
+# 종전 생성기는 scratch/mc_12star.py 에만 있어 scratch 정리 때 사라졌고,
+# mc_variants12.parquet 은 생성기 없는 라벨 파일로 남아 있었다. 이 모드가 그 파일을 재현한다.
+# 3스타와 달리 변형 A(NS 커브)는 만들지 않는다 — module/star.py 는 변형 B 라벨만 쓴다.
+# 중복 슬롯 쌍의 상관은 정확히 1.0 으로 둔다 (corr_bd 가 0.999… 로 자르는 것을 되돌린다).
+
+OUT12_NAME = "mc_variants12{}.parquet".format(TAG)
+
+
+def dataset12():
+    """els12_dataset (발행일 정렬) + 행번호 seed. mc_seed 열이 원천에 없어 여기서 만든다."""
+    d = pd.read_parquet(fm.DATA / "els12_dataset.parquet").sort_values("isu_ord").reset_index(drop=True)
+    d["mc_seed"] = np.arange(len(d), dtype="int32")
+    return d
+
+
+def dup_corr(C, ts):
+    """중복 슬롯 쌍의 상관을 1.0 으로 복원. tools/mc_check_12star.exact_dup_corr 와 같은 규칙."""
+    C = np.array(C, float, copy=True)
+    for a in range(3):
+        for b in range(3):
+            if a != b and ts[a] == ts[b]:
+                C[a, b] = 1.0
+    np.fill_diagonal(C, 1.0)
+    return C
+
+
+def price_row12(i, r):
+    dt = pd.Timestamp(date.fromordinal(int(r["isu_ord"]))); ts = [r["udl1"], r["udl2"], r["udl3"]]
+    rets = [RET.get(t) for t in ts]
+    rec = dict(i=i, item=r["item"], nstar=int(r["nstar"]))
+    if any(x is None for x in rets):
+        rec["fail"] = "inputs"; return rec
+    e120 = [F.vol_ewma_lam(x, dt) for x in rets]
+    c120, _ = F.corr_bd(rets, dt, KBD)
+    mi = CV.market_inputs(dt)
+    if c120 is None or np.isnan(e120).any() or mi is None:
+        rec["fail"] = "inputs"; return rec
+    c120 = dup_corr(c120, ts)
+    dz_bt = CV.curve_dz(*CV.bootstrap(mi["cd"], mi["swaps"]))
+    strikes, pmts, lzb, lzp = MK.schedule(r); ten = float(r["tenor"])
+    kw = dict(n=NPATH, seed=int(r["mc_seed"]), c=float(r["coupon"]), pmts=pmts, lz_barr=lzb, lz_pmt=lzp)
+    if DIV == "lseg":
+        qc = DV.qcont_lseg(ts, dt)
+        if qc is None:
+            rec["fail"] = "lseg div"; return rec
+        divlog, nev = None, 0
+        dkw = dict(qcont=qc)
+    else:
+        divlog, qc, nev, _ = DV.build_div(ts, dt, ten)
+        dkw = dict(divlog=divlog)
+    rec["mc_B"] = ME.mc_daily_t(e120, c120, dz_bt, float(r["B"]), strikes, ten, **dkw, **kw)
+    iu = np.triu_indices(3, 1)
+    rec.update({f"sB_{j+1}": e120[j] for j in range(3)})
+    rec.update({f"rho_{a+1}{b+1}": float(c120[a, b]) for a, b in zip(*iu)})
+    rec.update({f"q_{j+1}": float(qc[j]) for j in range(3)}); rec["n_div"] = int(nev)
+    rec.update({f"bu{j}": float(v) for j, v in enumerate(dz_bt(MSAMP))})
+    rec["r_bt"] = float(dz_bt(ten)[0])
+    return rec
+
+
+def run12(limit=None):
+    d = dataset12()
+    idx = np.arange(len(d))[:limit]
+    outp, part = OUT / OUT12_NAME, OUT / "star12{}.part.parquet".format(TAG)
+    rows = pd.read_parquet(part).to_dict("records") if part.exists() and limit is None else []
+    done = {int(x["i"]) for x in rows}
+    t0 = time.time(); n0 = len(rows)
+    for i in idx:
+        if int(i) in done:
+            continue
+        rows.append(price_row12(int(i), d.iloc[int(i)]))
+        m = len(rows) - n0
+        if m % 500 == 0 and limit is None:
+            pd.DataFrame(rows).to_parquet(part)
+            el = time.time() - t0
+            print(f"star12: {len(rows):,}/{len(idx):,}  {el/60:.1f}분  ETA {el/m*(len(idx)-len(rows))/60:.0f}분", flush=True)
+    R = pd.DataFrame(rows).sort_values("i").reset_index(drop=True)
+    if limit is not None:
+        return R, time.time() - t0
+    R.to_parquet(outp)
+    if part.exists():
+        part.unlink()
+    print(f"star12 DONE {len(R):,} | fail {int(R.get('fail', pd.Series(dtype=object)).notna().sum())} | "
+          f"mc_B {R.mc_B.mean():.4f} in {(time.time()-t0)/60:.1f}분")
+    return R
+
+
 STALE_DAYS = 14
 
 
@@ -131,6 +223,8 @@ if __name__ == "__main__":
         run_shard(int(sys.argv[2]), int(sys.argv[3]))
     elif mode == "combine":
         combine(int(sys.argv[2]))
+    elif mode == "star12":
+        run12()
     elif mode == "fix":
         fix()
     else:
