@@ -3,13 +3,13 @@
 
  기존 contract_sens_mc_check_mono.csv 는 3스타 12개 상품만 담고 있다.
  1·2스타 기울기를 재려면 같은 정의의 MC 참값이 스타별로 필요하다.
- 시장입력(EWMA120 · 영업일120 상관(중복쌍 1.0) · 부트스트랩 커브 · 이산배당)은
+ 시장입력(EWMA120 · 영업일120 상관(중복쌍 1.0) · 부트스트랩 커브 · 배당)은
  tools/build_mc_variants.py 의 star12 모드와 동일하고, 계약만 CS.GRID 격자로 바꾼다.
 
  산출: result/statistics/mc_check_allstar.csv  (item · nstar · factor · level · mc)
  실행: python tools/mc_check_12star.py [스타당 상품수]
 """
-import sys, time
+import os, sys, time
 from datetime import date
 from pathlib import Path
 import numpy as np, pandas as pd
@@ -25,7 +25,8 @@ from module.data import CONTRACT
 from module.schedule import LZ_BARR_NEUTRAL, LZ_PMT_NEUTRAL
 from util import file_manager as fm
 
-NPATH = 40_000                       # 섭동 격자는 정본 mc_B 와 같은 경로 수
+NPATH = 100_000                      # 섭동 격자는 정본 mc_B 와 같은 경로 수
+DIV = os.environ.get("MCVAR_DIV", DV.DEFAULT_SRC)   # 라벨과 같은 배당 소스여야 한다
 RET = MK.returns()
 KBD = MK.calendar(RET)
 
@@ -68,8 +69,10 @@ def market_of(row):
     if C is None or np.isnan(sig).any() or mi is None:
         return None
     dz = CV.curve_dz(*CV.bootstrap(mi["cd"], mi["swaps"]))
-    divlog, _, _, _ = DV.build_div(ts, dt, float(row["tenor"]))
-    return dict(sig=sig, corr=exact_dup_corr(C, ts), dz=dz, divlog=divlog)
+    got = DV.div_kwargs(ts, dt, float(row["tenor"]), DIV)   # lseg -> 연속 q, yf -> 이산 divlog
+    if got is None:
+        return None
+    return dict(sig=sig, corr=exact_dup_corr(C, ts), dz=dz, dkw=got[0])
 
 
 def price_con(CONv, mk, row, nobs):
@@ -85,7 +88,7 @@ def price_con(CONv, mk, row, nobs):
     ten = float(CONv[0, CONTRACT.index("TENOR")])
     return ME.mc_daily_t(mk["sig"], mk["corr"], mk["dz"], B, strikes, ten, n=NPATH,
                         seed=int(row["mc_seed"]), c=c, pmts=pmts, lz_barr=lzb, lz_pmt=lzp,
-                        divlog=mk["divlog"])
+                        **mk["dkw"])
 
 
 def main(nper=12):

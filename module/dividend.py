@@ -133,3 +133,28 @@ def qcont_lseg(tks, t0, skip=ZERO_DIV):
             return None
         q.append(float(prev.iloc[-1]))
     return np.asarray(q, np.float32)
+
+
+# ---------------- 소스 분기 (유일한 지점) ----------------
+DEFAULT_SRC = "lseg"               # 원천 전용 재현의 기본값 — LSEG 는 연속 q 로만 쓸 수 있다
+SRCS = ("lseg", "yf")
+
+
+def div_kwargs(tks, t0, ten, src=DEFAULT_SRC):
+    """(엔진 kwargs, qcont(3), 이산 이벤트수). LSEG 수익률이 없으면 None.
+
+     mc_engine.mc_daily_t 에 그대로 풀어 넘길 dict 를 돌려준다 —
+       "lseg"  {"qcont": q}   연속 배당수익률 (이산 이벤트 없음 -> nev=0)
+       "yf"    {"divlog": D}  이산 배당락 드리프트 보정
+
+     종전에는 이 분기가 tools/build_mc_variants.py 에 두 벌 있었고 tools/mc_check_12star.py 는
+     분기 없이 build_div 를 직접 불러, 원천 전용 트리에서 div_* 캐시를 찾다 죽었다."""
+    if src not in SRCS:
+        raise ValueError("배당 소스는 {} 중 하나여야 한다: {!r}".format(SRCS, src))
+    if src == "lseg":
+        qc = qcont_lseg(tks, t0)
+        if qc is None:
+            return None
+        return dict(qcont=qc), qc, 0
+    divlog, qc, nev, _ = build_div(tks, t0, float(ten))
+    return dict(divlog=divlog), qc, nev

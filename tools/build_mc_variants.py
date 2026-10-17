@@ -47,15 +47,10 @@ def price_row(i, r):
     dz_bt = CV.curve_dz(*CV.bootstrap(mi["cd"], mi["swaps"]))
     strikes, pmts, lzb, lzp = MK.schedule(r); ten = float(r["tenor"]); B = float(r["B"])
     kw = dict(n=NPATH, seed=int(r["mc_seed"]), c=float(r["coupon"]), pmts=pmts, lz_barr=lzb, lz_pmt=lzp)
-    if DIV == "lseg":                       # LSEG 는 배당 이벤트가 없어 연속 q 로만 쓸 수 있다
-        qc = DV.qcont_lseg(ts, dt)
-        if qc is None:
-            rec["fail"] = "lseg div"; return rec
-        divlog, nev = None, 0
-        dkw = dict(qcont=qc)
-    else:
-        divlog, qc, nev, _ = DV.build_div(ts, dt, ten)
-        dkw = dict(divlog=divlog)
+    got = DV.div_kwargs(ts, dt, ten, DIV)   # 소스 분기는 module.dividend 한 곳에서만
+    if got is None:
+        rec["fail"] = "lseg div"; return rec
+    dkw, qc, nev = got
     rec["mc_A"] = ME.mc_daily_t(s120, c120, dz_ns, B, strikes, ten, **kw)
     rec["mc_B"] = ME.mc_daily_t(e120, c120, dz_bt, B, strikes, ten, **dkw, **kw)
     iu = np.triu_indices(3, 1)
@@ -145,15 +140,10 @@ def price_row12(i, r):
     dz_bt = CV.curve_dz(*CV.bootstrap(mi["cd"], mi["swaps"]))
     strikes, pmts, lzb, lzp = MK.schedule(r); ten = float(r["tenor"])
     kw = dict(n=NPATH, seed=int(r["mc_seed"]), c=float(r["coupon"]), pmts=pmts, lz_barr=lzb, lz_pmt=lzp)
-    if DIV == "lseg":
-        qc = DV.qcont_lseg(ts, dt)
-        if qc is None:
-            rec["fail"] = "lseg div"; return rec
-        divlog, nev = None, 0
-        dkw = dict(qcont=qc)
-    else:
-        divlog, qc, nev, _ = DV.build_div(ts, dt, ten)
-        dkw = dict(divlog=divlog)
+    got = DV.div_kwargs(ts, dt, ten, DIV)   # 소스 분기는 module.dividend 한 곳에서만
+    if got is None:
+        rec["fail"] = "lseg div"; return rec
+    dkw, qc, nev = got
     rec["mc_B"] = ME.mc_daily_t(e120, c120, dz_bt, float(r["B"]), strikes, ten, **dkw, **kw)
     iu = np.triu_indices(3, 1)
     rec.update({f"sB_{j+1}": e120[j] for j in range(3)})
