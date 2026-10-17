@@ -12,7 +12,15 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from util import file_manager as fm                 # noqa: E402
 from tools.measure_source_switch import measure    # noqa: E402
+
+# 이 도구는 **두 가격계열을 한 번에 둘 다** 써야 요인을 분리할 수 있다 — 구 계열인 px_* 캐시가
+# 반드시 필요하다. 원천 전용 트리에서는 그 캐시가 격리돼 있으므로 모듈 전체를 건너뛴다.
+# (측정 자체는 Task 1 에서 캐시가 있을 때 돌렸고, 결과는 source_switch_impact.csv 에 남아 있다.)
+pytestmark = pytest.mark.skipif(
+    not (fm.CACHE / "px_005930_KS.parquet").exists(),
+    reason="px_* 캐시가 없다 (원천 전용 트리)")
 
 COLS = {"item", "is_index_only", "sig_old", "sig_new", "rho_old", "rho_new",
         "mc_base", "mc_px", "mc_div", "mc_path", "mc_all"}

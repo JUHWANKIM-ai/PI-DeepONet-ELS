@@ -142,6 +142,14 @@ for name, path, _, _ in STEPS:
     print("  {:1} {:26} {:>8} KB".format(
         "o" if q.exists() else "X", name, int(q.stat().st_size / 1e3) if q.exists() else 0))
 
+# 라벨이 생겼으니 데이터셋의 MC 열을 채운다. 차가운 트리에서는 노트북 0 이 먼저 돌아
+# 그 시점에 라벨이 없어 비어 있다 — 빈 라벨 열이 그대로 배포되면 조용히 오용된다.
+import module.data as DA
+if pd.read_csv(fm.dataset("ml"), usecols=["MC"], encoding=DA.CSV_ENC).MC.isna().all():
+    print("데이터셋 MC 열이 비었다 — 라벨로 다시 쓴다 ...", flush=True)
+    DA.build_datasets()
+    print("  ml.csv · deeponet.csv 갱신")
+
 # 아래 절들이 대조에 쓰는 저장 라벨 — 1-0 이 끝나야 존재한다
 VAR = pd.read_parquet(MV / "mc_variants.parquet").set_index("item")
 print()

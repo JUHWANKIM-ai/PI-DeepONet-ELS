@@ -30,10 +30,8 @@ import module.data as MD                      # noqa: E402
 import module.infer as infer                  # noqa: E402
 
 
-def test_build_datasets_tolerates_missing_anchor(tmp_path, monkeypatch):
-    """mc · recent_margin 이 없는 원천으로도 ml.csv · deeponet.csv 가 만들어진다.
-
-     열은 유지하되 NaN 으로 채운다 — module.data.load 의 스키마가 깨지면 안 되기 때문이다."""
+def _build_into(tmp_path, monkeypatch, nolabel=False):
+    """mc · recent_margin 없는 원천 30건으로 build_datasets 를 돌린다."""
     src = pd.read_parquet(fm.source()).head(30).copy()
     src = src.drop(columns=[c for c in ("mc", "recent_margin") if c in src.columns])
     src["issue_intensity"] = 0          # _load_source 가 붙이는 열 — 이 테스트의 관심사가 아니다
@@ -42,10 +40,35 @@ def test_build_datasets_tolerates_missing_anchor(tmp_path, monkeypatch):
     monkeypatch.setattr(fm, "DATASETS", {k: tmp_path / os.path.basename(str(v))
                                          for k, v in fm.DATASETS.items()})
     monkeypatch.setattr(fm, "dataset", lambda n: tmp_path / (n + ".csv"))
+    if nolabel:
+        monkeypatch.setattr(MD, "_label_path", lambda: tmp_path / "no_such_label.parquet")
     info = MD.build_datasets()
+    return info, pd.read_csv(tmp_path / "ml.csv", encoding=MD.CSV_ENC)
+
+
+def test_build_datasets_tolerates_missing_anchor(tmp_path, monkeypatch):
+    """mc · recent_margin 이 없는 원천으로도 ml.csv · deeponet.csv 가 만들어진다.
+
+     열은 **반드시 유지**된다 — module.data.load 의 스키마가 깨지면 안 되기 때문이다.
+     recent_margin 은 공급원이 없어 NaN 으로 남는다."""
+    info, ml = _build_into(tmp_path, monkeypatch)
     assert info["ml"] == 30
-    ml = pd.read_csv(tmp_path / "ml.csv", encoding=MD.CSV_ENC)
     assert MD.ANCHOR in ml.columns and MD.MARGIN in ml.columns
+    assert ml[MD.MARGIN].isna().all()
+
+
+def test_anchor_is_filled_from_the_canonical_label_when_present(tmp_path, monkeypatch):
+    """라벨 파일이 있으면 MC 열을 채운다 — 빈 라벨 열을 배포하면 조용히 오용된다.
+
+     종전에는 열만 만들고 NaN 으로 뒀고, 그래서 ml.csv 의 MC 가 58,913행 전부 비어 있었다."""
+    _, ml = _build_into(tmp_path, monkeypatch)
+    assert ml[MD.ANCHOR].notna().all()
+
+
+def test_anchor_stays_nan_without_a_label_file(tmp_path, monkeypatch):
+    """차가운 트리에서는 노트북 0 이 노트북 1 보다 먼저 돈다 — 그때는 NaN 이 맞다."""
+    _, ml = _build_into(tmp_path, monkeypatch, nolabel=True)
+    assert MD.ANCHOR in ml.columns
     assert ml[MD.ANCHOR].isna().all()
 
 

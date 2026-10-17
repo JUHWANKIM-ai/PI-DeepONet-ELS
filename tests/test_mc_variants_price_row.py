@@ -21,6 +21,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from util import file_manager as fm                # noqa: E402
 from module import curve as CV                     # noqa: E402
 from module import dividend as DV                  # noqa: E402
 from module import features as F                   # noqa: E402
@@ -82,6 +83,12 @@ def test_price_row_fails_on_missing_curve(monkeypatch, row):
     assert BMV.price_row(0, row)["fail"] == "inputs"
 
 
+needs_divcache = pytest.mark.skipif(
+    not (fm.CACHE / "div_SPY.parquet").exists(),
+    reason="div_* 캐시가 없다 (원천 전용 트리)")
+
+
+@needs_divcache
 def test_price_row_yf_passes_discrete_divlog(monkeypatch, stub_engine, row):
     """yf 분기는 이산배당 divlog 를 넘기고 qcont 는 넘기지 않는다.
 

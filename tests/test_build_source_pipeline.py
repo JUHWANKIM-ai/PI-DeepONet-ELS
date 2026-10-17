@@ -21,7 +21,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util import file_manager as fm                      # noqa: E402
-import module.build_source as BS                         # noqa: E402
+import module.build_source as BS
+import module.underlying as UL                       # noqa: E402
 
 TICKERS = ["^AAA", "BBB.KS", "CCC.T"]
 UDLY = ["U_A", "U_B", "U_C"]
@@ -65,8 +66,24 @@ def raw_universe(tmp_path, monkeypatch):
 
     (raw / "udly_ticker_map.json").write_text(
         json.dumps(dict(zip(UDLY, TICKERS))), encoding="utf-8")
+
+    # 가격은 share_underlyings_v2 에서 온다 (module.mc.returns_by_ticker -> module.underlying).
+    # 종전에는 px_* 캐시를 깔았는데, 캐시는 입력이 아니라 산출물이므로 공급원이 바뀌었다.
+    su = data / "share_underlyings_v2"
+    su.mkdir(parents=True)
+    rows = []
     for i, t in enumerate(TICKERS):
-        _prices(i).to_parquet(cache / BS._safe(t))
+        px = _prices(i)
+        fn = "u{}.csv".format(i)
+        px.rename(columns={"close": "Close_Adj"}).rename_axis("Date").to_csv(su / fn)
+        rows.append({"가격티커(yfinance)": t, "파일": fn,
+                     "ETF티커(yfinance)": "", "ETF_파일": ""})
+    pd.DataFrame(rows).to_csv(su / "master.csv", index=False, encoding="utf-8-sig")
+    # 모듈 캐시를 비워야 실제 master 가 새지 않는다. **monkeypatch 로** 비워야 테스트가 끝날 때
+    # 원래 값이 돌아온다 — 직접 대입하면 합성 마스터(티커 3개)가 다음 테스트로 새어 나가
+    # `KeyError: '^KS200'` 을 일으킨다.
+    monkeypatch.setattr(UL, "_MASTER", None)
+    monkeypatch.setattr(UL, "_PX", {})
 
     kidx = pd.bdate_range("2023-01-02", periods=400)
     (raw / "rates").mkdir()

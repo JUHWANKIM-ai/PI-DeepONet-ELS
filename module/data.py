@@ -5,6 +5,7 @@
  컬럼명은 raw DART와 직접 비교되도록 raw 이름 활용. 데이터셋은 CSV.
 """
 import bisect
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -107,6 +108,38 @@ def _load_source():
 
 
 # ===== 0_data: 데이터셋 생성 (CSV) =====
+def _label_path():
+    """정본 MC 라벨 파일. module.mcvar 가 MCVAR_DIV 로 고르는 것과 같은 경로.
+
+     module.mcvar 는 module.data 를 쓰므로 모듈 최상단에서 불러올 수 없다 — 함수 안에서 늦게 부른다."""
+    from . import mcvar as MV
+    return MV.label_path()
+
+
+def fill_anchor(df):
+    """`mc` 열의 빈 자리를 정본 라벨(`mc_B`)로 채우고 채운 행 수를 돌려준다.
+
+     Task 4 에서 `mc` 열 의존을 끊어 열만 만들고 NaN 으로 뒀는데, 그 결과 README 가 데이터셋으로
+     내세우는 `ml.csv`·`deeponet.csv` 의 라벨 열이 통째로 비었다. 빈 라벨 열은 조용히 오용된다.
+
+     이미 값이 있는 행은 건드리지 않는다 (공정가 시대 `mc` 를 덮어쓰면 안 된다).
+     라벨 파일이 없으면 0 을 돌려주고 아무것도 하지 않는다 — 차가운 트리에서는 노트북 0 이
+     노트북 1 보다 먼저 돌기 때문이다. 노트북 1 이 라벨을 만든 뒤 데이터셋을 다시 쓴다."""
+    src = INV.get(ANCHOR, ANCHOR)
+    try:
+        lab = _label_path()
+    except Exception:
+        return 0
+    if not Path(str(lab)).exists():
+        return 0
+    L = pd.read_parquet(lab, columns=["item", "mc_B"]).set_index("item")["mc_B"]
+    need = df[src].isna() if src in df.columns else pd.Series(True, index=df.index)
+    got = df["item"].map(L)
+    hit = need & got.notna()
+    df.loc[hit, src] = got[hit].values
+    return int(hit.sum())
+
+
 def build_datasets():
     """원천 -> data/ml.csv, data/deeponet.csv 생성.
      ml = tabular(BASE+REG+CAT), deeponet = 연산자망 입력(곡선 u0-9 + vol·corr·sig_eff + 계약 + r). 둘 다 공통(fair·mc·recent_margin) 포함."""
@@ -120,6 +153,7 @@ def build_datasets():
         src_col = INV.get(c, c)
         if src_col not in df.columns:
             df[src_col] = np.nan
+    fill_anchor(df)          # 라벨 파일이 있으면 MC 열을 채운다 (없으면 NaN 으로 남는다)
 
     def write(name, new_cols):
         new_cols = list(dict.fromkeys(new_cols))
