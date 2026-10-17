@@ -7,7 +7,7 @@
  배당: DAX(^GDAXI)는 총수익지수라 0, 삼성바이오로직스·LG에너지솔루션은 무배당(분배 기록 0)이라 자연히 0.
 
  실행 (프로젝트 루트):  python tools/mc_full_variants.py shard <k> <N>   |   bench [n]   |   combine <N>"""
-import sys, time
+import os, sys, time
 from datetime import date
 from pathlib import Path
 import numpy as np, pandas as pd
@@ -22,8 +22,10 @@ from module.features import MSAMP
 from util import file_manager as fm
 
 OUT = fm.CACHE / "mcvar"; OUT.mkdir(exist_ok=True)
-ZERO_DIV = {"^GDAXI"}        # 총수익지수 — 배당이 이미 지수에 반영돼 있다
 NPATH = 40_000               # 정본 mc_A/mc_B 의 경로 수
+DIV = os.environ.get("MCVAR_DIV", "yf")      # 배당 소스: yf(이산, 정본) | lseg(연속)
+TAG = "" if DIV == "yf" else "_" + DIV            # 샤드·산출물 이름을 소스별로 분리
+OUT_NAME = "mc_variants{}.parquet".format(TAG)
 RET = MK.returns()
 KBD = MK.calendar(RET)
 
@@ -40,10 +42,18 @@ def price_row(i, r):
         rec["fail"] = "inputs"; return rec
     dz_bt = CV.curve_dz(*CV.bootstrap(mi["cd"], mi["swaps"]))
     strikes, pmts, lzb, lzp = MK.schedule(r); ten = float(r["tenor"]); B = float(r["B"])
-    divlog, qc, nev, _ = DV.build_div(ts, dt, ten, skip=ZERO_DIV)
     kw = dict(n=NPATH, seed=int(r["mc_seed"]), c=float(r["coupon"]), pmts=pmts, lz_barr=lzb, lz_pmt=lzp)
+    if DIV == "lseg":                       # LSEG 는 배당 이벤트가 없어 연속 q 로만 쓸 수 있다
+        qc = DV.qcont_lseg(ts, dt)
+        if qc is None:
+            rec["fail"] = "lseg div"; return rec
+        divlog, nev = None, 0
+        dkw = dict(qcont=qc)
+    else:
+        divlog, qc, nev, _ = DV.build_div(ts, dt, ten)
+        dkw = dict(divlog=divlog)
     rec["mc_A"] = ME.mc_daily_t(s120, c120, dz_ns, B, strikes, ten, **kw)
-    rec["mc_B"] = ME.mc_daily_t(e120, c120, dz_bt, B, strikes, ten, divlog=divlog, **kw)
+    rec["mc_B"] = ME.mc_daily_t(e120, c120, dz_bt, B, strikes, ten, **dkw, **kw)
     iu = np.triu_indices(3, 1)
     rec.update({f"sA_{j+1}": s120[j] for j in range(3)}); rec.update({f"sB_{j+1}": e120[j] for j in range(3)})
     rec.update({f"rho_{a+1}{b+1}": float(c120[a, b]) for a, b in zip(*iu)})
@@ -56,7 +66,7 @@ def price_row(i, r):
 def run_shard(k, N, limit=None):
     df = MK.dataset()
     idx = np.arange(len(df))[k::N][:limit]
-    outp, part = OUT / f"shard_{k}of{N}.parquet", OUT / f"shard_{k}of{N}.part.parquet"
+    outp, part = OUT / f"shard_{k}of{N}{TAG}.parquet", OUT / f"shard_{k}of{N}{TAG}.part.parquet"
     if outp.exists() and limit is None:
         print(f"shard {k}/{N}: 이미 완료", flush=True); return
     rows = pd.read_parquet(part).to_dict("records") if part.exists() and limit is None else []
@@ -81,9 +91,9 @@ def run_shard(k, N, limit=None):
 
 
 def combine(N):
-    R = pd.concat([pd.read_parquet(OUT / f"shard_{k}of{N}.parquet") for k in range(N)]).sort_values("i").reset_index(drop=True)
+    R = pd.concat([pd.read_parquet(OUT / f"shard_{k}of{N}{TAG}.parquet") for k in range(N)]).sort_values("i").reset_index(drop=True)
     assert len(R) == len(MK.dataset()) and (R["item"].values == MK.dataset()["item"].values).all(), "행 불일치"
-    R.to_parquet(OUT / "mc_variants.parquet")
+    R.to_parquet(OUT / OUT_NAME)
     print(f"combined {len(R):,} | fail {int(R.get('fail', pd.Series(dtype=object)).notna().sum())} | "
           f"mc_A {R.mc_A.mean():.4f} | mc_B {R.mc_B.mean():.4f} | fair {MK.dataset().fair.mean():.4f}")
     return R
@@ -96,7 +106,7 @@ def fix():
     """실패 행 재계산(IRS 14일 규칙 적용 후) + 가격 신선도 표시.
      stale_px = 기초자산 중 하나라도 발행일 전 최신 수익률이 STALE_DAYS 일보다 오래됨 (가격 캐시가 2025-06-30 에 끊긴 34종목 등).
      stale_px 상품은 σ·상관이 오래된 가격으로 계산되므로 비교에서 제외한다."""
-    p = OUT / "mc_variants.parquet"; R = pd.read_parquet(p)
+    p = OUT / OUT_NAME; R = pd.read_parquet(p)
     bad = R.index[R["fail"].notna()] if "fail" in R else []
     for j in bad:
         rec = price_row(int(R.at[j, "i"]), MK.dataset().iloc[int(R.at[j, "i"])])

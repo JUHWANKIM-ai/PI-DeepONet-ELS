@@ -75,10 +75,15 @@ def schedule(row):
             [float(row[f"lz_pmt_{j}"]) for j in range(k)])
 
 
-def state_for(row, ret=None, cal=None):
+def state_for(row, ret=None, cal=None, div="yf"):
     """**현행 방법론**의 발행일 시장상태. 하나라도 못 만들면 None.
 
-     반환: dt, tks, sig(3), corr(3x3), dz(콜러블), divlog(Nx3), qcont(3), ndiv."""
+     div: 배당 소스
+       "yf"    yfinance 배당 이벤트 -> 이산배당 divlog  (divlog 를 엔진에 넘긴다)
+       "lseg"  LSEG 배당수익률 -> 연속 q               (qcont 를 엔진에 넘긴다)
+       LSEG 에는 배당락일·금액이 없어 이산배당을 만들 수 없다. 자세한 이유는 module/dividend.py 참고.
+
+     반환: dt, tks, sig(3), corr(3x3), dz(콜러블), divlog(Nx3 또는 None), qcont(3), ndiv, div."""
     ret = ret if ret is not None else returns()
     cal = cal if cal is not None else calendar(ret)
     dt = pd.Timestamp.fromordinal(int(row["isu_ord"]))
@@ -91,6 +96,12 @@ def state_for(row, ret=None, cal=None):
     dz = CV.zero_from_date(dt)
     if corr is None or dz is None or np.isnan(sig).any():
         return None
-    divlog, qc, nev, _ = DV.build_div(tks, dt, float(row["tenor"]))
+    if div == "lseg":
+        qc = DV.qcont_lseg(tks, dt)
+        if qc is None:
+            return None
+        divlog, nev = None, 0
+    else:
+        divlog, qc, nev, _ = DV.build_div(tks, dt, float(row["tenor"]))
     return dict(dt=dt, tks=tks, sig=sig, corr=corr, dz=dz,
-                divlog=divlog, qcont=qc, ndiv=nev)
+                divlog=divlog, qcont=qc, ndiv=nev, div=div)
