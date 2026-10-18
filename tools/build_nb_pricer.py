@@ -121,8 +121,8 @@ def build_3star():
 
 
 STEPS = [
-    ("1·2스타 MC 라벨 15,752건", MV / "mc_variants12.parquet", "18분", BMV.run12),
-    ("3스타 MC 라벨 58,913건", MV / "mc_variants.parquet", "137분", build_3star),
+    ("1·2스타 MC 라벨 {:,}건".format(len(BMV.dataset12())), MV / "mc_variants12.parquet", "18분", BMV.run12),
+    ("3스타 MC 라벨 {:,}건".format(len(BMV.MK.dataset())), MV / "mc_variants.parquet", "137분", build_3star),
     ("섭동 격자 MC 참값", fm.stat("mc_check_allstar"), "수 분", mc_check_12star.main),
     ("ΔMC 요인분해 200건", fm.stat("mc_boot_curve_200"), "1분", lambda: build_decomp.build(200)),
 ]
@@ -137,7 +137,10 @@ def _done(path):
         return False
     if q.name == "mc_variants.parquet":
         import pyarrow.parquet as _pq
-        return "stale_px" in _pq.read_schema(str(q)).names
+        # fix() 가 만드는 세 열이 **모두** 있어야 완료다. stale_px 하나만 보면
+        # write_labeled 뒤에서 죽은 반쪽 파일을 완료로 오판한다.
+        have = set(_pq.read_schema(str(q)).names)
+        return {"fail", "px_lag_days", "stale_px"} <= have
     return True
 
 

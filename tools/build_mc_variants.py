@@ -265,8 +265,11 @@ def fix():
     for u in ("udl1", "udl2", "udl3"):
         lag = np.maximum(lag, [(d - RET[t][RET[t].index < d].index[-1]).days for t, d in zip(MK.dataset()[u], dts)])
     R["px_lag_days"] = lag.astype(int); R["stale_px"] = lag > STALE_DAYS
-    write_labeled(R, p)
     ok = R["fail"].isna() & ~R["stale_px"]
+    # **마지막에 한 번만 쓴다.** 종전에는 여기보다 먼저 써서, 다음 줄에서 죽었을 때
+    # stale_px 는 있고 fail 은 없는 반쪽 파일이 남았다. 그 파일을 '완료' 로 오판하면
+    # 미완성 라벨이 그대로 하류로 흘러간다.
+    write_labeled(R, p)
     print(f"재계산 {len(bad)}개 → 남은 실패 {int(R['fail'].notna().sum())} | stale_px {int(R.stale_px.sum())} | "
           f"비교 사용 {int(ok.sum()):,}/{len(R):,} | 남은 실패 ⊂ stale_px: {bool((R['fail'].notna() <= R['stale_px']).all())}")
 
