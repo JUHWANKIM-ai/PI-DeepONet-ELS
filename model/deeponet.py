@@ -3,12 +3,27 @@
 **공정가(FAIR) 2단계 예측**: stage-1=MC 이론가 앵커(MC_hat), stage-2=공정가 잔차(FAIR−MC_hat−recent_margin).
   Fair_hat = MC_hat + recent_margin + Residual_hat
 stage-2는 XGB(deeponet_hybrid) 또는 DeepONet(deeponet_hybrid_s2don), 앵커 loss는 MSE/L1/MAPE 비교."""
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
+
 from module.train import train_curve
 from module.pipeline import predict_hybrid
 from model.stage2 import don_resid
 
 
-def _anchor(D, cfg, tr, va, te, save_path=None):
+def _anchor(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    save_path: str | None = None,
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """cost function 기준선: MC 앵커를 MSE 로 학습. 아래 두 변형과 손실만 다르다.
 
     입력
@@ -24,7 +39,14 @@ def _anchor(D, cfg, tr, va, te, save_path=None):
     return predict
 
 
-def _anchor_l1(D, cfg, tr, va, te, save_path=None):
+def _anchor_l1(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    save_path: str | None = None,
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """cost function 벤치마크: MC 앵커를 L1(MAE) 로 학습.
 
     입력·출력은 `_anchor` 와 같다 (`train_curve(loss="l1")` 만 다르다).
@@ -35,7 +57,14 @@ def _anchor_l1(D, cfg, tr, va, te, save_path=None):
     return predict
 
 
-def _anchor_mape(D, cfg, tr, va, te, save_path=None):
+def _anchor_mape(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    save_path: str | None = None,
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """cost function 벤치마크: MC 앵커를 MAPE(상대오차) 로 학습.
 
     입력·출력은 `_anchor` 와 같다 (`train_curve(loss="mape")` 만 다르다).
@@ -46,7 +75,7 @@ def _anchor_mape(D, cfg, tr, va, te, save_path=None):
     return predict
 
 
-def run(D, cfg):
+def run(D: SimpleNamespace, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
     """DeepONet 계열 4종을 학습·예측한다 — 앵커 손실 3종 + stage-2 를 DeepONet 으로 바꾼 1종.
 
     네 모델 모두 stage-1 은 MC 앵커, stage-2 는 공정가 잔차다.

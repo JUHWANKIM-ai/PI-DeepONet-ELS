@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """범용 헬퍼: config 로딩, 시드 고정, 디바이스 선택."""
 import random
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 import torch
 import yaml
@@ -10,7 +13,7 @@ from . import file_manager as fm
 _CONFIG = None
 
 
-def load_config(path=None):
+def load_config(path: str | Path | None = None) -> dict[str, Any]:
     """config.yaml 로딩 (1회 캐시).
 
     입력
@@ -26,7 +29,7 @@ def load_config(path=None):
     return _CONFIG
 
 
-def get_config():
+def get_config() -> dict[str, Any]:
     """캐시된 설정을 돌려주고, 아직 없으면 그때 한 번 읽는다.
 
     입력
@@ -37,7 +40,7 @@ def get_config():
     return _CONFIG if _CONFIG is not None else load_config()
 
 
-def set_seed(seed=0):
+def set_seed(seed: int = 0) -> None:
     """random·numpy·torch 의 전역 시드를 한꺼번에 고정한다.
 
     세 난수원을 호출부마다 따로 고정하면 한 곳을 빠뜨린다 — 학습 쪽은 이 함수만 쓴다.
@@ -54,7 +57,7 @@ def set_seed(seed=0):
     torch.manual_seed(seed)
 
 
-def get_device(cfg=None):
+def get_device(cfg: dict[str, Any] | None = None) -> str:
     """학습·추론에 쓸 torch 디바이스 문자열을 고른다.
 
     입력

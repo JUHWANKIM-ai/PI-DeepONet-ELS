@@ -20,7 +20,7 @@ class ELSDirectoryPath:
     `.exists()` 나 `/` 연산이 필요하면 모듈 함수를 써야 한다.
     """
 
-    def __init__(self, base_directory: str):
+    def __init__(self, base_directory: str) -> None:
         """경로 전부를 base_directory 기준으로 조립한다 (디렉터리는 만들지 않는다).
 
         입력
@@ -67,15 +67,15 @@ class ELSDirectoryPath:
     ############################################################
     # Base / Config
     ############################################################
-    def get_base_dir(self):
+    def get_base_dir(self) -> str:
         """프로젝트 루트 경로 반환. 입력 없음 · 출력 str."""
         return self.base_directory
 
-    def get_config_file(self):
+    def get_config_file(self) -> str:
         """config.yaml 경로 반환. 입력 없음 · 출력 str."""
         return self.config_file_name
 
-    def ensure_dirs(self):
+    def ensure_dirs(self) -> None:
         """data·cache·result·scratch 하위 디렉토리를 모두 만든다 (있으면 넘어간다).
 
         입력 없음
@@ -96,23 +96,23 @@ class ELSDirectoryPath:
     ############################################################
     # Data
     ############################################################
-    def get_data_dir(self):
+    def get_data_dir(self) -> str:
         """data 디렉토리 경로 반환. 입력 없음 · 출력 str."""
         return self.data_dir_name
 
-    def get_raw_dir(self):
+    def get_raw_dir(self) -> str:
         """원천 CSV(raw) 디렉토리 경로 반환. 입력 없음 · 출력 str."""
         return self.raw_dir_name
 
-    def get_cache_dir(self):
+    def get_cache_dir(self) -> str:
         """cache 디렉토리 경로 반환. 입력 없음 · 출력 str."""
         return self.cache_dir_name
 
-    def get_source_file(self):
+    def get_source_file(self) -> str:
         """원천(피처 완성본) parquet 경로 반환. 입력 없음 · 출력 str."""
         return self.source_file_name
 
-    def get_dataset_file(self, name: str):
+    def get_dataset_file(self, name: str) -> str:
         """모델링 데이터셋 경로 반환.
 
         입력
@@ -127,11 +127,11 @@ class ELSDirectoryPath:
     ############################################################
     # Result
     ############################################################
-    def get_result_dir(self):
+    def get_result_dir(self) -> str:
         """result 디렉토리 경로 반환. 입력 없음 · 출력 str."""
         return self.result_dir_name
 
-    def get_prediction_file(self, name: str):
+    def get_prediction_file(self, name: str) -> str:
         """모델별 예측 csv 경로 반환.
 
         입력
@@ -142,7 +142,7 @@ class ELSDirectoryPath:
         os.makedirs(self.prediction_dir_name, exist_ok=True)
         return os.path.join(self.prediction_dir_name, f"{name}.csv")
 
-    def get_image_file(self, name: str):
+    def get_image_file(self, name: str) -> str:
         """그림(png) 경로 반환.
 
         입력
@@ -153,7 +153,7 @@ class ELSDirectoryPath:
         os.makedirs(self.image_dir_name, exist_ok=True)
         return os.path.join(self.image_dir_name, f"{name}.png")
 
-    def get_statistic_file(self, name: str):
+    def get_statistic_file(self, name: str) -> str:
         """통계치(csv) 경로 반환.
 
         입력
@@ -164,14 +164,14 @@ class ELSDirectoryPath:
         os.makedirs(self.statistic_dir_name, exist_ok=True)
         return os.path.join(self.statistic_dir_name, f"{name}.csv")
 
-    def list_prediction_files(self):
+    def list_prediction_files(self) -> list[str]:
         """저장된 예측 csv 경로 목록 반환. 입력 없음 · 출력 list[str] (이름 오름차순)."""
         return sorted(glob.glob(os.path.join(self.prediction_dir_name, "*.csv")))
 
     ############################################################
     # Scratch
     ############################################################
-    def get_scratch_dir(self):
+    def get_scratch_dir(self) -> str:
         """scratch 디렉토리 경로 반환. 입력 없음 · 출력 str."""
         return self.scratch_dir_name
 
@@ -195,7 +195,7 @@ SCRATCH = Path(PATH.scratch_dir_name)
 DATASETS = {k: Path(v) for k, v in PATH.dataset_files.items()}
 
 
-def ensure_dirs():
+def ensure_dirs() -> None:
     """싱글턴 PATH 의 디렉토리 생성을 그대로 부른다. 입력 없음 · 출력 없음."""
     PATH.ensure_dirs()
 
@@ -264,6 +264,6 @@ def stat(name: str) -> Path:
     return Path(PATH.get_statistic_file(name))
 
 
-def list_predictions():
+def list_predictions() -> list[Path]:
     """저장된 예측 csv 경로 목록. 입력 없음 · 출력 list[Path] (이름 오름차순)."""
     return [Path(p) for p in PATH.list_prediction_files()]

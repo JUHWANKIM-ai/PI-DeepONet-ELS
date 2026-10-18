@@ -11,7 +11,12 @@
 주의: 2026-07-10 rebase 때 기본 stage2 가 ml 전체특성 -> D.DON 으로 바뀌면서 공정가 R² 가
 0.66 -> 0.44 로 떨어졌다(STEP×KI 실측, tests/verify_step_ki_reproduction.py). 기본값을 되돌린다.
 """
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from module.data import to_tensor, zstats, znorm, time_weights
@@ -20,7 +25,16 @@ from module.tabular import fit_tab, load_tab_predictor
 from module.train import _EarlyStop, _opt
 
 
-def ml_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
+def ml_resid(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    target: np.ndarray,
+    return_predict: bool = False,
+    save_path: str | None = None,
+) -> tuple[None, np.ndarray] | tuple[np.ndarray, np.ndarray, Callable[[npt.ArrayLike], np.ndarray]]:
     """기본 stage-2: ml 전체특성(cfg['margin'].feature_set) 으로 잔차 회귀.
     target = FAIR − MC_hat − recent_margin. 저장/로드는 fit_tab 규약(.pkl).
     cfg['margin'].half_life=='auto' 이면 비정상성 대응으로 시간감쇠 반감기를 **시간기반 inner-val**(tr 최근 15%)
@@ -90,7 +104,7 @@ def ml_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
     return None, out
 
 
-def load_ml_resid(D, path):
+def load_ml_resid(D: SimpleNamespace, path: str) -> Callable[[npt.ArrayLike], np.ndarray]:
     """ml_resid 가 저장한 .pkl 을 읽어 예측기로 되살린다.
 
     입력
@@ -102,7 +116,19 @@ def load_ml_resid(D, path):
     return load_tab_predictor(D, path)
 
 
-def xgb_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
+def xgb_resid(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    target: np.ndarray,
+    return_predict: bool = False,
+    save_path: str | None = None,
+) -> (
+    tuple[np.ndarray, np.ndarray]
+    | tuple[np.ndarray, np.ndarray, Callable[[npt.ArrayLike], np.ndarray]]
+):
     """XGB stage-2: deeponet 블록 D.DON 위에서 잔차 회귀. 이론가 결정 특성만 쓴다.
 
     입력
@@ -143,7 +169,7 @@ def xgb_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         joblib.dump({"model": m, "kind": "resid_don_xgb"}, save_path + ".pkl")
 
-    def p(idx):
+    def p(idx: npt.ArrayLike) -> np.ndarray:
         """학습된 XGB 로 잔차를 낸다.
 
         입력
@@ -156,7 +182,7 @@ def xgb_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
     return (p(tr), p(te), p) if return_predict else (p(tr), p(te))
 
 
-def load_xgb_resid(D, path):
+def load_xgb_resid(D: SimpleNamespace, path: str) -> Callable[[npt.ArrayLike], np.ndarray]:
     """xgb_resid 가 저장한 .pkl 을 읽어 예측기로 되살린다. 입력은 deeponet 블록 D.DON.
 
     입력
@@ -171,7 +197,19 @@ def load_xgb_resid(D, path):
     return lambda idx: m.predict(D.DON[np.asarray(idx)]).astype("float32")
 
 
-def don_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
+def don_resid(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    target: np.ndarray,
+    return_predict: bool = False,
+    save_path: str | None = None,
+) -> (
+    tuple[np.ndarray, np.ndarray]
+    | tuple[np.ndarray, np.ndarray, Callable[[npt.ArrayLike], np.ndarray]]
+):
     """DeepONet stage-2: branch=D.VC(vol·corr·sig_eff), trunk=[곡선 u0-9 | 계약].
 
     표준화 통계는 **학습 폴드만**으로 잡는다 (누출 방지). 타깃도 학습 폴드 평균·표준편차로
@@ -238,7 +276,7 @@ def don_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
             save_path + ".pt",
         )
 
-    def p(idx):
+    def p(idx: npt.ArrayLike) -> np.ndarray:
         """학습된 망으로 잔차를 원본 스케일로 낸다.
 
         입력
@@ -253,7 +291,7 @@ def don_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
     return (p(tr), p(te), p) if return_predict else (p(tr), p(te))
 
 
-def load_don_resid(D, path):
+def load_don_resid(D: SimpleNamespace, path: str) -> Callable[[npt.ArrayLike], np.ndarray]:
     """don_resid 가 저장한 .pt 를 읽어 예측기로 되살린다.
 
     체크포인트에 든 표준화 통계를 그대로 쓴다 — 지금 데이터로 다시 계산하면 학습 때와
@@ -275,7 +313,7 @@ def load_don_resid(D, path):
     Tt = to_tensor(znorm(Tmat, ck["tm"], ck["ts"]), D.DEV)
     ym, ysd = ck["ym"], ck["ysd"]
 
-    def predict(idx):
+    def predict(idx: npt.ArrayLike) -> np.ndarray:
         """복원된 망으로 잔차를 원본 스케일로 낸다.
 
         입력

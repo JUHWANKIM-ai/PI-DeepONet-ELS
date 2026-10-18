@@ -11,7 +11,14 @@ stage-1 앵커만 물리정보(PDE 잔차 + ELS 이벤트 경계)로 바뀌고, 
 
 PDE 를 scratch 에서 학습하면 물리 스케일이 데이터항을 압도해 발산한다. data_only 로 데이터 적합을
 먼저 잡고 그 위에 물리를 얹는 순서가 릴리스에서 검증된 레시피이므로 이 순서를 강제한다."""
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
 
 from module.pi_train import PREDECESSOR, train_pi_curve
 from module.pipeline import predict_hybrid
@@ -19,7 +26,7 @@ from module.pipeline import predict_hybrid
 NAME = "pi_deeponet_hybrid"
 
 
-def _anchor(variant):
+def _anchor(variant: str) -> Callable[..., Callable[[npt.ArrayLike], np.ndarray]]:
     """variant 별 stage-1 앵커 콜백을 만든다 (pipeline 규약: anchor_fn(D,cfg,tr,va,te,save_path)).
 
     입력
@@ -29,7 +36,14 @@ def _anchor(variant):
       callable — pipeline 이 폴드마다 부르는 앵커 함수
     """
 
-    def anchor(D, cfg, tr, va, te, save_path=None):
+    def anchor(
+        D: SimpleNamespace,
+        cfg: dict[str, Any],
+        tr: np.ndarray,
+        va: np.ndarray | None,
+        te: np.ndarray,
+        save_path: str | None = None,
+    ) -> Callable[[npt.ArrayLike], np.ndarray]:
         """이 폴드의 PI 앵커를 학습한다. 선행 variant 가 있으면 그 가중치에서 시작한다.
 
         선행 체크포인트가 없으면 **조용히 scratch 로 학습하지 않고 멈춘다** — PDE 를 scratch
@@ -64,7 +78,7 @@ def _anchor(variant):
     return anchor
 
 
-def _run_retired(D, cfg):
+def _run_retired(D: SimpleNamespace, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
     """**은퇴(registry 미발견)**: 이름이 'run' 이 아니므로 model.registry 가 이 모듈을 건너뛴다.
 
     물리를 전 구조에 일괄 적용한 초기 버전이다. 5시드 ablation 결과 data_only 와 deeponet_hybrid 의

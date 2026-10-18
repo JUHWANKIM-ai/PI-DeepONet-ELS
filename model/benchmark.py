@@ -4,7 +4,13 @@
 (2) XGB 하이브리드(2단계): stage-1 앵커=XGB→MC(MC_hat), stage-2=XGB→이론가 잔차(MC_true−MC_hat), 마진 없음.
     앵커 입력을 DeepONet 앵커와 동일하게 맞춤(순수 아키텍처 비교): 곡선 u0-9 + vol·corr + 전체 계약(strk0-11,B,coupon,tenor).
 → 직접 vs 2단계 하이브리드 비교."""
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
+import pandas as pd
 from xgboost import XGBRegressor
 
 from module.pipeline import predict_hybrid, predict_direct_tab
@@ -14,7 +20,14 @@ from module.data import time_weights
 _DIRECT = {"ridge": "bench_ridge", "gbm": "bench_gbm", "lgbm": "bench_lgbm", "xgb": "bench_xgboost"}
 
 
-def _xgb_anchor(D, cfg, tr, va, te, save_path=None):
+def _xgb_anchor(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    save_path: str | None = None,
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """stage-1 앵커: XGBoost가 무차익가 MC를 예측.
 
     입력을 DeepONet-Curve 앵커와 동일하게 맞춤 → 순수 아키텍처 비교.
@@ -57,7 +70,7 @@ def _xgb_anchor(D, cfg, tr, va, te, save_path=None):
     return lambda idx: m.predict(X[idx]).astype("float32")
 
 
-def run(D, cfg):
+def run(D: SimpleNamespace, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
     """표형 ML 벤치마크 전부를 학습·예측한다 — 직접 4종 + XGB 하이브리드 1종.
 
     입력

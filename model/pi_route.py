@@ -16,9 +16,13 @@ LIZARD 에서만 좋아졌다(no-KI +0.044). STEP 은 표본 8.7k~12.3k 에 stag
 조립: mc_hat = where(LIZARD no-KI, branchB, branchA) → stage-2(ml_resid) 하나 → y = mc_hat + rm + resid.
 라우팅 키는 module.pi_train.lizard_no_ki_mask (계약 조건만, 누출 없음).
 """
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from module.pi_train import lizard_no_ki_mask, load_pi_predictor, train_pi_curve
@@ -29,7 +33,7 @@ from util import file_manager as fm
 NAME = "deeponet_hybrid_pi_lizard"
 
 
-def _paths(name, seed, k):
+def _paths(name: str, seed: int, k: int) -> tuple[str, str, str]:
     """이 (이름, 시드, 폴드) 조합의 가중치 경로 셋을 만든다.
 
     입력
@@ -50,7 +54,16 @@ def _paths(name, seed, k):
     )
 
 
-def _assemble(D, cfg, tr, va, te, mc_hat, route, save_path):
+def _assemble(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray,
+    te: np.ndarray,
+    mc_hat: np.ndarray,
+    route: np.ndarray,
+    save_path: str | None,
+) -> pd.DataFrame:
     """라우팅된 mc_hat 위에 stage-2 를 올려 이 폴드의 OOS 행을 조립한다.
 
     입력
@@ -83,7 +96,13 @@ def _assemble(D, cfg, tr, va, te, mc_hat, route, save_path):
     )
 
 
-def predict_routed(D, cfg, name=NAME, seed=None, with_control=False):
+def predict_routed(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    name: str = NAME,
+    seed: int | None = None,
+    with_control: bool = False,
+) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """4폴드 walk-forward OOS 예측 (pipeline.predict_hybrid 스키마 + route 열).
 
     with_control=True 면 (routed, control) 을 함께 반환한다. control 은 **같은 branch A 가중치**로
@@ -127,7 +146,9 @@ def predict_routed(D, cfg, name=NAME, seed=None, with_control=False):
     return routed
 
 
-def load_routed_predictor(D, name, seed, k):
+def load_routed_predictor(
+    D: SimpleNamespace, name: str, seed: int, k: int
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """저장 가중치로 라우팅된 stage-1 예측기를 복원한다 (infer 재현 경로).
 
     학습을 다시 하지 않는다 — 두 앵커 가중치를 읽어 라우팅만 재현한다.
@@ -145,7 +166,7 @@ def load_routed_predictor(D, name, seed, k):
     pi = load_pi_predictor(D, pb + ".pt")
     route = lizard_no_ki_mask(D)
 
-    def predict(idx):
+    def predict(idx: npt.ArrayLike) -> np.ndarray:
         """branch A 로 전부 예측한 뒤 라우팅 대상 행만 branch B 로 덮어쓴다.
 
         입력
@@ -163,7 +184,7 @@ def load_routed_predictor(D, name, seed, k):
     return predict
 
 
-def run(D, cfg):
+def run(D: SimpleNamespace, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
     """라우팅 하이브리드 하나를 학습·예측한다.
 
     입력

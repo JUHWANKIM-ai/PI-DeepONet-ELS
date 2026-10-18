@@ -4,7 +4,12 @@
 이론가(MC) 예측 경로 전체를 잰다: 2단계 하이브리드(stage1 앵커 forward + stage2 잔차 predict, 마진 없음)
 + 직접(단일 단계) 벤치마크(ml.csv 전 특성 → MC)."""
 import time
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from xgboost import XGBRegressor
 
@@ -14,7 +19,7 @@ from module.train import train_curve
 from model.stage2 import xgb_resid, don_resid
 
 
-def _time(fn, repeat=20, warmup=3):
+def _time(fn: Callable[[], Any], repeat: int = 20, warmup: int = 3) -> float:
     """호출 하나의 소요시간을 중앙값으로 잰다.
 
     평균이 아니라 중앙값이다 — GC·OS 스케줄링으로 튀는 한두 번이 평균을 끌어올린다.
@@ -37,7 +42,7 @@ def _time(fn, repeat=20, warmup=3):
     return float(np.median(ts))
 
 
-def measure(D, cfg, repeat=20):
+def measure(D: SimpleNamespace, cfg: dict[str, Any], repeat: int = 20) -> pd.DataFrame:
     """학습된 모델로 test 폴드를 예측하는 시간만 재서 모델별로 모은다.
 
     현재 파이프라인 = 이론가(MC) 2단계: y = 앵커(MC_hat) + stage2 잔차(MC−MC_hat), 마진 없음.
@@ -57,7 +62,11 @@ def measure(D, cfg, repeat=20):
     tw = cfg["data"]["time_decay"]
     rows = []
 
-    def add(name, predict_fn, kind="hybrid"):
+    def add(
+        name: str,
+        predict_fn: Callable[[npt.ArrayLike], np.ndarray],
+        kind: str = "hybrid",
+    ) -> None:
         """예측기 하나를 재서 결과 행을 바깥 rows 에 쌓는다.
 
         입력

@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """평가 지표: R2/MAE/RMSE/Spearman + 하이브리드 stage별 R2."""
 import numpy as np
+import numpy.typing as npt
+import pandas as pd
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from scipy.stats import spearmanr
 
 
-def metrics(y_true, y_pred):
+def metrics(y_true: npt.ArrayLike, y_pred: npt.ArrayLike) -> dict[str, float]:
     """예측 한 벌의 수준 지표를 한 번에 낸다.
 
     MAPE 계열은 분모를 |y_true| 로 쓰고 1e-8 로 하한을 둔다 — 가격이 0 에 가까운 상품에서
@@ -33,7 +35,9 @@ def metrics(y_true, y_pred):
     }
 
 
-def metrics_by(y_true, y_pred, group, min_n=30):
+def metrics_by(
+    y_true: npt.ArrayLike, y_pred: npt.ArrayLike, group: npt.ArrayLike, min_n: int = 30
+) -> pd.DataFrame:
     """그룹 라벨별 지표 표. 표본 min_n 미만 그룹은 '(small)' 하나로 합친다.
 
     입력
@@ -46,8 +50,6 @@ def metrics_by(y_true, y_pred, group, min_n=30):
       DataFrame — index=group,
                   columns=[n, R2, MAE, RMSE, MAPE%, MdAPE%, Bias%, Spearman], n 내림차순
     """
-    import pandas as pd
-
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
     g = pd.Series(np.asarray(group, dtype=object)).astype(str)
@@ -64,7 +66,7 @@ def metrics_by(y_true, y_pred, group, min_n=30):
     return out.sort_values("n", ascending=False)
 
 
-def stage_r2(df):
+def stage_r2(df: pd.DataFrame) -> dict[str, float] | None:
     """2단계 하이브리드 예측에서 단계별 R² 를 낸다.
 
     직접(단일 단계) 벤치마크엔 stage 열이 없어 None 을 돌려준다 — 호출부는 그 None 으로

@@ -32,11 +32,26 @@ cfg = util.utils.load_config()  (config.yaml)
   module.train.train_curve              # stage-1 앵커 학습기 (anchor_fn 안에서 사용)
   model.stage2.xgb_resid / don_resid    # stage-2 잔차모델 (predict_hybrid resid_fn=)
 """
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
+
 from module.pipeline import predict_hybrid
 from module.train import train_curve
 
 
-def _anchor(D, cfg, tr, va, te, save_path=None):
+def _anchor(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    save_path: str | None = None,
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """stage-1 앵커: MC 이론가를 예측하는 예측기(predictor) 콜백을 반환. (Part B 계약)
 
     입력
@@ -53,7 +68,7 @@ def _anchor(D, cfg, tr, va, te, save_path=None):
     return predict
 
 
-def run(D, cfg):
+def run(D: SimpleNamespace, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
     """레지스트리가 부르는 진입점 — 이 파일이 만드는 예측 전부를 돌려준다.
 
     입력

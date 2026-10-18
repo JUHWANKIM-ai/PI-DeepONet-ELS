@@ -9,7 +9,12 @@ stage2 가 평균 μ + 로그분산 logσ² 를 함께 예측(가우시안 NLL)�
         resid_std, y_std, y_lo, y_hi   (하이브리드 8 + CI 4)
   기존 평가/그림 코드는 여분 컬럼을 무시하므로 안전. CI 리포팅(커버리지 p·밴드)은 이 CSV 로 별도 수행(task#2).
 """
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -29,7 +34,7 @@ class MarginOperatorNLL(nn.Module):
     """stage-2 잔차 DeepONet(내적) 2-헤드: 평균 μ, 로그분산 logσ².
     branch=vol·corr·sig_eff, trunk=[곡선|계약]. MarginOperator 를 2-헤드로 확장."""
 
-    def __init__(self, nb, nt, P):
+    def __init__(self, nb: int, nt: int, P: int) -> None:
         """두 헤드(μ·logσ²)를 각각 branch·trunk MLP 한 쌍 + 학습 가능한 편향으로 만든다.
 
         입력
@@ -47,7 +52,7 @@ class MarginOperatorNLL(nn.Module):
         self.t_lv = mlp(nt, P)
         self.b0_lv = nn.Parameter(torch.zeros(1))
 
-    def forward(self, bx, tx):
+    def forward(self, bx: torch.Tensor, tx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """두 헤드를 각각 내적해 평균과 로그분산을 낸다.
 
         입력
@@ -62,7 +67,9 @@ class MarginOperatorNLL(nn.Module):
         return mu, lv
 
 
-def _nll_loss(mu, lv, y, w=None):
+def _nll_loss(
+    mu: torch.Tensor, lv: torch.Tensor, y: torch.Tensor, w: torch.Tensor | None = None
+) -> torch.Tensor:
     """가우시안 음의 로그우도(표준화 공간). 상수항 0.5·log(2π) 는 최적화에 무관해 생략.
 
     입력
@@ -80,7 +87,7 @@ def _nll_loss(mu, lv, y, w=None):
     return (per * w).sum() / w.sum()
 
 
-def _mp(name, k):
+def _mp(name: str | None, k: int) -> str | None:
     """폴드별 모델 저장 경로 접두를 만든다. 확장자는 각 학습함수가 붙인다.
 
     입력
@@ -97,7 +104,15 @@ def _mp(name, k):
     return str(d / f"{name}_fold{k}")
 
 
-def _predict_hybrid_ci(D, cfg, anchor_fn, resid_ci_fn, name=None, target=None, use_margin=True):
+def _predict_hybrid_ci(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    anchor_fn: Callable[..., Callable[[npt.ArrayLike], np.ndarray]],
+    resid_ci_fn: Callable[..., tuple[np.ndarray, np.ndarray]],
+    name: str | None = None,
+    target: np.ndarray | None = None,
+    use_margin: bool = True,
+) -> pd.DataFrame:
     """CI 2단계 하이브리드 — `pipeline.predict_hybrid` 를 미러링하고 CI 열 4개를 더한다.
 
     y = MC_hat + recent_margin + mean, 구간 = [y − Z·std, y + Z·std].
@@ -156,7 +171,19 @@ def _predict_hybrid_ci(D, cfg, anchor_fn, resid_ci_fn, name=None, target=None, u
     return pd.concat(rows, ignore_index=True)
 
 
-def nll_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
+def nll_resid(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    target: np.ndarray,
+    return_predict: bool = False,
+    save_path: str | None = None,
+) -> (
+    tuple[np.ndarray, np.ndarray]
+    | tuple[np.ndarray, np.ndarray, Callable[[npt.ArrayLike], tuple[np.ndarray, np.ndarray]]]
+):
     """stage-2 NLL 잔차: 표준화 공간에서 (μ, logσ²) 를 학습해 원본 스케일 (mean, std) 로 되돌린다.
 
     `don_resid` 와 같은 블록(branch=VC, trunk=[곡선|계약])·표준화·조기종료 규약을 쓰고
@@ -195,7 +222,7 @@ def nll_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
     else:
         wsamp = torch.ones(len(tr), device=dev)
 
-    def _vloss(vi):
+    def _vloss(vi: torch.Tensor) -> torch.Tensor:
         """검증 손실 — 조기종료가 부른다.
 
         입력
@@ -237,7 +264,7 @@ def nll_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
             save_path + ".pt",
         )
 
-    def predict(idx):
+    def predict(idx: npt.ArrayLike) -> tuple[np.ndarray, np.ndarray]:
         """학습된 망으로 평균·표준편차를 원본 스케일로 낸다.
 
         표준편차에도 ysd 를 곱한다 — 표준화 공간의 σ 를 그대로 쓰면 구간이 원가격 단위에서
@@ -260,7 +287,14 @@ def nll_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
     return (mean_te, std_te, predict) if return_predict else (mean_te, std_te)
 
 
-def _anchor(D, cfg, tr, va, te, save_path=None):
+def _anchor(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    te: np.ndarray,
+    save_path: str | None = None,
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """stage-1 앵커: MC 이론가 예측기(train_curve 재사용). deeponet.py 의 `_anchor` 와 동일.
 
     입력
@@ -276,7 +310,7 @@ def _anchor(D, cfg, tr, va, te, save_path=None):
     return predict
 
 
-def run(D, cfg):
+def run(D: SimpleNamespace, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
     """CI 하이브리드 하나를 학습·예측한다.
 
     입력

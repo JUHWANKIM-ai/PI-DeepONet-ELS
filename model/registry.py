@@ -4,13 +4,18 @@
 규약·입력(D) 설명은 model/_template.py 참고."""
 import importlib
 import pkgutil
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
+import pandas as pd
 
 import model as _pkg
 
 _SKIP = {"registry"}  # 언더스코어(_template 등)로 시작하는 모듈은 자동 제외
 
 
-def discover():
+def discover() -> list[tuple[str, Callable[..., dict[str, pd.DataFrame]]]]:
     """run(D, cfg) 를 노출하는 model 하위 모듈을 모아 돌려준다.
 
     `_` 로 시작하는 모듈(`_template` 등)과 `_SKIP` 의 이름은 건너뛴다. 모듈을 실제로
@@ -33,7 +38,9 @@ def discover():
     return sorted(found, key=lambda x: x[0])
 
 
-def run_all(D, cfg, verbose=True):
+def run_all(
+    D: SimpleNamespace, cfg: dict[str, Any], verbose: bool = True
+) -> dict[str, pd.DataFrame]:
     """발견된 모든 모델의 run(D, cfg) 를 실행해 예측을 하나의 사전으로 병합한다.
 
     모델 이름이 겹치면 **즉시 멈춘다** — 조용히 덮어쓰면 뒤에 실행된 모듈의 예측이

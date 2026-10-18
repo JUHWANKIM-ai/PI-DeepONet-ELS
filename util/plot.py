@@ -6,7 +6,12 @@
 즉 `from util import plot` 후에는 어떤 `fig.savefig(path)` 든 별도 인자 없이 자동으로
 **dpi 400 · 투명배경 · bbox tight** 로 저장되고, 새 figure 기본 크기도 PPT 콘텐츠 밴드(13.333 x 5.0in).
 (개별 인자를 주면 그것이 우선.)"""
+from collections.abc import Sequence
+from pathlib import Path
+
 import numpy as np
+import numpy.typing as npt
+import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
 from scipy.stats import spearmanr, norm
@@ -43,7 +48,7 @@ plt.rcParams.update(
 )
 
 
-def _save(fig, path, dpi=DPI):
+def _save(fig: plt.Figure, path: str | Path | None, dpi: int = DPI) -> None:
     """투명배경·고해상도 저장 (PPT 오버레이용).
 
     입력
@@ -57,7 +62,7 @@ def _save(fig, path, dpi=DPI):
         fig.savefig(path, dpi=dpi, bbox_inches="tight", transparent=True)
 
 
-def model_color(name):
+def model_color(name: str) -> str:
     """모델 이름으로 막대·점 색을 정한다 — 그림 전체에서 계열 색을 일치시키기 위한 규칙.
 
     이름에 "mape" 가 있으면 진한 파랑, 그 밖에 "deeponet" 이 있으면 연한 파랑,
@@ -76,7 +81,7 @@ def model_color(name):
     return "#e07a5f"  # terracotta = tabular ML benchmark (직접/XGB 하이브리드)
 
 
-def _sort_best_first(df, col, mode):
+def _sort_best_first(df: pd.DataFrame, col: str, mode: str) -> pd.DataFrame:
     """지표 성격에 맞게 '좋은 것부터' 정렬한다.
 
     입력
@@ -93,7 +98,11 @@ def _sort_best_first(df, col, mode):
     return df.reindex(df[col].abs().sort_values().index)  # abs
 
 
-def metric_bars(metrics_df, path=None, title="Walk-forward OOS benchmark"):
+def metric_bars(
+    metrics_df: pd.DataFrame,
+    path: str | Path | None = None,
+    title: str = "Walk-forward OOS benchmark",
+) -> plt.Figure:
     """모델별 지표를 2×3 가로막대 패널로 그린다.
 
     패널은 있는 열만 그린다 — 여섯 지표를 다 넘기지 않아도 된다.
@@ -149,7 +158,12 @@ def metric_bars(metrics_df, path=None, title="Walk-forward OOS benchmark"):
     return fig
 
 
-def scatter_grid(preds, order=None, path=None, ncol=6):
+def scatter_grid(
+    preds: dict[str, tuple[npt.ArrayLike, npt.ArrayLike]],
+    order: Sequence[str] | None = None,
+    path: str | Path | None = None,
+    ncol: int = 6,
+) -> plt.Figure:
     """예측 vs 실제 산점도를 모델별 그리드로 그린다 (콘텐츠 밴드에 맞게 2행 6열).
 
     입력
@@ -185,7 +199,7 @@ def scatter_grid(preds, order=None, path=None, ncol=6):
     return fig
 
 
-def speed_bar(speed_df, path=None):
+def speed_bar(speed_df: pd.DataFrame, path: str | Path | None = None) -> plt.Figure:
     """상품 1건당 추론 지연을 로그축 가로막대로 그린다.
 
     로그축이다 — 2단계 하이브리드와 MC 의 차이가 자릿수 단위라 선형축에서는 한쪽이 안 보인다.
@@ -222,7 +236,7 @@ def speed_bar(speed_df, path=None):
 _QUAL = ["#1f6f9c", "#5aa9dd", "#2a9d8f", "#e07a5f", "#9b5de5", "#e9c46a", "#c0637a", "#7f8c8d"]
 
 
-def stage_r2_bar(stage_df, path=None):
+def stage_r2_bar(stage_df: pd.DataFrame, path: str | Path | None = None) -> plt.Figure:
     """단계별 R² 를 모델 묶음 막대로 그린다 (공정가 2단계).
 
     키 이름은 하위호환으로 유지: stage1=MC 앵커, stage2=공정가 잔차, final=공정가.
@@ -292,7 +306,7 @@ _MC_INK = "#333333"
 _MC_GRID = "#cccccc"
 
 
-def _qbins(x, k):
+def _qbins(x: np.ndarray, k: int) -> tuple[np.ndarray, list[str]]:
     """분위수 경계로 최대 k 구간을 만든다. 중복 경계는 병합한다.
 
     같은 값이 많은 축(예: 리자드 지급률)에서는 분위수 경계가 겹친다 — 그대로 쓰면 빈 구간이
@@ -314,7 +328,18 @@ def _qbins(x, k):
     return idx, labs
 
 
-def mc_error_heatmap(m, xcol, ycol, xlabel, ylabel, path=None, kx=5, ky=5, title=None, min_n=15):
+def mc_error_heatmap(
+    m: pd.DataFrame,
+    xcol: str,
+    ycol: str,
+    xlabel: str,
+    ylabel: str,
+    path: str | Path | None = None,
+    kx: int = 5,
+    ky: int = 5,
+    title: str | None = None,
+    min_n: int = 15,
+) -> plt.Figure:
     """두 연속축(분위수 격자)의 평균 MAPE% 히트맵. 표본 부족 셀은 공백으로 둔다.
 
     빈 칸은 '오차 0' 이 아니라 '셀 표본이 min_n 미만' 이라는 뜻이다 — 색으로 채우면
@@ -372,8 +397,12 @@ def mc_error_heatmap(m, xcol, ycol, xlabel, ylabel, path=None, kx=5, ky=5, title
 
 
 def mc_error_by_segment(
-    m, segs, path=None, nbin=6, title="MC prediction error by contract segment  (walk-forward OOS)"
-):
+    m: pd.DataFrame,
+    segs: Sequence[tuple[str, str]],
+    path: str | Path | None = None,
+    nbin: int = 6,
+    title: str = "MC prediction error by contract segment  (walk-forward OOS)",
+) -> plt.Figure:
     """세분화 축별 MAPE% 를 2열 막대 그리드로 그린다.
 
     입력
@@ -411,7 +440,7 @@ def mc_error_by_segment(
     return fig
 
 
-def mc_oos_drift(m, path=None):
+def mc_oos_drift(m: pd.DataFrame, path: str | Path | None = None) -> plt.Figure:
     """walk-forward 폴드(시간)별 R²·MAPE% 라인. 두 축을 겹치지 않고 2패널로 나눈다.
 
     이중 축은 눈금 선택만으로 추세를 만들어낼 수 있어 쓰지 않는다.
@@ -454,7 +483,12 @@ def mc_oos_drift(m, path=None):
     return fig
 
 
-def mc_ci_calibration(m, seg_col="sig_eff", seg_label="volatility  σ_eff", path=None):
+def mc_ci_calibration(
+    m: pd.DataFrame,
+    seg_col: str = "sig_eff",
+    seg_label: str = "volatility  σ_eff",
+    path: str | Path | None = None,
+) -> plt.Figure:
     """신뢰구간 캘리브레이션: (좌) reliability curve, (우) 세분화 축별 95% 커버리지.
 
     대각선 아래면 과신이다. 좌측 곡선은 저장된 σ 로 여섯 신뢰수준을 다시 계산해 그린다.
@@ -510,7 +544,9 @@ def mc_ci_calibration(m, seg_col="sig_eff", seg_label="volatility  σ_eff", path
     return fig
 
 
-def mc_pred_ci_band(m, path=None, conf=0.90):
+def mc_pred_ci_band(
+    m: pd.DataFrame, path: str | Path | None = None, conf: float = 0.90
+) -> plt.Figure:
     """신뢰구간(빨강 밴드)만 표시하고 구간을 벗어난 actual 만 점으로 찍는다 — 과신 가시화.
 
     구간은 저장된 μ(y_pred)·σ(y_std)로 임의 신뢰수준 conf 에서 재계산한다: μ ± z·σ.
@@ -578,7 +614,14 @@ _SPLIT_LABELMAP = {
 }
 
 
-def two_split_bars(df, path=None, r2_floor=-0.5, mape_cap=2.0, label_map=None, title=None):
+def two_split_bars(
+    df: pd.DataFrame,
+    path: str | Path | None = None,
+    r2_floor: float = -0.5,
+    mape_cap: float = 2.0,
+    label_map: dict[str, str] | None = None,
+    title: str | None = None,
+) -> plt.Figure:
     """random 7:3 vs walk-forward feature-ablation 비교 (가로 막대 2패널: 좌 R², 우 MAPE%).
 
     random=미래표본 누수로 낙관적(interpolation), walk-forward=진짜 시간 OOS.
@@ -603,7 +646,7 @@ def two_split_bars(df, path=None, r2_floor=-0.5, mape_cap=2.0, label_map=None, t
     h = 0.38
     BLUE, ORANGE, OFF = _MC_BLUE, "#e07a5f", "#c0392b"
 
-    def val(cfg, sp, col):
+    def val(cfg: str, sp: str, col: str) -> float:
         """(config, split) 한 칸의 값을 꺼낸다.
 
         입력
@@ -698,7 +741,9 @@ def two_split_bars(df, path=None, r2_floor=-0.5, mape_cap=2.0, label_map=None, t
     return fig
 
 
-def mc_pred_ci_calibrated(m, path=None, conf=0.90):
+def mc_pred_ci_calibrated(
+    m: pd.DataFrame, path: str | Path | None = None, conf: float = 0.90
+) -> plt.Figure:
     """분산 재보정(variance recalibration) 후 신뢰구간 — 이탈점이 적음을 정직하게 보임.
 
     raw NLL σ 가 과신이라, held-out 절반에서 보정배수 k=quantile_conf(|actual−μ|/σ) 를 추정하고

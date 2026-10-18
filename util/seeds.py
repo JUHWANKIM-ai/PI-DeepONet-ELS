@@ -9,6 +9,9 @@
 입력 규약: result/predictions/<model>_seed{s}.csv  (scratch/run_all_seeds.py, run_pi_route_seeds.py 산출)
 시드 CSV 가 없는 모델은 조용히 제외한다 — 단일 시드 숫자를 섞지 않는 게 이 모듈의 목적이다.
 """
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -18,7 +21,7 @@ from util.metric import metrics
 SEEDS = (0, 1, 2, 3, 4)
 
 
-def available(models, seeds=SEEDS):
+def available(models: Iterable[str], seeds: Iterable[int] = SEEDS) -> list[str]:
     """시드 CSV 가 **전부** 있는 모델만 반환 (부분 시드는 평균이 편향되므로 제외).
 
     입력
@@ -30,7 +33,9 @@ def available(models, seeds=SEEDS):
     return [m for m in models if all(fm.prediction(f"{m}_seed{s}").exists() for s in seeds)]
 
 
-def load(models, seeds=SEEDS):
+def load(
+    models: Iterable[str], seeds: Iterable[int] = SEEDS
+) -> dict[tuple[str, int], pd.DataFrame]:
     """시드별 예측 CSV 를 모두 읽어 사전으로 돌려준다.
 
     입력
@@ -49,7 +54,10 @@ def load(models, seeds=SEEDS):
     return out
 
 
-def long_metrics(preds, extra=None):
+def long_metrics(
+    preds: dict[tuple[str, int], pd.DataFrame],
+    extra: Callable[[pd.DataFrame], dict[str, float]] | None = None,
+) -> pd.DataFrame:
     """시드별 지표를 long 형태로 쌓는다.
 
     입력
@@ -72,7 +80,9 @@ def long_metrics(preds, extra=None):
     return pd.DataFrame(rows)
 
 
-def summarize(long_df, keys=("model",), cols=None):
+def summarize(
+    long_df: pd.DataFrame, keys: Sequence[str] = ("model",), cols: Sequence[str] | None = None
+) -> pd.DataFrame:
     """long 표를 키별 평균 ± sd 로 접는다.
 
     입력
@@ -93,7 +103,12 @@ def summarize(long_df, keys=("model",), cols=None):
     return g
 
 
-def by_group(preds, group_of, min_n=30, metric_cols=("R2", "MAPE%", "RMSE", "Bias%")):
+def by_group(
+    preds: dict[tuple[str, int], pd.DataFrame],
+    group_of: Callable[[pd.DataFrame], pd.Series],
+    min_n: int = 30,
+    metric_cols: Sequence[str] = ("R2", "MAPE%", "RMSE", "Bias%"),
+) -> pd.DataFrame:
     """그룹(구조·기초자산 등)별 시드 지표 long 표.
 
     입력
@@ -126,7 +141,9 @@ def by_group(preds, group_of, min_n=30, metric_cols=("R2", "MAPE%", "RMSE", "Bia
     return pd.DataFrame(rows)
 
 
-def paired_delta(long_df, a, b, col="R2"):
+def paired_delta(
+    long_df: pd.DataFrame, a: str, b: str, col: str = "R2"
+) -> tuple[pd.Series, dict[str, Any]]:
     """같은 시드끼리 짝지은 b − a 차이와 요약. 시드 공유가 전제.
 
     짝짓지 않으면 시드 분산이 모델 간 차이에 그대로 섞인다 — 이 함수가 있는 이유다.
@@ -155,7 +172,7 @@ def paired_delta(long_df, a, b, col="R2"):
     }
 
 
-def noise_floor(long_df, col="R2"):
+def noise_floor(long_df: pd.DataFrame, col: str = "R2") -> float:
     """arm 내 시드 sd 의 최댓값 — 이보다 작은 모델 간 격차는 해석 불가.
 
     입력
