@@ -40,7 +40,14 @@ docs/
 fn_after.json
 functions.json
 rad.json
-result/
+# result/ 는 전부 산출물이라 막는다. 단 **README 가 본문에 싣는 그림 한 장**만 예외다 —
+# 그건 데이터가 아니라 문서 자산이고, 없으면 GitHub 에서 README 의 핵심 그림이 깨진다.
+# (디렉터리를 통째로 막으면 git 이 안으로 들어가지 않아 아래 부정 규칙이 먹지 않는다.
+#  그래서 result/ 가 아니라 result/* 로 쓴다.)
+result/*
+!result/image/
+result/image/*
+!result/image/headline_3star.png
 scratch/
 skills-lock.json
 survivors.json
