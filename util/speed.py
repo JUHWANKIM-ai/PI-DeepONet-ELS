@@ -15,6 +15,18 @@ from model.stage2 import xgb_resid, don_resid
 
 
 def _time(fn, repeat=20, warmup=3):
+    """호출 하나의 소요시간을 중앙값으로 잰다.
+
+    평균이 아니라 중앙값이다 — GC·OS 스케줄링으로 튀는 한두 번이 평균을 끌어올린다.
+    warmup 회는 버린다: 지연 초기화와 캐시 워밍이 첫 호출에만 섞인다.
+
+    입력
+      fn     : callable — 인수 없이 부를 수 있는 호출. 반환값은 쓰지 않는다
+      repeat : int — 계측 횟수
+      warmup : int — 버리는 사전 호출 횟수
+    출력
+      float — 1회 소요시간의 중앙값 [초]
+    """
     for _ in range(warmup):
         fn()
     ts = []
@@ -26,14 +38,35 @@ def _time(fn, repeat=20, warmup=3):
 
 
 def measure(D, cfg, repeat=20):
-    """반환: index=model, cols=[n, batch_ms, per_product_us, products_per_sec, kind].
-    현재 파이프라인 = 이론가(MC) 2단계: y = 앵커(MC_hat) + stage2 잔차(MC−MC_hat), 마진 없음."""
+    """학습된 모델로 test 폴드를 예측하는 시간만 재서 모델별로 모은다.
+
+    현재 파이프라인 = 이론가(MC) 2단계: y = 앵커(MC_hat) + stage2 잔차(MC−MC_hat), 마진 없음.
+    학습 시간은 빠진다 — 재는 것은 **즉시 견적 지연시간**이다. fold-0 기준.
+
+    입력
+      D      : Dataset — `module.data` 가 만든 번들. `D.WF[0]` 의 (tr, va, te) 를 쓴다
+      cfg    : dict — 설정. tabular.xgb · train.es_rounds · data.time_decay · seed 를 읽는다
+      repeat : int — 모델 하나당 계측 횟수 (`_time` 으로 전달)
+    출력
+      DataFrame — index=model,
+                  columns=[kind, n, batch_ms, per_product_us, products_per_sec],
+                  per_product_us 오름차순. kind 는 "hybrid"(2단계) | "direct"(단일 단계)
+    """
     tr, va, te = D.WF[0]
     N = len(te)
     tw = cfg["data"]["time_decay"]
     rows = []
 
     def add(name, predict_fn, kind="hybrid"):
+        """예측기 하나를 재서 결과 행을 바깥 rows 에 쌓는다.
+
+        입력
+          name       : str — 표에 찍을 모델 이름
+          predict_fn : callable(idx) -> ndarray — 행 인덱스를 받아 예측을 내는 호출
+          kind       : "hybrid" | "direct" — 2단계인지 단일 단계인지
+        출력
+          없음 (바깥 rows 에 dict 한 개를 추가한다)
+        """
         sec = _time(lambda: predict_fn(te), repeat=repeat)
         rows.append(
             dict(

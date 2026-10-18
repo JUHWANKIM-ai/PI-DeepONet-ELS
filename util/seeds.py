@@ -19,12 +19,27 @@ SEEDS = (0, 1, 2, 3, 4)
 
 
 def available(models, seeds=SEEDS):
-    """시드 CSV 가 **전부** 있는 모델만 반환 (부분 시드는 평균이 편향되므로 제외)."""
+    """시드 CSV 가 **전부** 있는 모델만 반환 (부분 시드는 평균이 편향되므로 제외).
+
+    입력
+      models : list[str] — 후보 모델 이름
+      seeds  : tuple[int] — 요구 시드. 기본 (0, 1, 2, 3, 4)
+    출력
+      list[str] — `models` 의 부분집합, 입력 순서 보존
+    """
     return [m for m in models if all(fm.prediction(f"{m}_seed{s}").exists() for s in seeds)]
 
 
 def load(models, seeds=SEEDS):
-    """{(model, seed): DataFrame}. ITEM_CD 는 문자열로 고정."""
+    """시드별 예측 CSV 를 모두 읽어 사전으로 돌려준다.
+
+    입력
+      models : list[str] — 모델 이름
+      seeds  : tuple[int] — 시드
+    출력
+      dict[(model, seed)] -> DataFrame — 파일이 없는 조합은 키 자체가 없다.
+                                         ITEM_CD 는 문자열로 고정해 읽는다
+    """
     out = {}
     for m in models:
         for s in seeds:
@@ -35,8 +50,16 @@ def load(models, seeds=SEEDS):
 
 
 def long_metrics(preds, extra=None):
-    """시드별 지표 long 표: model, seed, + util.metric.metrics 열들.
-    extra(d) -> dict 를 주면 모델·시드마다 추가 열을 붙인다(예: stage 별 R²)."""
+    """시드별 지표를 long 형태로 쌓는다.
+
+    입력
+      preds : dict[(model, seed)] -> DataFrame — `load` 의 출력
+      extra : callable(DataFrame) -> dict | None — 모델·시드마다 붙일 추가 열
+              (예: stage 별 R²)
+    출력
+      DataFrame — model, seed, n + `util.metric.metrics` 의 열들.
+                  mc_pred 열이 있으면 stage1_mc_R2 · stage2_resid_R2 도 붙는다
+    """
     rows = []
     for (m, s), d in sorted(preds.items()):
         r = {"model": m, "seed": s, "n": len(d), **metrics(d.y_true, d.y_pred)}
@@ -50,7 +73,15 @@ def long_metrics(preds, extra=None):
 
 
 def summarize(long_df, keys=("model",), cols=None):
-    """평균 ± sd 표. cols=None 이면 수치열 전부."""
+    """long 표를 키별 평균 ± sd 로 접는다.
+
+    입력
+      long_df : DataFrame — `long_metrics` 의 출력
+      keys    : tuple[str] — 묶을 키. 기본 ("model",)
+      cols    : list[str] | None — 집계할 열. None 이면 model/seed/n 을 뺀 수치열 전부
+    출력
+      DataFrame — index=keys, columns=<열>_mean / <열>_std
+    """
     if cols is None:
         cols = [
             c
@@ -64,7 +95,17 @@ def summarize(long_df, keys=("model",), cols=None):
 
 def by_group(preds, group_of, min_n=30, metric_cols=("R2", "MAPE%", "RMSE", "Bias%")):
     """그룹(구조·기초자산 등)별 시드 지표 long 표.
-    group_of(DataFrame) -> 그룹 라벨 Series (index 정렬은 호출자 책임)."""
+
+    입력
+      preds       : dict[(model, seed)] -> DataFrame — `load` 의 출력
+      group_of    : callable(DataFrame) -> Series — 행별 그룹 라벨.
+                    index 정렬은 호출자 책임이다
+      min_n       : int — 이 미만인 그룹은 버린다
+      metric_cols : tuple[str] — 표에 담을 지표 이름
+    출력
+      DataFrame — model, seed, group, n + metric_cols
+                  (mc_pred 열이 있으면 stage1_mc_R2 도)
+    """
     rows = []
     for (m, s), d in sorted(preds.items()):
         g = group_of(d)
@@ -86,7 +127,21 @@ def by_group(preds, group_of, min_n=30, metric_cols=("R2", "MAPE%", "RMSE", "Bia
 
 
 def paired_delta(long_df, a, b, col="R2"):
-    """같은 시드끼리 짝지은 b - a 차이와 요약. 시드 공유가 전제."""
+    """같은 시드끼리 짝지은 b − a 차이와 요약. 시드 공유가 전제.
+
+    짝짓지 않으면 시드 분산이 모델 간 차이에 그대로 섞인다 — 이 함수가 있는 이유다.
+
+    입력
+      long_df : DataFrame — `long_metrics` 의 출력. seed × model 로 pivot 가능해야 한다
+      a       : str — 기준 모델
+      b       : str — 비교 모델. 차이는 b − a
+      col     : str — 비교할 지표 열. 기본 "R2"
+    출력
+      (Series, dict) — Series: 시드별 차이.
+                       dict: mean, sd, se, wins("k/n"), n_seed
+    예외
+      KeyError — a 나 b 가 표에 없을 때
+    """
     p = long_df.pivot(index="seed", columns="model", values=col)
     if a not in p.columns or b not in p.columns:
         raise KeyError(f"{a} / {b} 중 없는 모델")
@@ -101,5 +156,12 @@ def paired_delta(long_df, a, b, col="R2"):
 
 
 def noise_floor(long_df, col="R2"):
-    """arm 내 시드 sd 의 최댓값 — 이보다 작은 모델 간 격차는 해석 불가."""
+    """arm 내 시드 sd 의 최댓값 — 이보다 작은 모델 간 격차는 해석 불가.
+
+    입력
+      long_df : DataFrame — `long_metrics` 의 출력
+      col     : str — 지표 열. 기본 "R2"
+    출력
+      float — 모델별 시드 sd 중 최댓값
+    """
     return float(long_df.groupby("model")[col].std().max())
