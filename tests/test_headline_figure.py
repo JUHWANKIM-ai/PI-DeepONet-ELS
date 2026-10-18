@@ -104,3 +104,37 @@ def test_main_can_actually_call_headline_fig(tmp_path, monkeypatch):
          "MAPE": .72, "MAPE_se": .01}])
     EAS.headline_fig(LV)
     assert (tmp_path / (NAME + ".png")).stat().st_size > 10_000
+
+
+TERMS = "headline_3star_terms"
+
+
+def test_raw_slope_csv_holds_numbers_not_lists():
+    """시드별 가격을 리스트로 저장하면 CSV 소비자가 못 읽는다 — 평균을 적는다.
+
+     per-seed 집계로 바꾸면서 `allstar_slope_raw.csv` 의 모형 열이 "[1.0, 2.0, ...]" 문자열이
+     돼 버렸다. 기울기는 메모리에서 시드별로 내되, 파일에는 숫자를 적어야 한다."""
+    import pandas as pd
+    import pytest as _pt
+    if not fm.stat("allstar_slope_raw").exists():
+        _pt.skip("원자료 없음")
+    C = pd.read_csv(fm.stat("allstar_slope_raw"))
+    col = "Direct+f+m (1·2·3)"
+    assert col in C.columns
+    assert pd.api.types.is_numeric_dtype(C[col]), "모형 열이 숫자가 아니다 (리스트 문자열)"
+
+
+def test_terms_figure_is_generated_by_a_callable(tmp_path, monkeypatch):
+    """계약변화별 가격반응 그림 — **함수를 실제로 부른다.**"""
+    import numpy as np
+    import pandas as pd
+    import tools.eval_all_stars as EAS
+    monkeypatch.setattr(fm, "image", lambda n: tmp_path / (n + ".png"))
+    lv = np.array([0.35, 0.40, 0.45, 0.50])
+    rows = []
+    for f in ("barrier", "coupon"):
+        for v in lv:
+            rows.append({"item": "A", "nstar": 3, "factor": f, "level": v,
+                         "mc": 9500 + 100 * v, EAS.HEADLINE[0]: 9500 + 95 * v})
+    EAS.terms_fig(pd.DataFrame(rows))
+    assert (tmp_path / (TERMS + ".png")).stat().st_size > 10_000

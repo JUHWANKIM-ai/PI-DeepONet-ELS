@@ -148,7 +148,12 @@ def main():
             newc[lab].append([(v + (b if res else 0.0)) * FACE for v in vs])
     for lab in newc:
         C[lab] = newc[lab]
-    C.to_csv(fm.stat("allstar_slope_raw"), index=False, encoding="utf-8-sig")
+    # 파일에는 **숫자**를 적는다 — 시드별 리스트를 그대로 쓰면 소비자가 못 읽는다.
+    # 기울기는 아래에서 메모리의 시드별 값으로 내고, 저장본은 시드 평균 가격이다.
+    Cmean = C.copy()
+    for lab, *_ in M:
+        Cmean[lab] = [float(np.mean(v)) for v in C[lab]]
+    Cmean.to_csv(fm.stat("allstar_slope_raw"), index=False, encoding="utf-8-sig")
     out = []
     for ns in (1, 2, 3):
         for f in EN:
@@ -221,8 +226,48 @@ def main():
                  "V_base padded to 3 slots by duplication)", fontsize=12.5, y=1.02)
     fig.tight_layout(); fig.savefig(fm.image("allstar")); plt.close(fig)
     headline_fig(LV)
+    terms_fig(Cmean)
     print()
-    print("saved -> allstar.png, headline_3star.png ({:.0f}s)".format(time.time() - t0))
+    print("saved -> allstar.png, headline_3star.png, headline_3star_terms.png ({:.0f}s)".format(time.time() - t0))
+
+
+def terms_fig(C):
+    """3스타 계약변화별 가격반응 — MC 참값 대 기준 모형.
+
+     README 가 싣는 두 번째 그림이다. 요인마다 섭동 수준을 가로축에, 가격을 세로축에 두고
+     MC 참값 선과 모형 선을 겹친다. **기울기(선의 각도)** 를 읽는 그림이지 절대 수준이 아니다.
+
+     기준 모형(Direct+f+m)만 그린다 — README 전체가 그 모형이고, 다른 모형을 섞으면
+     수준 표와 다른 대상을 보게 된다. 가격은 시드 5개 평균이다 (앙상블 아님)."""
+    lab = HEADLINE[0]
+    z = C[(C.nstar == 3) & C[lab].notna()]
+    if not len(z):
+        print("terms_fig 건너뜀 — 3스타 행이 없다")
+        return
+    facs = [f for f in EN if (z.factor == f).any()]
+    if not facs:
+        print("terms_fig 건너뜀 — 요인이 없다")
+        return
+    ncol = min(3, len(facs)); nrow = int(np.ceil(len(facs) / ncol))
+    fig, ax = plt.subplots(nrow, ncol, figsize=(4.6 * ncol, 3.7 * nrow), squeeze=False)
+    for k, f in enumerate(facs):
+        a = ax[k // ncol][k % ncol]
+        g = z[z.factor == f].groupby("level")[["mc", lab]].mean().sort_index()
+        if f == "barrier":
+            g = g[g.index < 1.0]
+        a.plot(g.index, g["mc"], "-", color="#222222", lw=2.2, label="MC (truth)")
+        a.plot(g.index, g[lab], "--", color="#f0c05a", lw=2.2, label="DeepONet")
+        a.set_title(EN[f], fontsize=11.5, fontweight="bold")
+        a.set_xlabel("perturbation level"); a.set_ylabel("price [KRW]")
+        a.grid(color="#dddddd", lw=.5, alpha=.6)
+        if k == 0:
+            a.legend(fontsize=9)
+    for k in range(len(facs), nrow * ncol):
+        ax[k // ncol][k % ncol].axis("off")
+    fig.suptitle("3-star ELS — price response to contract terms  "
+                 "(mean of 5 single models; read the slope, not the level)",
+                 fontsize=13, fontweight="bold", y=1.0)
+    fig.tight_layout(); fig.savefig(fm.image("headline_3star_terms")); plt.close(fig)
 
 
 def headline_fig(LV):
