@@ -1,0 +1,6 @@
+# 포매터 설정. Cursor 의 ms-python.black-formatter 확장과 CLI 가 같은 결과를 내도록 둔다.
+# 88(black 기본) 대신 100 — 이 저장소의 기존 폭이고, 88 로 내리면 숫자 표와 한국어 주석이
+# 더 많이 쪼개진다.
+[tool.black]
+line-length = 100
+target-version = ["py311"]

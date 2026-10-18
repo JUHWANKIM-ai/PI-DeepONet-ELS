@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """0_data_preprocessing.ipynb 생성 — 원천 → 학습 데이터셋.
 
- 흡수: 0_data.ipynb + EDA_raw_filter.ipynb
- 실행: python generate/build_nb_data.py
+흡수: 0_data.ipynb + EDA_raw_filter.ipynb
+실행: python generate/build_nb_data.py
 """
 import json
 from pathlib import Path
@@ -20,13 +20,20 @@ def md(t):
 
 
 def code(t):
-    return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
-            "source": _src(t.strip("\n"))}
+    return {
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": _src(t.strip("\n")),
+    }
 
 
 cells = []
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 # 0. 데이터 전처리
 
 > **이 노트북을 처음 보신다면 아래 세 절(프로젝트 개요 · 읽는 순서 · 용어)을 먼저 읽어 주세요.**
@@ -119,9 +126,13 @@ DART 원천 공시 → 학습 데이터셋. `module.build_source` 를 불러와 
 **유니버스 정의**: 기초자산 3개 · KRW · 4구조(STEP/LIZARD × 낙인/노낙인) ·
 공정가비율 0.70~1.05 · 만기 0.5~5.0년. 범위를 벗어난 건은 이상치로 보고 제외합니다
 (사유별 탈락 건수는 0-1 절에서 확인).
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 import os
 
 import numpy as np, pandas as pd
@@ -150,9 +161,13 @@ def _stale_saved():
 REBUILD = os.environ.get("REBUILD", "0") == "1" or _stale_saved()
 print("재빌드:", REBUILD)
 print("원천:", fm.RAW)
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 0-1. 필터 퍼널 — 원천 몇 건이 왜 빠지는가
 
 원천 공시에는 이 프로젝트가 다룰 수 없는 건이 섞여 있습니다(기초자산 4개 이상, 외화, 스케줄 결측 등).
@@ -161,9 +176,13 @@ cells.append(md("""
 
 원천에서 유니버스까지 몇 단계를 거치며 무엇이 왜 떨어지는지 셉니다.
 `build_source` 는 탈락 사유를 `df.attrs["drops"]` 로 돌려줍니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 ac = pd.read_csv(fm.RAW / "LAKE_V2_DART_AUTO_CALL.csv", low_memory=False)
 ud = pd.read_csv(fm.RAW / "LAKE_V2_DART_UDLY_INFO.csv", low_memory=False)
 for c in ("ISU_DT", "MAT_DT"):
@@ -197,9 +216,13 @@ a.set_xlabel("products"); a.margins(x=.22)
 a.set_title("Universe filter funnel", fontweight="bold")
 fig.tight_layout(); fig.savefig(fm.image("data_funnel"), dpi=200, bbox_inches="tight")
 plt.show()
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 0-2. 데이터셋 빌드 — 공시를 고정폭 배열로
 
 상품마다 조기상환 회차 수가 다릅니다(4~12회). 신경망은 가변 길이를 그대로 못 받으므로
@@ -209,9 +232,13 @@ cells.append(md("""
 
 `build_source()` 가 후보를 돌며 시장입력(변동성·상관·커브)을 붙이고, 스케줄을 48칸 고정폭으로
 정규화합니다. `save=False` 로 돌리면 기존 parquet 를 덮어쓰지 않습니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 if REBUILD:
     df = BS.build_source(save=True, verbose=True)
     drops = df.attrs.get("drops", {})
@@ -224,9 +251,13 @@ if drops:
     print("탈락 사유:", dict(sorted(drops.items(), key=lambda x: -x[1])))
 print()
 print("구조별:", df.groupby(["opt_type", "ki_yn"]).size().to_dict())
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ### MC 이론가 열과 모델링 데이터셋
 
 `build_source` 가 만드는 parquet 에는 아직 MC 가격이 없습니다. 뒤 단계가 쓰려면 두 가지를 더 붙여야 합니다.
@@ -245,9 +276,13 @@ cells.append(md("""
 parquet 이 아니라 **이 두 CSV** 입니다.
 
 둘 다 이미 있으면 건너뜁니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 from module import data as MD
 from module import mc_shards as MS
 
@@ -277,16 +312,24 @@ else:
 for p in (fm.DATA / "els3_dataset.parquet", p_ml, p_dn):
     print("  {:1} {:28} {:>8} KB".format(
         "o" if p.exists() else "X", p.name, int(p.stat().st_size / 1e3) if p.exists() else 0))
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 0-3. 분포 — 계약조건과 시장상태
 
 학습 전에 **입력이 어디에 몰려 있는지** 봅니다. 표본이 거의 없는 구간에서는 모형이 사실상
 외삽을 하게 되므로, 나중에 그 구간의 오차가 크더라도 놀랄 일이 아닙니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 fig, ax = plt.subplots(2, 4, figsize=(13.2, 6.0))
 items = [("fair", "fair value ratio", None), ("tenor", "tenor [years]", None),
          ("coupon", "coupon (annual)", None), ("B", "KI barrier", None),
@@ -302,17 +345,25 @@ fig.tight_layout(rect=[0, 0, 1, .93])
 fig.savefig(fm.image("data_distributions"), dpi=200, bbox_inches="tight")
 plt.show()
 print(df[[c for c, _, _ in items]].describe().round(3).to_string())
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 0-4. 시간 구성 — 발행 추이와 walk-forward 경계
 
 ELS 발행은 시기별로 쏠립니다. 성능을 무작위 분할로 재면 미래 정보가 새어 들어가므로,
 **발행일 순으로 4개 구간을 끊어** 과거로 학습하고 미래로 시험합니다(확장 윈도우).
 아래 세로선이 그 경계입니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 dt = pd.to_datetime([pd.Timestamp.fromordinal(int(o)) for o in df.isu_ord])
 cnt = pd.Series(1, index=dt).resample("QE").sum()
 fig, ax = plt.subplots(1, 2, figsize=(13.2, 4.0))
@@ -336,18 +387,26 @@ fig.tight_layout(rect=[0, 0, 1, .91])
 fig.savefig(fm.image("data_time"), dpi=200, bbox_inches="tight")
 plt.show()
 print("발행기간 {} ~ {}".format(dt.min().date(), dt.max().date()))
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 0-5. 1·2스타 확장
 
 기초자산이 1~2개인 상품을 **슬롯 중복 패딩**(위 용어 참고)으로 3자산 입력 규약에 수용합니다.
 
 아래 셀이 `generate/build_12star.main()` 으로 직접 만듭니다(이미 있으면 건너뜁니다).
 MC 라벨(`mc_variants12`)은 노트북 1 의 1-0 이 붙이고, 번들 구성은 `module.star.make_all()` 이 맡습니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 from generate import build_12star
 
 p12 = fm.DATA / "els12_dataset.parquet"
@@ -364,9 +423,13 @@ if p12.exists():
     print("  → 1·2스타 리자드 표본이 얇다. 해당 구간 기울기는 신뢰구간을 함께 볼 것.")
 else:
     print("els12_dataset.parquet 생성 실패 — 원천·캐시를 확인한다")
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 결론
 
 1. **유니버스는 4구조 × 기초자산 3개 × KRW** 로 좁힙니다. 공정가비율·만기 범위는 이상치 제거용입니다.
@@ -374,13 +437,19 @@ cells.append(md("""
    리자드가 없으면 중립값(배리어 1.2 = 절대 발동 안 함, 지급률 0)으로 채웁니다.
 3. **1·2스타는 슬롯 중복 패딩**으로 같은 입력 규약에 들어갑니다. 통합 학습이 왜 필수인지는 2장에서 보입니다.
 4. 이론가(MC) 라벨은 1장이 만듭니다. 이 노트북은 **계약과 시장상태까지만** 책임집니다.
-"""))
+"""
+    )
+)
 
-nb = {"cells": cells,
-      "metadata": {"kernelspec": {"display_name": "els-abacus", "language": "python",
-                                  "name": "els-abacus"},
-                   "language_info": {"name": "python"}},
-      "nbformat": 4, "nbformat_minor": 5}
+nb = {
+    "cells": cells,
+    "metadata": {
+        "kernelspec": {"display_name": "els-abacus", "language": "python", "name": "els-abacus"},
+        "language_info": {"name": "python"},
+    },
+    "nbformat": 4,
+    "nbformat_minor": 5,
+}
 
 if __name__ == "__main__":
     OUT.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")

@@ -1,4 +1,5 @@
 import os, sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pandas as pd
 import pytest
@@ -45,7 +46,7 @@ def test_lizard_products_have_a_real_barrier_somewhere(ml):
 
 def test_mc_cannot_exceed_max_contractual_payoff(ml):
     """조기상환 페이오프 = (1 + 누적지급률)*DF <= 1 + 마지막 누적지급률,
-     만기 생존 페이오프 = min(1, worst)*DF <= 1. 따라서 mc <= 1 + pmt_last 는 계약상 불변식."""
+    만기 생존 페이오프 = min(1, worst)*DF <= 1. 따라서 mc <= 1 + pmt_last 는 계약상 불변식."""
     assert ml["MC"].notna().all()
     cap = 1.0 + ml["pmt_11"]
     over = ml["MC"] > cap + 1e-3

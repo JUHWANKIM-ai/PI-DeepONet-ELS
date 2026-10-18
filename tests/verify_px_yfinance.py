@@ -20,14 +20,19 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 warnings.filterwarnings("ignore")
-from util import file_manager as fm   # noqa: E402
+from util import file_manager as fm  # noqa: E402
 
 MAIN = ["^KS200", "^GSPC", "^STOXX50E", "^HSCE", "^N225"]
-NAME = {"^KS200": "KOSPI 200", "^GSPC": "S&P 500", "^STOXX50E": "EURO STOXX 50",
-        "^HSCE": "HSCEI", "^N225": "Nikkei 225"}
-TOL_PX = 1e-6      # 종가 상대차 허용
-TOL_CORR = 0.005   # 상관 절대차 허용
-TOL_VOL = 0.05     # 변동성(%p) 허용
+NAME = {
+    "^KS200": "KOSPI 200",
+    "^GSPC": "S&P 500",
+    "^STOXX50E": "EURO STOXX 50",
+    "^HSCE": "HSCEI",
+    "^N225": "Nikkei 225",
+}
+TOL_PX = 1e-6  # 종가 상대차 허용
+TOL_CORR = 0.005  # 상관 절대차 허용
+TOL_VOL = 0.05  # 변동성(%p) 허용
 
 
 def logret(close):
@@ -38,8 +43,9 @@ def logret(close):
 def corr_mat(X):
     """5_segment 그림 11 과 동일: 180일 롤링 상관 → 표본기간 평균."""
     C = X.rolling(180, min_periods=120).corr()
-    return pd.DataFrame([[C.xs(a, level=1)[b].mean() for b in MAIN] for a in MAIN],
-                        index=MAIN, columns=MAIN)
+    return pd.DataFrame(
+        [[C.xs(a, level=1)[b].mean() for b in MAIN] for a in MAIN], index=MAIN, columns=MAIN
+    )
 
 
 def vol_mean(X):
@@ -49,12 +55,16 @@ def vol_mean(X):
 def main(t0="2015-01-05", t1="2026-05-08"):
     import yfinance as yf
 
-    cache = {t: pd.read_parquet(
-        fm.CACHE / ("px_" + t.replace("^", "_").replace(".", "_") + ".parquet"))["close"]
-        for t in MAIN}
+    cache = {
+        t: pd.read_parquet(fm.CACHE / ("px_" + t.replace("^", "_").replace(".", "_") + ".parquet"))[
+            "close"
+        ]
+        for t in MAIN
+    }
     end = (pd.Timestamp(t1) + pd.Timedelta(days=1)).date().isoformat()
-    raw = yf.download(MAIN, start=t0, end=end, auto_adjust=False, progress=False,
-                      group_by="column", threads=True)
+    raw = yf.download(
+        MAIN, start=t0, end=end, auto_adjust=False, progress=False, group_by="column", threads=True
+    )
     assert raw is not None and not raw.empty, "yfinance 다운로드 실패 (네트워크/차단)"
     cl = raw["Close"] if "Close" in raw.columns.get_level_values(0) else raw
     miss = [t for t in MAIN if t not in cl.columns]
@@ -72,7 +82,9 @@ def main(t0="2015-01-05", t1="2026-05-08"):
         rel = ((b.loc[j] - a.loc[j]).abs() / a.loc[j].abs()).max()
         ok = rel <= TOL_PX
         bad += [] if ok else [f"{NAME[t]} 종가 상대차 {rel:.2e}"]
-        print(f"   {NAME[t]:15s} 겹침 {len(j):,}일 | 최대 상대차 {rel:.2e} {'OK' if ok else 'FAIL'}")
+        print(
+            f"   {NAME[t]:15s} 겹침 {len(j):,}일 | 최대 상대차 {rel:.2e} {'OK' if ok else 'FAIL'}"
+        )
 
     XC = pd.DataFrame({t: logret(cache[t]) for t in MAIN}).sort_index().loc[t0:t1]
     XY = pd.DataFrame({t: logret(fresh[t]) for t in MAIN}).sort_index().loc[t0:t1]
@@ -80,8 +92,10 @@ def main(t0="2015-01-05", t1="2026-05-08"):
     lab = [NAME[t] for t in MAIN]
     iu = np.triu_indices(len(MAIN), 1)
     dmax = float((CY - CC).abs().values[iu].max())
-    print(f"\n② 180일 롤링 상관 평균 — 비대각 최대 차이 {dmax:.4f} "
-          f"{'OK' if dmax <= TOL_CORR else 'FAIL'}")
+    print(
+        f"\n② 180일 롤링 상관 평균 — 비대각 최대 차이 {dmax:.4f} "
+        f"{'OK' if dmax <= TOL_CORR else 'FAIL'}"
+    )
     print(CY.set_axis(lab).set_axis(lab, axis=1).round(3).to_string())
     if dmax > TOL_CORR:
         bad.append(f"상관 최대 차이 {dmax:.4f}")
@@ -89,13 +103,15 @@ def main(t0="2015-01-05", t1="2026-05-08"):
     oth = [t for t in MAIN if t != "^KS200"]
     for nm, Mx in (("캐시", CC), ("yfinance", CY)):
         ks = float(Mx.loc["^KS200", oth].mean())
-        no = float(np.mean([Mx.loc[a, b] for i, a in enumerate(oth) for b in oth[i + 1:]]))
+        no = float(np.mean([Mx.loc[a, b] for i, a in enumerate(oth) for b in oth[i + 1 :]]))
         print(f"   {nm:9s} KOSPI200 낀 쌍 {ks:.4f} | 안 낀 쌍 {no:.4f} | 차 {ks-no:+.4f}")
 
     V = pd.DataFrame({"cache": vol_mean(XC) * 100, "yfinance": vol_mean(XY) * 100})
     vmax = float((V.yfinance - V.cache).abs().max())
-    print(f"\n③ 180일 역사변동성 평균(%) — 최대 차이 {vmax:.3f}%p "
-          f"{'OK' if vmax <= TOL_VOL else 'FAIL'}")
+    print(
+        f"\n③ 180일 역사변동성 평균(%) — 최대 차이 {vmax:.3f}%p "
+        f"{'OK' if vmax <= TOL_VOL else 'FAIL'}"
+    )
     print(V.set_axis(lab).round(2).to_string())
     if vmax > TOL_VOL:
         bad.append(f"변동성 최대 차이 {vmax:.3f}%p")

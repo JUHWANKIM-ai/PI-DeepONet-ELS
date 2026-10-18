@@ -31,16 +31,18 @@ def test_total_variance_is_nondecreasing_even_under_inversion():
 
 
 def test_interpolation_is_linear_in_total_variance_not_in_vol():
-    t = np.array([0.25, 1.0]); w = np.array([0.04 * 0.25, 0.09 * 1.0])   # σ 0.20 -> 0.30
+    t = np.array([0.25, 1.0])
+    w = np.array([0.04 * 0.25, 0.09 * 1.0])  # σ 0.20 -> 0.30
     T = 0.625
     w_lin = np.interp(T, t, w)
     assert sigma_at(t, w, T) == pytest.approx(np.sqrt(w_lin / T))
-    assert sigma_at(t, w, T) != pytest.approx(0.25)                      # σ 선형보간값과 다르다
+    assert sigma_at(t, w, T) != pytest.approx(0.25)  # σ 선형보간값과 다르다
 
 
 def test_extrapolation_holds_last_forward_variance_constant():
-    t = np.array([93, 182]) / 365; s = np.array([0.20, 0.22])
-    w = s ** 2 * t
+    t = np.array([93, 182]) / 365
+    s = np.array([0.20, 0.22])
+    w = s**2 * t
     fwd = (w[1] - w[0]) / (t[1] - t[0])
     for T in (1.0, 3.0):
         assert sigma_at(t, w, T) ** 2 * T == pytest.approx(w[1] + fwd * (T - t[1]))
@@ -48,4 +50,4 @@ def test_extrapolation_holds_last_forward_variance_constant():
 
 def test_missing_nodes_are_dropped_not_propagated():
     assert np.isfinite(term_ratio([np.nan, 0.18, 0.20, 0.22], 3.0))
-    assert np.isnan(term_ratio([np.nan, np.nan, np.nan, 0.22], 3.0))   # 노드 1개면 곡선 불가
+    assert np.isnan(term_ratio([np.nan, np.nan, np.nan, 0.22], 3.0))  # 노드 1개면 곡선 불가

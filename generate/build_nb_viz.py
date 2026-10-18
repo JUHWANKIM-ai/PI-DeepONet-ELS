@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """3_visualization.ipynb 생성 — 4개 범주로 정리한 그림 일체.
 
-   범주 1  스타별(1·2·3) 종합 R²·MAPE + 계약조건 OLS + 계약조건 구간평균
-   범주 2  스타별 기초자산별 · 상품구조별 R²·MAPE
-   범주 3  프라이서 — 공정가와 MC 의 분포 차이
-   범주 4  공정가 관점에서 본 ELS 상품 자체
+  범주 1  스타별(1·2·3) 종합 R²·MAPE + 계약조건 OLS + 계약조건 구간평균
+  범주 2  스타별 기초자산별 · 상품구조별 R²·MAPE
+  범주 3  프라이서 — 공정가와 MC 의 분포 차이
+  범주 4  공정가 관점에서 본 ELS 상품 자체
 
- 그림 글자는 전부 영문. 성능 막대는 R² 와 MAPE 두 패널만 쓰고 MAE·편향은 표로 낸다.
- 계약조건 기울기는 수준 지표와 항상 함께 보고한다.
+그림 글자는 전부 영문. 성능 막대는 R² 와 MAPE 두 패널만 쓰고 MAE·편향은 표로 낸다.
+계약조건 기울기는 수준 지표와 항상 함께 보고한다.
 
- 실행: python generate/build_nb_viz.py
+실행: python generate/build_nb_viz.py
 """
 import json
 from pathlib import Path
@@ -27,13 +27,20 @@ def md(t):
 
 
 def code(t):
-    return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
-            "source": _src(t.strip("\n"))}
+    return {
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": _src(t.strip("\n")),
+    }
 
 
 cells = []
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 # 3. 시각화
 
 2장이 학습·저장한 가중치와 예측을 읽어 그림을 그립니다. 네 범주로 나눠 정리합니다.
@@ -53,9 +60,13 @@ cells.append(md("""
 
 ⚠ **계약조건 횡단면 기울기는 편미분이 아니라 연관입니다.** 배리어가 깊은 상품은 변동성·만기도 같이
 다릅니다. 절대값을 민감도로 읽지 마시고, 같은 상품 위의 MC 선 대비 모형 선의 **차이**만 읽어 주세요.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 from pathlib import Path
 
 import numpy as np, pandas as pd
@@ -159,10 +170,14 @@ def terms_for(idx):
 
 print("OOS {:,}건 | 스타별 {}".format(
     len(oos), {s: int(m[oos].sum()) for s, m in STARS}))
-"""))
+"""
+    )
+)
 
 # ---------------- 범주 1 ----------------
-cells.append(md("""
+cells.append(
+    md(
+        """
 ---
 # 범주 1. 스타별 종합 성능과 계약조건 반응
 
@@ -185,9 +200,13 @@ cells.append(md("""
 않으므로, 둘이 어긋나면 그 요인의 반응이 휘어 있다는 뜻입니다.
 
 두 그림 모두 **MC 선(실선) 대비 모형 선의 차이**만 읽어 주세요. 절대 기울기는 민감도가 아닙니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 # --- 1-A. 스타별 종합 R2 / MAPE ---
 rows = []
 for s, m in STARS:
@@ -222,9 +241,13 @@ for s, _ in STARS:
 
 print(LV[["star", "model", "n", "R2", "R2_se", "MAPE", "MAPE_se", "MAE", "RMSE", "MSE", "bias"]]
       .round(4).to_string(index=False))
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 # --- 1-B. 계약조건 산점 + OLS (스타별) ---
 for s, m in STARS:
     idx = oos[m[oos]]
@@ -254,9 +277,13 @@ for s, m in STARS:
                  fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, .06, 1, .92])
     save(fig, "cat1_{}star_terms_ols".format(s))
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 # --- 1-C. 계약조건 구간평균 (선형 가정 없음, 스타별) ---
 res_rows = []
 for s, m in STARS:
@@ -345,18 +372,26 @@ print("계약조건 기울기.  ratio = b(모델)/b(MC) 로 1.0 이 완벽, resi
 print(RS[RS.model == "model (1·2·3)"][
     ["star", "factor", "n", "MC_slope", "model_slope", "ratio", "resid", "se", "t"]]
     .round(3).to_string(index=False))
-"""))
+"""
+    )
+)
 
 # ---------------- 범주 2 ----------------
-cells.append(md("""
+cells.append(
+    md(
+        """
 ---
 # 범주 2. 스타별 기초자산별 · 상품구조별 성능
 
 같은 모형을 **기초자산**(지수 vs 개별주식)과 **상품구조**(STEP/LIZARD × 낙인/노낙인)로 갈라서 봅니다.
 1·2스타는 표본이 작으므로 건수(n)를 함께 읽어야 합니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 d3 = pd.read_parquet(fm.DATA / "els3_dataset.parquet")[["item", "udl1", "udl2", "udl3"]]
 d12 = pd.read_parquet(fm.DATA / "els12_dataset.parquet")[["item", "udl1", "udl2", "udl3"]]
 UD = pd.concat([d3, d12], ignore_index=True).drop_duplicates("item").set_index("item")
@@ -420,10 +455,14 @@ S2.to_csv(fm.stat("cat2_by_structure"), index=False, encoding="utf-8-sig")
 print(U[["star", "label", "kind", "n", "R2", "MAPE", "MAE", "RMSE", "MSE", "bias"]].round(4).to_string(index=False))
 print()
 print(S2[["star", "label", "n", "R2", "MAPE", "MAE", "RMSE", "MSE", "bias"]].round(4).to_string(index=False))
-"""))
+"""
+    )
+)
 
 # ---------------- 범주 3 ----------------
-cells.append(md("""
+cells.append(
+    md(
+        """
 ---
 # 범주 3. 프라이서 — 공정가와 MC 의 분포 차이
 
@@ -439,9 +478,13 @@ MC 입력을 바꾸면 이론가가 시장 공정가에 얼마나 가까워지�
 
 이론가는 무차익 값이므로 공정가와 일치할 이유가 없습니다. 여기서 보는 것은
 **격차가 체계적으로 줄었는가** 하나뿐입니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 V = pd.read_parquet(fm.CACHE / "mcvar" / "mc_variants.parquet").set_index("item")
 S3 = pd.read_parquet(fm.DATA / "els3_dataset.parquet")[["item", "fair", "isu_ord", "tenor"]]
 S3 = S3.join(V[["mc_A", "mc_B"]], on="item")
@@ -458,15 +501,23 @@ print("  before  편향 {:+.0f}원 | MAE {:.0f}원 | MAPE {:.2f}%".format(
     S3.e_bef.mean(), S3.e_bef.abs().mean(), (S3.e_bef.abs() / (S3.fair * FACE)).mean() * 100))
 print("  after   편향 {:+.0f}원 | MAE {:.0f}원 | MAPE {:.2f}%".format(
     S3.e_aft.mean(), S3.e_aft.abs().mean(), (S3.e_aft.abs() / (S3.fair * FACE)).mean() * 100))
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ### 3-1. 격차 분포 — before vs after
 
 변형 A(종전 입력: NS 커브 · 단순 역사적변동성 · 배당 0)와 변형 B(현행: 부트스트랩 커브 · EWMA · 연속 q)의
 `공정가 − 이론가` 분포를 겹쳐 봅니다. 분포가 0 쪽으로 옮겨갔으면 입력 교체가 시장과의 격차를 줄인 것입니다.
-"""))
-cells.append(code("""
+"""
+    )
+)
+cells.append(
+    code(
+        """
 lo_, hi_ = np.percentile(np.r_[S3.e_bef, S3.e_aft], [0.5, 99.5])
 bins = np.linspace(lo_, hi_, 60)
 fig, a = plt.subplots(figsize=(13.2, 4.6))
@@ -484,15 +535,23 @@ a.set_title("Fair minus MC theoretical price - before vs after  (n={:,})".format
 a.legend(frameon=False, fontsize=9.5, loc="upper right")
 fig.tight_layout()
 save(fig, "cat3_fair_minus_mc_hist")
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ### 3-2. 공정가 구간별 오차
 
 격차가 **가격대에 따라 체계적으로 달라지는지** 봅니다. 한쪽으로 기울어 있으면 특정 가격대에서
 이론가가 꾸준히 비싸거나 싸다는 뜻이고, 그건 평균만 봐서는 안 보입니다.
-"""))
-cells.append(code("""
+"""
+    )
+)
+cells.append(
+    code(
+        """
 q = np.unique(np.quantile(S3.fair, np.linspace(0, 1, 7)))
 b = np.clip(np.digitize(S3.fair, q[1:-1]), 0, len(q) - 2)
 labs = ["{:.3f}~{:.3f}".format(q[j], q[j + 1]) for j in range(len(q) - 1)]
@@ -515,15 +574,23 @@ for a in ax:
     a.set_xlabel("fair value segment (low -> high)")
 fig.tight_layout()
 save(fig, "cat3_err_by_price_seg")
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ### 3-3. 발행연도별 오차
 
 격차가 **시기에 따라** 달라지는지 봅니다. 특정 연도에 쏠려 있으면 그 시기의 시장환경이나
 자료 품질을 따로 의심해야 합니다.
-"""))
-cells.append(code("""
+"""
+    )
+)
+cells.append(
+    code(
+        """
 fig, ax = plt.subplots(1, 2, figsize=(13.2, 4.4))
 for nm, col, c in [(LB, "e_bef", CB), (LA, "e_aft", CA)]:
     g = S3.groupby("year")[col]
@@ -543,17 +610,25 @@ fig.tight_layout()
 save(fig, "cat3_by_year")
 
 print(S3.groupby("year")[["e_bef", "e_aft"]].agg(["mean", "count"]).round(0).to_string())
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ### 3-4. 어느 입력이 격차를 줄였나 — ΔMC 분해
 
 before → after 는 세 가지를 동시에 바꿉니다(커브 · 변동성 · 배당). 각각의 기여를 떼어서 봅니다.
 중간 조합(할인만 부트스트랩, 드리프트까지 부트스트랩)이 필요해 **표본 200개**로만 가능합니다.
 위 세 그림(전량 58,772건)과는 표본이 다릅니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 BC = pd.read_csv(fm.stat("mc_boot_curve_200"), encoding="utf-8-sig")
 comp = {"dividends": (BC.ns_h120 - BC.ns_h120_q0) * FACE,
         "curve: discount": (BC.bt_disc_h120 - BC.ns_h120) * FACE,
@@ -599,9 +674,13 @@ fig.tight_layout(rect=[0, 0, 1, .90])
 save(fig, "cat3_decomposition")
 
 print(pd.DataFrame(comp).describe().T[["mean", "std", "min", "max"]].round(1).to_string())
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ### 3-5. 프라이서 속도 — MC vs 대리모형
 
 같은 상품 200개를 두 경로로 가격합니다. **가격 산출만** 잽니다. 시장입력 조립(EWMA 변동성·영업일 상관·
@@ -611,9 +690,13 @@ cells.append(md("""
 
 배치가 커질수록 상품당 비용이 떨어지므로 '200개 요청' 과 '전량 일괄' 두 가지를 함께 냅니다.
 하나만 내면 오해를 부릅니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 import time
 from module import anchors as AN, market as MK, mc_engine as ME
 
@@ -743,10 +826,14 @@ print()
 print("일치도  corr {:.4f} | R2 {:.4f} | MAPE {:.3f}% | MAE {:.1f}원 | RMSE {:.1f}원 | 편향 {:+.1f}원".format(
     SPD.agree_corr.iloc[0], SPD.agree_R2.iloc[0], SPD.agree_MAPE.iloc[0],
     SPD.agree_MAE.iloc[0], SPD.agree_RMSE.iloc[0], SPD.agree_bias.iloc[0]))
-"""))
+"""
+    )
+)
 
 # ---------------- 범주 4 ----------------
-cells.append(md("""
+cells.append(
+    md(
+        """
 ---
 # 범주 4. 공정가 관점에서 본 ELS 상품
 
@@ -754,9 +841,13 @@ cells.append(md("""
 
 여기에는 모형도 MC 도 등장하지 않습니다. 유니버스가 어떤 상품들로 이루어져 있는지를 보는 절이라,
 **앞 범주의 성능 수치를 해석할 때 배경으로** 쓰입니다. 예를 들어 어떤 구조의 표본이 얇은지 가늠할 수 있습니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 fr = D.FAIR[oos]
 fig, ax = plt.subplots(2, 3, figsize=(13.2, 6.2))
 ax[0, 0].hist(fr, bins=70, color=C_NEW, alpha=.85)
@@ -794,9 +885,13 @@ for a, (xv, xl) in zip(ax[1], [(D.CON[oos, CT.iC], "coupon (annual)"),
 fig.suptitle("The ELS universe seen through fair value", fontsize=13.5, fontweight="bold")
 fig.tight_layout(rect=[0, 0, 1, .93])
 save(fig, "cat4_universe_fair")
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 # 발행 추이와 구성 변화
 dt = pd.to_datetime([pd.Timestamp.fromordinal(int(o)) for o in D.ORD])
 fig, ax = plt.subplots(1, 3, figsize=(13.2, 4.0))
@@ -820,9 +915,13 @@ fig.suptitle("ELS universe over time  ({} - {})".format(dt.min().date(), dt.max(
              fontsize=13.5, fontweight="bold")
 fig.tight_layout(rect=[0, 0, 1, .91])
 save(fig, "cat4_universe_time")
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ---
 # 부록. 7종 모형 비교 · 전수 횡단면 기울기
 
@@ -849,9 +948,13 @@ cells.append(md("""
 | `xsec_slope.csv` · `xsec_resid.csv` | 전수 횡단면 기울기와 잔차회귀 |
 
 `eval_all_stars` 는 노트북 1의 1-0 이 만든 `mc_check_allstar.csv` 를 읽습니다. 없으면 건너뜁니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 from IPython.display import Image, display
 from generate import eval_all_stars, eval_cross_section
 
@@ -862,21 +965,31 @@ else:
     print("건너뜀: mc_check_allstar.csv 가 없다 — 노트북 1 의 1-0 을 먼저 돌린다")
 
 eval_cross_section.main()
-"""))
+"""
+    )
+)
 
 cells.append(md("## 저장된 그림"))
-cells.append(code("""
+cells.append(
+    code(
+        """
 for i, n in enumerate(saved, 1):
     print("{:2d}. {}".format(i, n))
 print()
 print("총 {}장 | 위치 {}".format(len(saved), fm.image("x").parent))
-"""))
+"""
+    )
+)
 
-nb = {"cells": cells,
-      "metadata": {"kernelspec": {"display_name": "els-abacus", "language": "python",
-                                  "name": "els-abacus"},
-                   "language_info": {"name": "python"}},
-      "nbformat": 4, "nbformat_minor": 5}
+nb = {
+    "cells": cells,
+    "metadata": {
+        "kernelspec": {"display_name": "els-abacus", "language": "python", "name": "els-abacus"},
+        "language_info": {"name": "python"},
+    },
+    "nbformat": 4,
+    "nbformat_minor": 5,
+}
 
 if __name__ == "__main__":
     OUT.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")

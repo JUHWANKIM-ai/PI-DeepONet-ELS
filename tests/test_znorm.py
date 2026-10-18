@@ -1,4 +1,5 @@
 import os, sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 
@@ -7,9 +8,9 @@ from module.data import zstats, znorm, ZCLIP
 
 def test_constant_train_column_does_not_explode_on_unseen_test_value():
     """train 에서 상수인 열(리자드 lz_pmt_5/6/7 처럼)에 test 가 다른 값을 주면
-     std=eps 로 나눠 |z| 가 2천5백만까지 튀었다. 클리핑으로 막는다."""
+    std=eps 로 나눠 |z| 가 2천5백만까지 튀었다. 클리핑으로 막는다."""
     a = np.zeros((10, 1), dtype="float32")
-    a[9, 0] = 0.6                       # test 행에만 나타나는 값
+    a[9, 0] = 0.6  # test 행에만 나타나는 값
     tr = np.arange(9)
     m, s = zstats(a, tr)
     raw = (a - m) / s

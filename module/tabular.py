@@ -15,15 +15,31 @@ from .data import featnum, CAT, time_weights
 def load_tab_predictor(D, path):
     """fit_tab 이 저장한 .pkl 로드 → predict(idx)->np.array (재학습 없이 forward)."""
     import joblib
+
     ck = joblib.load(path)
-    m = ck["model"]; ct = ck["ct"]; X = D.ml[ck["num"] + ck["cat"]]
-    if ct is not None:   # ridge: ColumnTransformer 적용
+    m = ck["model"]
+    ct = ck["ct"]
+    X = D.ml[ck["num"] + ck["cat"]]
+    if ct is not None:  # ridge: ColumnTransformer 적용
         return lambda idx: m.predict(ct.transform(X.iloc[idx]))
     return lambda idx: m.predict(X.iloc[idx])
 
 
-def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=None, return_predictor=False,
-           half_life=365.25, objective=None):
+def fit_tab(
+    D,
+    cfg,
+    model,
+    tr,
+    te,
+    feat,
+    target,
+    tw=True,
+    va=None,
+    save_path=None,
+    return_predictor=False,
+    half_life=365.25,
+    objective=None,
+):
     """train 에만 fit, 시간가중. target: 전체 길이 배열, feat: 'base'|'regime'|'driver'.
     va(있으면): xgb/lgbm/cat 는 val 조기종료(early stopping)에 사용 (ridge/gbm 은 미사용).
     half_life: 시간감쇠 반감기(일). None=균등. (stage-2 ml_resid 가 inner-val 로 선택해 넘길 수 있음)
@@ -39,7 +55,8 @@ def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=Non
     ES_R = cfg["train"].get("es_rounds", 50)
     ct = None
     if es:
-        Xva = X.iloc[va]; yva = target[va]
+        Xva = X.iloc[va]
+        yva = target[va]
 
     if model == "ridge":
         ct = ColumnTransformer(
@@ -57,14 +74,10 @@ def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=Non
                 ("c", OneHotEncoder(handle_unknown="ignore"), CAT),
             ]
         ).fit(Xtr)
-        m = Ridge(alpha=P["ridge"]["alpha"]).fit(
-            ct.transform(Xtr), ytr, sample_weight=w
-        )
+        m = Ridge(alpha=P["ridge"]["alpha"]).fit(ct.transform(Xtr), ytr, sample_weight=w)
         predictor = lambda idx: m.predict(ct.transform(X.iloc[idx]))
     elif model == "gbm":
-        m = HistGradientBoostingRegressor(
-            categorical_features=CAT, random_state=0, **P["gbm"]
-        )
+        m = HistGradientBoostingRegressor(categorical_features=CAT, random_state=0, **P["gbm"])
         m.fit(Xtr, ytr, sample_weight=w)
         predictor = lambda idx: m.predict(X.iloc[idx])
     elif model == "lgbm":
@@ -77,7 +90,7 @@ def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=Non
         predictor = lambda idx: m.predict(X.iloc[idx])
     elif model == "xgb":
         xkw = dict(tree_method="hist", enable_categorical=True, random_state=0, **P["xgb"])
-        if objective:                                 # stage-2 강건손실(예: reg:pseudohubererror, 이분산 대응)
+        if objective:  # stage-2 강건손실(예: reg:pseudohubererror, 이분산 대응)
             xkw["objective"] = objective
         if es:
             xkw["early_stopping_rounds"] = ES_R
@@ -91,9 +104,12 @@ def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=Non
         raise ValueError(model)
     if save_path:
         import os, joblib
+
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        joblib.dump({"model_key": model, "model": m, "ct": ct, "num": num, "cat": CAT, "feat": feat},
-                    save_path + ".pkl")
+        joblib.dump(
+            {"model_key": model, "model": m, "ct": ct, "num": num, "cat": CAT, "feat": feat},
+            save_path + ".pkl",
+        )
     preds = predictor(te)
     return (preds, predictor) if return_predictor else preds
 
@@ -101,10 +117,10 @@ def fit_tab(D, cfg, model, tr, te, feat, target, tw=True, va=None, save_path=Non
 def load_tab_forward(path):
     """저장 가중치 -> **임의 입력** 예측기 predict(CURVE, VC, CON) (XGB 앵커 전용).
 
-     앵커 XGB 는 [곡선 | vol·corr | 계약] 을 그대로 이어붙여 학습하므로 (load_tab_predictor 처럼
-     D.ml 열을 되읽지 않는다) 배열을 바로 받을 수 있다."""
+    앵커 XGB 는 [곡선 | vol·corr | 계약] 을 그대로 이어붙여 학습하므로 (load_tab_predictor 처럼
+    D.ml 열을 되읽지 않는다) 배열을 바로 받을 수 있다."""
     import numpy as _np
     import joblib
+
     m = joblib.load(path)["model"]
-    return lambda CU, VC, CON: m.predict(
-        _np.concatenate([CU, VC, CON], axis=1)).astype("float32")
+    return lambda CU, VC, CON: m.predict(_np.concatenate([CU, VC, CON], axis=1)).astype("float32")

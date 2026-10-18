@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """build_source() 자체의 특성화(characterization) 테스트 — 지금 동작을 그대로 못박는다.
 
- 기존 tests/test_build_source_structure.py 는 **순수 헬퍼만** 덮는다
- (STRUCTS / encode_barrier / structure_mask / needs_linear_pmt).
- 정작 그 헬퍼들을 호출하는 49분기 오케스트레이터 build_source() 는 커버리지 1% 였다.
- 여기서는 합성 raw 자료를 tmp 경로에 깔고 build_source 를 실제로 돌려
- **탈락 규칙과 파생열 규약**을 고정한다. 리팩터링의 안전망 역할이다.
+기존 tests/test_build_source_structure.py 는 **순수 헬퍼만** 덮는다
+(STRUCTS / encode_barrier / structure_mask / needs_linear_pmt).
+정작 그 헬퍼들을 호출하는 49분기 오케스트레이터 build_source() 는 커버리지 1% 였다.
+여기서는 합성 raw 자료를 tmp 경로에 깔고 build_source 를 실제로 돌려
+**탈락 규칙과 파생열 규약**을 고정한다. 리팩터링의 안전망 역할이다.
 
- 주의: save=False 를 반드시 넘긴다. 기본값 save=True 는 fm.DATA 에 els3_dataset.parquet 를
- 덮어쓴다 (module/build_source.py:192-194).
+주의: save=False 를 반드시 넘긴다. 기본값 save=True 는 fm.DATA 에 els3_dataset.parquet 를
+덮어쓴다 (module/build_source.py:192-194).
 """
 import json
 import os
@@ -20,14 +20,14 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from util import file_manager as fm                      # noqa: E402
-import module.build_source as BS                     # noqa: E402
-import module.underlying as UL                       # noqa: E402
+from util import file_manager as fm  # noqa: E402
+import module.build_source as BS  # noqa: E402
+import module.underlying as UL  # noqa: E402
 
 TICKERS = ["^AAA", "BBB.KS", "CCC.T"]
 UDLY = ["U_A", "U_B", "U_C"]
 ISU = "2024-06-03"
-MAT = "2027-06-03"                                       # tenor ≈ 3.0 → TEN_LO..TEN_HI 안
+MAT = "2027-06-03"  # tenor ≈ 3.0 → TEN_LO..TEN_HI 안
 NOBS = 6
 
 
@@ -40,21 +40,47 @@ def _prices(seed):
 
 
 def _autocall_row(item, opt_type="STEP", ki=1, fair=0.95, cur="KRW"):
-    return dict(ITEM_CD=item, OPT_TYPE=opt_type, KNCK_IN_YN=ki, CUR_CD=cur,
-                FAIR_VALUE=fair * 10000.0, ISU_PRC_DETAIL=10000.0,
-                ISU_DT=ISU, MAT_DT=MAT, SUB_START_DT="2024-05-27", SUB_END_DT="2024-05-31",
-                ANL_RTRN=6.0, ISU_ORG="테스트증권", RISK_GRADE="2", PRODUCT_TYPE="ELS",
-                RDMP_TYPE="상환", ACT_ISU_AMT=1.0e9, SB_RT=0.3, DV_RT=0.0,
-                PRCP_GRTE_RT=0.0, KNCK_IN_GRC_PRD=0.0)
+    return dict(
+        ITEM_CD=item,
+        OPT_TYPE=opt_type,
+        KNCK_IN_YN=ki,
+        CUR_CD=cur,
+        FAIR_VALUE=fair * 10000.0,
+        ISU_PRC_DETAIL=10000.0,
+        ISU_DT=ISU,
+        MAT_DT=MAT,
+        SUB_START_DT="2024-05-27",
+        SUB_END_DT="2024-05-31",
+        ANL_RTRN=6.0,
+        ISU_ORG="테스트증권",
+        RISK_GRADE="2",
+        PRODUCT_TYPE="ELS",
+        RDMP_TYPE="상환",
+        ACT_ISU_AMT=1.0e9,
+        SB_RT=0.3,
+        DV_RT=0.0,
+        PRCP_GRTE_RT=0.0,
+        KNCK_IN_GRC_PRD=0.0,
+    )
 
 
 def _sched_rows(item, nobs=NOBS, barr=50.0):
     """STEP 스케줄: 행사가 0.90→0.65 하향, 지급률 선형."""
     ks = np.linspace(0.90, 0.65, nobs)
-    return [dict(ITEM_CD=item, SEQ=j + 1, SCHD_TYPE=1, STRK_1=float(ks[j]),
-                 PMT_1=float(0.06 * (j + 1) / 2.0), LZRD_BARR=np.nan, LZRD_PMT=np.nan,
-                 LZRD_TERM=np.nan, BARR_1=barr)
-            for j in range(nobs)]
+    return [
+        dict(
+            ITEM_CD=item,
+            SEQ=j + 1,
+            SCHD_TYPE=1,
+            STRK_1=float(ks[j]),
+            PMT_1=float(0.06 * (j + 1) / 2.0),
+            LZRD_BARR=np.nan,
+            LZRD_PMT=np.nan,
+            LZRD_TERM=np.nan,
+            BARR_1=barr,
+        )
+        for j in range(nobs)
+    ]
 
 
 @pytest.fixture
@@ -65,7 +91,8 @@ def raw_universe(tmp_path, monkeypatch):
         d.mkdir(parents=True)
 
     (raw / "udly_ticker_map.json").write_text(
-        json.dumps(dict(zip(UDLY, TICKERS))), encoding="utf-8")
+        json.dumps(dict(zip(UDLY, TICKERS))), encoding="utf-8"
+    )
 
     # 가격은 share_underlyings_v2 에서 온다 (module.mc.returns_by_ticker -> module.underlying).
     # 종전에는 px_* 캐시를 깔았는데, 캐시는 입력이 아니라 산출물이므로 공급원이 바뀌었다.
@@ -76,8 +103,7 @@ def raw_universe(tmp_path, monkeypatch):
         px = _prices(i)
         fn = "u{}.csv".format(i)
         px.rename(columns={"close": "Close_Adj"}).rename_axis("Date").to_csv(su / fn)
-        rows.append({"가격티커(yfinance)": t, "파일": fn,
-                     "ETF티커(yfinance)": "", "ETF_파일": ""})
+        rows.append({"가격티커(yfinance)": t, "파일": fn, "ETF티커(yfinance)": "", "ETF_파일": ""})
     pd.DataFrame(rows).to_csv(su / "master.csv", index=False, encoding="utf-8-sig")
     # 모듈 캐시를 비워야 실제 master 가 새지 않는다. **monkeypatch 로** 비워야 테스트가 끝날 때
     # 원래 값이 돌아온다 — 직접 대입하면 합성 마스터(티커 3개)가 다음 테스트로 새어 나가
@@ -88,21 +114,32 @@ def raw_universe(tmp_path, monkeypatch):
     kidx = pd.bdate_range("2023-01-02", periods=400)
     (raw / "rates").mkdir()
     pd.DataFrame({"call": 3.0, "m3": 3.3, "y10": 3.6}, index=kidx).to_parquet(
-        raw / "rates" / "krw_curve.parquet")      # 금리는 원천 (fm.rate)
+        raw / "rates" / "krw_curve.parquet"
+    )  # 금리는 원천 (fm.rate)
 
-    ac = [_autocall_row("P_OK"),
-          _autocall_row("P_BADSTRUCT", opt_type="OTHER"),     # structure_mask 에서 제외
-          _autocall_row("P_NOMAP"),                           # UDLY_ID 가 매핑에 없음
-          _autocall_row("P_SHORTSCHED")]                      # 스케줄 1행 → nobs<2
+    ac = [
+        _autocall_row("P_OK"),
+        _autocall_row("P_BADSTRUCT", opt_type="OTHER"),  # structure_mask 에서 제외
+        _autocall_row("P_NOMAP"),  # UDLY_ID 가 매핑에 없음
+        _autocall_row("P_SHORTSCHED"),
+    ]  # 스케줄 1행 → nobs<2
     pd.DataFrame(ac).to_csv(raw / "LAKE_V2_DART_AUTO_CALL.csv", index=False)
 
-    sc = (_sched_rows("P_OK") + _sched_rows("P_BADSTRUCT") + _sched_rows("P_NOMAP")
-          + _sched_rows("P_SHORTSCHED", nobs=1))
+    sc = (
+        _sched_rows("P_OK")
+        + _sched_rows("P_BADSTRUCT")
+        + _sched_rows("P_NOMAP")
+        + _sched_rows("P_SHORTSCHED", nobs=1)
+    )
     pd.DataFrame(sc).to_csv(raw / "LAKE_V2_DART_SCHD_INFO.csv", index=False)
 
     ud = []
-    for item, uids in [("P_OK", UDLY), ("P_BADSTRUCT", UDLY), ("P_SHORTSCHED", UDLY),
-                       ("P_NOMAP", ["U_A", "U_B", "U_MISSING"])]:
+    for item, uids in [
+        ("P_OK", UDLY),
+        ("P_BADSTRUCT", UDLY),
+        ("P_SHORTSCHED", UDLY),
+        ("P_NOMAP", ["U_A", "U_B", "U_MISSING"]),
+    ]:
         ud += [dict(ITEM_CD=item, UDLY_ID=u) for u in uids]
     pd.DataFrame(ud).to_csv(raw / "LAKE_V2_DART_UDLY_INFO.csv", index=False)
 
@@ -114,17 +151,19 @@ def raw_universe(tmp_path, monkeypatch):
 
 def test_only_eligible_products_survive(raw_universe):
     df = BS.build_source(save=False, verbose=False)
-    assert list(df["item"]) == ["P_OK"], (
-        "통과해야 할 상품은 P_OK 하나다. 실제: {}".format(list(df["item"])))
+    assert list(df["item"]) == ["P_OK"], "통과해야 할 상품은 P_OK 하나다. 실제: {}".format(
+        list(df["item"])
+    )
 
 
 def test_build_source_assigns_mc_seed(raw_universe):
     """mc_seed 는 **상품 내용**에서 유도한다 — MC 를 돌리지 않아도 정해지는 결정적 값이다.
 
-     종전에는 module.mc_shards.combine() 이 붙였고 값은 발행일 정렬 후 행 인덱스였다.
-     행 번호면 유니버스가 바뀔 때 전부 재배치돼 라벨 대조가 불가능해지므로
-     module.seeds.mc_seed_for(item) 로 바꿨다."""
+    종전에는 module.mc_shards.combine() 이 붙였고 값은 발행일 정렬 후 행 인덱스였다.
+    행 번호면 유니버스가 바뀔 때 전부 재배치돼 라벨 대조가 불가능해지므로
+    module.seeds.mc_seed_for(item) 로 바꿨다."""
     from module.seeds import mc_seed_for
+
     df = BS.build_source(save=False, verbose=False)
     assert "mc_seed" in df.columns
     assert (df.mc_seed.values == mc_seed_for(df["item"])).all()
@@ -134,8 +173,9 @@ def test_build_source_assigns_mc_seed(raw_universe):
 
 def test_save_false_writes_nothing(raw_universe):
     BS.build_source(save=False, verbose=False)
-    assert not (fm.DATA / "els3_dataset.parquet").exists(), \
-        "save=False 인데 데이터셋을 썼다 — 정본 parquet 를 덮어쓸 위험"
+    assert not (
+        fm.DATA / "els3_dataset.parquet"
+    ).exists(), "save=False 인데 데이터셋을 썼다 — 정본 parquet 를 덮어쓸 위험"
 
 
 def test_derived_columns_are_internally_consistent(raw_universe):

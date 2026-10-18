@@ -1,49 +1,56 @@
 # -*- coding: utf-8 -*-
 """이산배당 스케줄 — 현행 방법론의 배당 입력.
 
- 지수는 배당 이력이 제공되지 않으므로 추종 ETF 를 프록시로 쓴다(PROXY).
- 발행일 t0 **이전** 최근 분배일로 끝나는 1년 창의 배당락 이벤트를 뽑아, 만기까지 매년 같은 기념일에
- 되풀이된다고 보고 (N일 × 3자산) 로그하락 행렬을 만든다. mc_engine.mc_daily_t(divlog=...) 에 그대로 넘긴다.
+지수는 배당 이력이 제공되지 않으므로 추종 ETF 를 프록시로 쓴다(PROXY).
+발행일 t0 **이전** 최근 분배일로 끝나는 1년 창의 배당락 이벤트를 뽑아, 만기까지 매년 같은 기념일에
+되풀이된다고 보고 (N일 × 3자산) 로그하락 행렬을 만든다. mc_engine.mc_daily_t(divlog=...) 에 그대로 넘긴다.
 
- 인과성: div_events 는 t0 이전 자료만 본다. 미래 배당 공시를 쓰지 않는다.
- 종전에는 scratch/mc_discrete_div.py 에만 있어 추적 파이프라인에서 쓸 수 없었다.
+인과성: div_events 는 t0 이전 자료만 본다. 미래 배당 공시를 쓰지 않는다.
+종전에는 scratch/mc_discrete_div.py 에만 있어 추적 파이프라인에서 쓸 수 없었다.
 
- 연속 근사도 같이 돌려준다(qc) — 실측상 이산과 연속의 가격 차이는 0.4원 수준이라 거의 같다.
+연속 근사도 같이 돌려준다(qc) — 실측상 이산과 연속의 가격 차이는 0.4원 수준이라 거의 같다.
 """
 import numpy as np
 import pandas as pd
 
 from util import file_manager as fm
 
-PROXY = {"^STOXX50E": "FEZ", "^GSPC": "SPY", "^HSCE": "FXI", "^KS200": "069500.KS",
-         "^N225": "1321.T", "^HSI": "2800.HK", "^NDX": "QQQ",
-         # CSI 300 은 LSEG 가 지수 자체의 배당수익률을 주지 않는다(배당수익률_행수 0).
-         # 추종 ETF 510300.SS(Huatai-PB CSI 300 ETF, 벤치마크 CSI 300 TR)로 조회한다 —
-         # 다른 지수와 같은 규약이다. 이 항목이 없어 CSI 300 상품 123건이 전부
-         # "lseg div" 로 탈락했다. ETF 수익률은 2014-01-21 부터 있고, 해당 상품의
-         # 발행일은 2019-03-08 ~ 2020-01-23 로 모두 범위 안이다.
-         "000300.SS": "510300.SS",
-         # EURO STOXX Banks 도 지수 자체의 배당수익률이 없다(0행). 추종 ETF EXX1.DE 로 조회한다.
-         #
-         # **이 파이프라인에서 가장 검증이 약한 입력이다.** 근사가 세 겹이다 —
-         #   ETF 분배(원천징수 후) <- NR 벤치마크 <- "EURO STOXX Banks 30-15" 상한 변형.
-         # 모델링 대상은 상한 없는 가격지수(.SX7E)다.
-         #
-         # 실제로 주입되는 q 가 데이터셋 전체에서 가장 크다 (라벨 실측):
-         #   ^SX7E  중위 6.82%  최대 9.12%
-         #   전체    중위 2.06%  p99 4.89%  최대 9.12%  <- 최대값이 ^SX7E 다
-         # (종전 주석의 "중위 4.16%" 는 ETF 수익률 계열의 중위값이지 주입된 q 가 아니었다.)
-         #
-         # 민감도 실측: 30건 표본에서 q 를 +-20% 흔들면 가격 스프레드 평균 **76.5원** —
-         # 기준 모형 MAE(37.1원)의 두 배다. 이 124건의 가격은 이 입력에 좌우된다.
-         # tests/test_proxy_dividend_risk.py 가 이 사실을 못박는다.
-         "^SX7E": "EXX1.DE"}
+PROXY = {
+    "^STOXX50E": "FEZ",
+    "^GSPC": "SPY",
+    "^HSCE": "FXI",
+    "^KS200": "069500.KS",
+    "^N225": "1321.T",
+    "^HSI": "2800.HK",
+    "^NDX": "QQQ",
+    # CSI 300 은 LSEG 가 지수 자체의 배당수익률을 주지 않는다(배당수익률_행수 0).
+    # 추종 ETF 510300.SS(Huatai-PB CSI 300 ETF, 벤치마크 CSI 300 TR)로 조회한다 —
+    # 다른 지수와 같은 규약이다. 이 항목이 없어 CSI 300 상품 123건이 전부
+    # "lseg div" 로 탈락했다. ETF 수익률은 2014-01-21 부터 있고, 해당 상품의
+    # 발행일은 2019-03-08 ~ 2020-01-23 로 모두 범위 안이다.
+    "000300.SS": "510300.SS",
+    # EURO STOXX Banks 도 지수 자체의 배당수익률이 없다(0행). 추종 ETF EXX1.DE 로 조회한다.
+    #
+    # **이 파이프라인에서 가장 검증이 약한 입력이다.** 근사가 세 겹이다 —
+    #   ETF 분배(원천징수 후) <- NR 벤치마크 <- "EURO STOXX Banks 30-15" 상한 변형.
+    # 모델링 대상은 상한 없는 가격지수(.SX7E)다.
+    #
+    # 실제로 주입되는 q 가 데이터셋 전체에서 가장 크다 (라벨 실측):
+    #   ^SX7E  중위 6.82%  최대 9.12%
+    #   전체    중위 2.06%  p99 4.89%  최대 9.12%  <- 최대값이 ^SX7E 다
+    # (종전 주석의 "중위 4.16%" 는 ETF 수익률 계열의 중위값이지 주입된 q 가 아니었다.)
+    #
+    # 민감도 실측: 30건 표본에서 q 를 +-20% 흔들면 가격 스프레드 평균 **76.5원** —
+    # 기준 모형 MAE(37.1원)의 두 배다. 이 124건의 가격은 이 입력에 좌우된다.
+    # tests/test_proxy_dividend_risk.py 가 이 사실을 못박는다.
+    "^SX7E": "EXX1.DE",
+}
 # **프록시의 전제.** 추종 ETF 는 NR/TR(순/총수익) 지수를 벤치마크로 삼는 경우가 많아
 # (FEZ -> EURO STOXX 50 NR, 510300.SS -> CSI 300 TR), ETF 가 **분배한** 수익률은
 # 모델링 대상인 가격지수의 **총 배당수익률보다 작다**. 8개 프록시 전부에 해당하는
 # 계통적 선택이며 특정 지수의 결함이 아니다. 실측 수준은 연 1~4% 로 지수 배당과 같은 자리수다.
-WINDOW_DAYS = 320                  # 최근 분배일로 끝나는 1년 창 (분기배당 4회를 담되 중복은 피하는 폭)
-ZERO_DIV = frozenset({"^GDAXI"})   # 총수익지수 — 배당이 이미 지수에 반영돼 있어 배당 이력이 없다
+WINDOW_DAYS = 320  # 최근 분배일로 끝나는 1년 창 (분기배당 4회를 담되 중복은 피하는 폭)
+ZERO_DIV = frozenset({"^GDAXI"})  # 총수익지수 — 배당이 이미 지수에 반영돼 있어 배당 이력이 없다
 _HIST = {}
 
 
@@ -78,20 +85,20 @@ def div_events(tk, t0):
 def build_div(tks, t0, ten, skip=ZERO_DIV):
     """(divlog[N,3], qcont[3], 이벤트수, 이벤트목록).
 
-     divlog 는 배당락일에 log(1−δ) 를 넣은 일별 드리프트 보정.
-     qcont 는 같은 총량을 연속 배당수익률로 환산한 것 (비교용).
-     skip: 배당을 0 으로 둘 티커 집합. 기본값 ZERO_DIV 는 총수익지수를 거른다 —
-           배당 이력 파일 자체가 없으므로 넘기지 않으면 FileNotFoundError 가 난다."""
+    divlog 는 배당락일에 log(1−δ) 를 넣은 일별 드리프트 보정.
+    qcont 는 같은 총량을 연속 배당수익률로 환산한 것 (비교용).
+    skip: 배당을 0 으로 둘 티커 집합. 기본값 ZERO_DIV 는 총수익지수를 거른다 —
+          배당 이력 파일 자체가 없으므로 넘기지 않으면 FileNotFoundError 가 난다."""
     N = int(round(ten * 365))
     divlog = np.zeros((N, 3), np.float32)
     qc = np.zeros(3, np.float32)
     nev, evl = 0, []
     for i, tk in enumerate(tks):
         evs = [] if tk in skip else div_events(tk, t0)
-        qc[i] = -sum(np.log1p(-y) for _, y in evs)            # 연간 총 로그하락
+        qc[i] = -sum(np.log1p(-y) for _, y in evs)  # 연간 총 로그하락
         for dj, y in evs:
             nd = dj
-            while nd <= t0:                                    # t0 이후 첫 기념일부터
+            while nd <= t0:  # t0 이후 첫 기념일부터
                 nd = nd + pd.DateOffset(years=1)
             while (nd - t0).days <= N:
                 day = (nd - t0).days
@@ -142,7 +149,7 @@ def lseg_yield(tk):
 def qcont_lseg(tks, t0, skip=ZERO_DIV):
     """발행일 t0 이전 최신 LSEG 배당수익률 3개 (연속 q). 하나라도 없으면 None.
 
-     인과성: t0 **이전** 값만 본다. 프록시 규칙은 yfinance 쪽(PROXY)과 같은 매핑을 쓴다."""
+    인과성: t0 **이전** 값만 본다. 프록시 규칙은 yfinance 쪽(PROXY)과 같은 매핑을 쓴다."""
     q = []
     for t in tks:
         if t in skip:
@@ -161,19 +168,19 @@ def qcont_lseg(tks, t0, skip=ZERO_DIV):
 
 
 # ---------------- 소스 분기 (유일한 지점) ----------------
-DEFAULT_SRC = "lseg"               # 원천 전용 재현의 기본값 — LSEG 는 연속 q 로만 쓸 수 있다
+DEFAULT_SRC = "lseg"  # 원천 전용 재현의 기본값 — LSEG 는 연속 q 로만 쓸 수 있다
 SRCS = ("lseg", "yf")
 
 
 def div_kwargs(tks, t0, ten, src=DEFAULT_SRC):
     """(엔진 kwargs, qcont(3), 이산 이벤트수). LSEG 수익률이 없으면 None.
 
-     mc_engine.mc_daily_t 에 그대로 풀어 넘길 dict 를 돌려준다 —
-       "lseg"  {"qcont": q}   연속 배당수익률 (이산 이벤트 없음 -> nev=0)
-       "yf"    {"divlog": D}  이산 배당락 드리프트 보정
+    mc_engine.mc_daily_t 에 그대로 풀어 넘길 dict 를 돌려준다 —
+      "lseg"  {"qcont": q}   연속 배당수익률 (이산 이벤트 없음 -> nev=0)
+      "yf"    {"divlog": D}  이산 배당락 드리프트 보정
 
-     종전에는 이 분기가 generate/build_mc_variants.py 에 두 벌 있었고 generate/mc_check_12star.py 는
-     분기 없이 build_div 를 직접 불러, 원천 전용 트리에서 div_* 캐시를 찾다 죽었다."""
+    종전에는 이 분기가 generate/build_mc_variants.py 에 두 벌 있었고 generate/mc_check_12star.py 는
+    분기 없이 build_div 를 직접 불러, 원천 전용 트리에서 div_* 캐시를 찾다 죽었다."""
     if src not in SRCS:
         raise ValueError("배당 소스는 {} 중 하나여야 한다: {!r}".format(SRCS, src))
     if src == "lseg":

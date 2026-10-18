@@ -1,4 +1,5 @@
 import os, sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pytest
@@ -31,37 +32,76 @@ def test_pmts_override_linear_coupon():
     c = 0.06
     obs_t = _obs_day(2) / 365.0
     a = mc_daily_t(SIG0, EYE, BETA, 0.5, [0.90, 0.90], TEN, n=NP_T, c=c)
-    b = mc_daily_t(SIG0, EYE, BETA, 0.5, [0.90, 0.90], TEN, n=NP_T, c=0.0,
-                   pmts=list(c * obs_t))
-    assert abs(a - b) < 1e-6                                  # 같은 값을 명시해도 결과 동일
+    b = mc_daily_t(SIG0, EYE, BETA, 0.5, [0.90, 0.90], TEN, n=NP_T, c=0.0, pmts=list(c * obs_t))
+    assert abs(a - b) < 1e-6  # 같은 값을 명시해도 결과 동일
 
 
 def test_lizard_pays_reduced_coupon_when_regular_strike_fails():
-    v = mc_daily_t(SIG0, EYE, BETA, 0.5, [9.99, 9.99], TEN, n=NP_T,
-                   pmts=[0.05, 0.10], lz_barr=[0.50, np.nan], lz_pmt=[0.013, 0.0])
+    v = mc_daily_t(
+        SIG0,
+        EYE,
+        BETA,
+        0.5,
+        [9.99, 9.99],
+        TEN,
+        n=NP_T,
+        pmts=[0.05, 0.10],
+        lz_barr=[0.50, np.nan],
+        lz_pmt=[0.013, 0.0],
+    )
     oi = _obs_day(2)[0]
     assert abs(v - (1 + 0.013) * np.exp(-RATE * oi / 365)) < 1e-5
 
 
 def test_lizard_absent_matches_no_lizard_call():
-    a = mc_daily_t(SIG0, EYE, BETA, 0.5, [9.99, 9.99], TEN, n=NP_T, pmts=[0.05, 0.10],
-                   lz_barr=[np.nan, np.nan], lz_pmt=[0.0, 0.0])
+    a = mc_daily_t(
+        SIG0,
+        EYE,
+        BETA,
+        0.5,
+        [9.99, 9.99],
+        TEN,
+        n=NP_T,
+        pmts=[0.05, 0.10],
+        lz_barr=[np.nan, np.nan],
+        lz_pmt=[0.0, 0.0],
+    )
     b = mc_daily_t(SIG0, EYE, BETA, 0.5, [9.99, 9.99], TEN, n=NP_T, pmts=[0.05, 0.10])
     assert abs(a - b) < 1e-6
 
 
 def test_regular_redemption_wins_over_lizard_at_same_observation():
-    v = mc_daily_t(SIG0, EYE, BETA, 0.5, [0.90, 0.90], TEN, n=NP_T,
-                   pmts=[0.05, 0.10], lz_barr=[0.50, np.nan], lz_pmt=[0.001, 0.0])
+    v = mc_daily_t(
+        SIG0,
+        EYE,
+        BETA,
+        0.5,
+        [0.90, 0.90],
+        TEN,
+        n=NP_T,
+        pmts=[0.05, 0.10],
+        lz_barr=[0.50, np.nan],
+        lz_pmt=[0.001, 0.0],
+    )
     oi = _obs_day(2)[0]
-    assert abs(v - (1 + 0.05) * np.exp(-RATE * oi / 365)) < 1e-5     # 리자드 0.001 이 아니다
+    assert abs(v - (1 + 0.05) * np.exp(-RATE * oi / 365)) < 1e-5  # 리자드 0.001 이 아니다
 
 
 def test_lizard_does_not_trigger_when_barrier_breached():
     # 배리어를 1.2 로 올리면 발행 직후부터 no-touch 조건이 깨져 발동하지 않아야 한다.
-    v = mc_daily_t(SIG0, EYE, BETA, 0.5, [9.99, 9.99], TEN, n=NP_T,
-                   pmts=[0.05, 0.10], lz_barr=[1.20, np.nan], lz_pmt=[0.99, 0.0])
-    assert abs(v - np.exp(-RATE)) < 1e-5                              # 만기 원금 1.0 (낙인 미터치)
+    v = mc_daily_t(
+        SIG0,
+        EYE,
+        BETA,
+        0.5,
+        [9.99, 9.99],
+        TEN,
+        n=NP_T,
+        pmts=[0.05, 0.10],
+        lz_barr=[1.20, np.nan],
+        lz_pmt=[0.99, 0.0],
+    )
+    assert abs(v - np.exp(-RATE)) < 1e-5  # 만기 원금 1.0 (낙인 미터치)
 
 
 def test_barrier_one_forces_knock_in():

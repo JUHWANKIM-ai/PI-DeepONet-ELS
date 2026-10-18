@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 """share_underlyings_v2 가격 어댑터 — 원천 전용 재현의 가격 공급원.
 
- `data/share_underlyings_v2/` 는 기초자산 159종의 일별 계열을 담는다.
- 각 CSV 의 열은 Date · Close_Adj · Close_Raw · Dividend_Yield_pct 넷이다.
+`data/share_underlyings_v2/` 는 기초자산 159종의 일별 계열을 담는다.
+각 CSV 의 열은 Date · Close_Adj · Close_Raw · Dividend_Yield_pct 넷이다.
 
-   Close_Adj   액면분할만 조정한 주가   <- 이 모듈이 쓰는 것
-   Close_Raw   조정 없음 (분할 시점에 튄다)
-   Dividend_Yield_pct  배당수익률 지표 (module/dividend.lseg_yield 가 읽는다)
+  Close_Adj   액면분할만 조정한 주가   <- 이 모듈이 쓰는 것
+  Close_Raw   조정 없음 (분할 시점에 튄다)
+  Dividend_Yield_pct  배당수익률 지표 (module/dividend.lseg_yield 가 읽는다)
 
- **왜 Close_Adj 인가.** MC 엔진은 배당을 divlog(이산) 또는 qcont(연속)로 드리프트에서 따로 뺀다.
- 그러므로 변동성·상관은 배당이 역조정되지 않은 주가 수익률로 재야 이중계산이 없다.
- 현행 `data/cache/px_*.parquet` 은 배당까지 역조정된 총수익 계열이라 이 점에서 어긋난다
- (삼성전자 2015-01-02: px_ 캐시 20,419 vs Close_Adj 26,600).
+**왜 Close_Adj 인가.** MC 엔진은 배당을 divlog(이산) 또는 qcont(연속)로 드리프트에서 따로 뺀다.
+그러므로 변동성·상관은 배당이 역조정되지 않은 주가 수익률로 재야 이중계산이 없다.
+현행 `data/cache/px_*.parquet` 은 배당까지 역조정된 총수익 계열이라 이 점에서 어긋난다
+(삼성전자 2015-01-02: px_ 캐시 20,419 vs Close_Adj 26,600).
 
- 매핑은 master.csv 의 기초자산 본체를 먼저 보고, 없으면 관련 ETF 를 본다 —
- module/dividend.lseg_yield 와 같은 순서다.
+매핑은 master.csv 의 기초자산 본체를 먼저 보고, 없으면 관련 ETF 를 본다 —
+module/dividend.lseg_yield 와 같은 순서다.
 """
 import pandas as pd
 
@@ -44,14 +44,14 @@ def _read_px(fn):
 def price(tk, udly=None):
     """티커 -> 일별 종가 Series (Close_Adj, DatetimeIndex 오름차순). 매핑 없으면 None.
 
-     상장 전 구간은 **비어 있다** — 0 으로 채우지 않는다. 그래야 변동성이 NaN 이 되어
-     그 상품이 명시적으로 탈락한다.
+    상장 전 구간은 **비어 있다** — 0 으로 채우지 않는다. 그래야 변동성이 NaN 이 되어
+    그 상품이 명시적으로 탈락한다.
 
-     `udly`: 티커로 못 찾을 때 쓸 UDLY_ID. LSEG 가 yfinance 티커를 주지 않는 기초자산이 있고
-     (^SX7E = EURO STOXX Banks 는 `가격티커(yfinance)` 가 비어 있다) master.csv 의 키는
-     UDLY_ID 다. 티커로만 찾으면 그런 자산을 참조하는 상품이 조용히 사라진다 — ^SX7E 는
-     DART 공시 219건이 참조하는데 데이터셋에 0건 들어왔다.
-     티커로 찾히면 그 결과가 이긴다 — UDLY_ID 는 **대체 경로**지 우선 경로가 아니다."""
+    `udly`: 티커로 못 찾을 때 쓸 UDLY_ID. LSEG 가 yfinance 티커를 주지 않는 기초자산이 있고
+    (^SX7E = EURO STOXX Banks 는 `가격티커(yfinance)` 가 비어 있다) master.csv 의 키는
+    UDLY_ID 다. 티커로만 찾으면 그런 자산을 참조하는 상품이 조용히 사라진다 — ^SX7E 는
+    DART 공시 219건이 참조하는데 데이터셋에 0건 들어왔다.
+    티커로 찾히면 그 결과가 이긴다 — UDLY_ID 는 **대체 경로**지 우선 경로가 아니다."""
     key = (tk, udly)
     if key in _PX:
         return _PX[key]

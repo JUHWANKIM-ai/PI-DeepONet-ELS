@@ -1,4 +1,5 @@
 import os, sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
@@ -34,7 +35,7 @@ def test_neutral_fill_replaces_nan_lizard():
     out = DA.fill_lizard_neutral(df.copy())
     assert out.loc[0, "lz_barr_0"] == LZ_BARR_NEUTRAL
     assert out.loc[0, "lz_pmt_0"] == LZ_PMT_NEUTRAL
-    assert out.loc[1, "lz_barr_0"] == 0.6          # 실제값은 건드리지 않는다
+    assert out.loc[1, "lz_barr_0"] == 0.6  # 실제값은 건드리지 않는다
     assert out.loc[1, "lz_pmt_0"] == 0.024
 
 
@@ -56,6 +57,7 @@ def test_loaded_tensors_have_expected_widths():
     if "pmt_0" not in don.columns:
         pytest.skip("아직 새 스키마로 재생성되지 않음")
     from util import utils
+
     D = DA.load(utils.load_config())
     assert D.CON.shape[1] == len(DA.CONTRACT)
     assert D.DON.shape[1] == len(DA.UC) + len(DA.VOLCORR) + len(DA.CONTRACT)

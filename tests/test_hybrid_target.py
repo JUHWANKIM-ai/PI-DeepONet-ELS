@@ -1,4 +1,5 @@
 import os, sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from types import SimpleNamespace
 import numpy as np
@@ -35,6 +36,7 @@ def _capture(monkeypatch, module):
 
 def test_deeponet_hybrids_target_fair_with_margin(monkeypatch):
     import model.deeponet as M
+
     got = _capture(monkeypatch, M)
     D = _fake_D()
     M.run(D, {})
@@ -46,6 +48,7 @@ def test_deeponet_hybrids_target_fair_with_margin(monkeypatch):
 
 def test_xgb_hybrid_targets_fair_with_margin(monkeypatch):
     import model.benchmark as B
+
     got = _capture(monkeypatch, B)
     monkeypatch.setattr(B, "predict_direct_tab", lambda *a, **k: _empty())
     D = _fake_D()
@@ -58,6 +61,7 @@ def test_xgb_hybrid_targets_fair_with_margin(monkeypatch):
 
 def test_direct_benchmarks_target_fair(monkeypatch):
     import model.benchmark as B
+
     got = []
 
     def fake_direct(D, cfg, key, name=None, target=None):
@@ -76,6 +80,7 @@ def test_direct_benchmarks_target_fair(monkeypatch):
 def test_infer_assembles_fair_with_margin(monkeypatch):
     """저장 가중치 재조립 경로도 공정가 규약을 따라야 한다."""
     from module import infer
+
     D = _fake_D()
     mc_hat = np.array([0.90, 0.91, 0.92, 0.93, 0.94, 0.95], dtype="float32")
     resid = np.array([0.001, 0.002], dtype="float32")
@@ -85,13 +90,16 @@ def test_infer_assembles_fair_with_margin(monkeypatch):
     # 세 번째 루프가 돌아 가짜 D(DEV 없음)에 실제 가중치를 물리고 터진다. 테스트 결과가
     # 저장소 상태에 따라 바뀌면 안 된다.
     monkeypatch.setattr(infer, "_ROUTED", {})
-    monkeypatch.setattr(infer, "_anchor_loader", lambda D, a, b: (lambda idx: mc_hat[np.asarray(idx)]))
+    monkeypatch.setattr(
+        infer, "_anchor_loader", lambda D, a, b: (lambda idx: mc_hat[np.asarray(idx)])
+    )
     monkeypatch.setattr(infer, "_resid_loader", lambda D, r, b: (lambda idx: resid))
     out = infer.predict_all_from_weights(D, {})["fake"]
     te = np.array([4, 5])
     np.testing.assert_allclose(out["y_true"].values, D.FAIR[te], atol=1e-6)
     np.testing.assert_allclose(out["y_pred"].values, mc_hat[te] + D.rm[te] + resid, atol=1e-6)
-    np.testing.assert_allclose(out["resid_true"].values,
-                               D.FAIR[te] - mc_hat[te] - D.rm[te], atol=1e-6)
+    np.testing.assert_allclose(
+        out["resid_true"].values, D.FAIR[te] - mc_hat[te] - D.rm[te], atol=1e-6
+    )
     np.testing.assert_allclose(out["mc_true"].values, D.MC[te], atol=1e-6)
     np.testing.assert_allclose(out["mc_pred"].values, mc_hat[te], atol=1e-6)

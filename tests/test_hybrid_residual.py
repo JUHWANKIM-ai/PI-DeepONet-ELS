@@ -1,4 +1,5 @@
 import os, sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 from module.pipeline import hybrid_residual_target
@@ -45,11 +46,18 @@ def test_predict_hybrid_rebases_on_mc_hat_not_true_mc():
         np.testing.assert_allclose(target[va], expected_va, atol=1e-6)
         return None, np.array([0.001, 0.002], dtype="float32")
 
-    df = predict_hybrid(D, {"margin": {"model": "xgb", "feature_set": "base"},
-                            "data": {"time_decay": True}}, anchor_fn, resid_fn=resid_fn, name=None)
+    df = predict_hybrid(
+        D,
+        {"margin": {"model": "xgb", "feature_set": "base"}, "data": {"time_decay": True}},
+        anchor_fn,
+        resid_fn=resid_fn,
+        name=None,
+    )
     te = np.array([4, 5])
     np.testing.assert_allclose(df["mc_pred"].values, mc_hat[te], atol=1e-6)
-    np.testing.assert_allclose(df["resid_true"].values,
-                               D.FAIR[te] - mc_hat[te] - D.rm[te], atol=1e-6)
-    np.testing.assert_allclose(df["y_pred"].values,
-                               mc_hat[te] + D.rm[te] + np.array([0.001, 0.002]), atol=1e-6)
+    np.testing.assert_allclose(
+        df["resid_true"].values, D.FAIR[te] - mc_hat[te] - D.rm[te], atol=1e-6
+    )
+    np.testing.assert_allclose(
+        df["y_pred"].values, mc_hat[te] + D.rm[te] + np.array([0.001, 0.002]), atol=1e-6
+    )

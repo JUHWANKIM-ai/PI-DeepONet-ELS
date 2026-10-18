@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """1_MC_pricer.ipynb 생성 — 현행 방법론 프라이서 하나로.
 
- 흡수: 1_MC_recompute + 15_MC_advisory_ewma120 + 16_MC_discrete_dividend + 17_MC_bootstrap_curve
- (+ 5_MC_implied_vol · 6_IV_vs_HV · 14_MC_iv_termstructure · 18_stage1_mc_variants · 19 는 결론만)
+흡수: 1_MC_recompute + 15_MC_advisory_ewma120 + 16_MC_discrete_dividend + 17_MC_bootstrap_curve
+(+ 5_MC_implied_vol · 6_IV_vs_HV · 14_MC_iv_termstructure · 18_stage1_mc_variants · 19 는 결론만)
 
- 종전 build_nb*.py 와 달리 **결과 CSV 의 숫자를 박제하지 않는다.** 코드셀이 module/ 만 import 해서
- 그 자리에서 계산하므로 깨끗한 체크아웃에서 nbconvert 로 돌리면 그대로 재현된다.
- 실행: python generate/build_nb_pricer.py
+종전 build_nb*.py 와 달리 **결과 CSV 의 숫자를 박제하지 않는다.** 코드셀이 module/ 만 import 해서
+그 자리에서 계산하므로 깨끗한 체크아웃에서 nbconvert 로 돌리면 그대로 재현된다.
+실행: python generate/build_nb_pricer.py
 """
 import json
 from pathlib import Path
@@ -25,13 +25,20 @@ def md(t):
 
 
 def code(t):
-    return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
-            "source": _src(t.strip("\n"))}
+    return {
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": _src(t.strip("\n")),
+    }
 
 
 cells = []
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 # 1. MC 프라이서 — 현행 방법론
 
 이론가(MC)를 만드는 **현행 방법론 한 벌**을 정의하고, 재현성과 공정가 대비 오차까지 한 장에서 확인합니다.
@@ -61,9 +68,13 @@ cells.append(md("""
   현행은 KRX 영업일 120일 창에서 쌍별로 셉니다.
 
 **인과성**: 모든 입력은 발행일 **이전**에 공시된 값만 씁니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 from pathlib import Path
 
 import numpy as np, pandas as pd
@@ -82,9 +93,13 @@ mk = load_market()
 RET = mk["RET"]
 KBD = RET["^KS200"].dropna().index                      # KRX 거래일 달력
 print(f"상품 {len(df):,} | 수익률 시계열 {len(RET)}종")
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ---
 ## 1-0. 재현 준비 — MC 라벨·참값 산출
 
@@ -102,9 +117,13 @@ cells.append(md("""
 
 고비용 구간은 3스타 라벨 하나뿐입니다(58,913건 × 100,000 경로 × 두 변형, 실측 **137분**).
 500건마다 중간저장하므로 중단해도 이어서 돌릴 수 있습니다. 1·2스타 라벨은 18분, 나머지는 몇 분입니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 import time
 from generate import mc_check_12star, build_decomp
 from generate import build_mc_variants as BMV
@@ -156,9 +175,13 @@ if DA.datasets_stale():
 VAR = pd.read_parquet(MV / "mc_variants.parquet").set_index("item")
 print()
 print("저장된 변형", VAR.shape)
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 1-1. 시장입력 조립 — 네 입력을 한 함수에서
 
 상품 하나의 발행일 기준으로 네 입력을 만듭니다. 이 함수가 현행 방법론의 **유일한 정의**입니다.
@@ -173,9 +196,13 @@ cells.append(md("""
 
 이 함수가 현행 방법론의 **유일한 정의**입니다. 종전에는 같은 조립이 `module/mc.py`,
 `module/build_source.py`, `generate/mc_discrete_div.py`, `5_MC_implied_vol.ipynb` 네 곳에 흩어져 있었습니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 def market_for(row):
     \"\"\"발행일 기준 (변동성 3, 상관 3x3, 제로커브 콜러블, 배당). 못 만들면 None.\"\"\"
     dt = pd.Timestamp.fromordinal(int(row["isu_ord"]))
@@ -228,9 +255,13 @@ print("  변동성 (연율) ", np.round(ex["sig"], 4))
 print("  상관          ", np.round(ex["corr"][np.triu_indices(3, 1)], 4))
 print("  제로금리 1/3/5Y", np.round(ex["dz"](np.array([1.0, 3.0, 5.0])), 5))
 print("  배당          ", "연속 q", np.round(ex["qcont"], 4), "| 이산 이벤트", ex["ndiv"], "건")
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 1-2. 재현 검증 — 저장된 `mc_B` 와 대조
 
 **왜 필요한가.** 라벨 파일(`mc_variants.parquet`)은 한 시간짜리 계산의 결과라 매번 다시 만들지 않습니다.
@@ -245,9 +276,13 @@ cells.append(md("""
 
 종전에는 이 계산이 `generate/mc_discrete_div.py` 의 엔진 복사본으로만 가능했습니다. 지금은
 `mc_engine` 에 커브 콜러블과 배당 드리프트를 파라미터로 올려, 포크 없이 재현됩니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 ref = VAR.loc[S["item"].values, "mc_B"].values
 got = np.array([price(S.iloc[i], n_path=BMV.NPATH) for i in range(len(S))])   # 라벨과 같은 경로 수
 ok = np.isfinite(ref) & np.isfinite(got)
@@ -270,9 +305,13 @@ for _p in (MV / "mc_variants.parquet", MV / "mc_variants12.parquet"):
     _d = pd.read_parquet(_p)
     BMV.write_labeled(_d, _p, n_rows=len(_d))
     print("  스탬프 기록 {} <- {}".format(_p.name, BMV.read_stamp(_p)))
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 1-3. 경로 수와 몬테카를로 잡음
 
 MC 가격은 난수에 따라 흔들립니다. 경로를 늘리면 흔들림이 줄지만 그만큼 느려집니다.
@@ -285,9 +324,13 @@ MC 가격은 난수에 따라 흔들립니다. 경로를 늘리면 흔들림이 
 
 이 숫자가 중요한 이유는 하나입니다. 대리모형의 MAE 와 견주면
 **라벨 잡음이 성능 상한의 얼마를 차지하는지** 알 수 있습니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 def noise(n_path, seeds=(10**6, 2 * 10**6)):
     a = np.array([price(S.iloc[i], n_path, seed=int(S.iloc[i]["mc_seed"]) + seeds[0])
                   for i in range(len(S))])
@@ -305,9 +348,13 @@ print(N.to_string(index=False))
 print()
 print(f"경로를 {40_000:,} → {100_000:,} 로 늘리면 표준오차 {N.표준오차원[0]:.2f}원 → {N.표준오차원[1]:.2f}원 "
       f"({N.표준오차원[1] / N.표준오차원[0]:.2f}배, 이론값 1/sqrt(2.5) = 0.63)")
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 1-4. 공정가 대비 오차
 
 이론가와 **시장 공정가**의 격차를 봅니다. 여기에는 판매마진·모형차이·자료차이가 섞여 있어
@@ -316,9 +363,13 @@ cells.append(md("""
 
 이론가는 **시장 공정가를 맞히는 것이 목적이 아닙니다.** 무차익 가정 아래의 값이기 때문입니다.
 다만 둘의 격차가 체계적인지는 봐야 하므로, 전량(저장된 `mc_B`) 기준으로 잽니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 A = df[["item", "fair", "tenor", "isu_ord", "coupon", "B"]].copy()
 A["mc_B"] = VAR.loc[A["item"].values, "mc_B"].values
 A = A[np.isfinite(A.mc_B)]
@@ -348,9 +399,13 @@ fig.suptitle("Theoretical price vs market fair value - current methodology",
 fig.tight_layout(rect=[0, 0, 1, .93])
 fig.savefig(fm.image("pricer_fair_gap"), dpi=200, bbox_inches="tight")
 plt.show()
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 결론
 
 1. **현행 방법론이 추적 패키지만으로 재현됩니다.** 1-2절에서 저장된 `mc_B` 와 비트 단위로 일치합니다.
@@ -371,13 +426,23 @@ cells.append(md("""
 | 5 · 6 · 14 내재변동성 | 원자료 IV 는 ATM 단일 지점, 기간구조 없음 | X (미채택) |
 | 18 변형 A vs B | B 채택 | O |
 | 19 yfinance 배당 | LSEG 대조로 배당 자료 검증 | 참고 |
-"""))
+"""
+    )
+)
 
 if __name__ == "__main__":
-    nb = {"cells": cells,
-          "metadata": {"kernelspec": {"display_name": "els-abacus", "language": "python",
-                                      "name": "els-abacus"},
-                       "language_info": {"name": "python"}},
-          "nbformat": 4, "nbformat_minor": 5}
+    nb = {
+        "cells": cells,
+        "metadata": {
+            "kernelspec": {
+                "display_name": "els-abacus",
+                "language": "python",
+                "name": "els-abacus",
+            },
+            "language_info": {"name": "python"},
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
     OUT.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
     print("wrote", OUT.name, "| cells", len(cells))

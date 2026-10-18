@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """2_model_training.ipynb 생성 — module 을 불러와 **실제로 학습하는** 노트북.
 
- 인계용이므로 결과 CSV 를 읽어 보여주는 것이 아니라, 노트북 안에서 번들을 만들고
- 가중치를 학습·저장하고 OOS 지표까지 낸다. 기본값은 기존 가중치가 있으면 건너뛴다
- (RETRAIN=True 로 강제 재학습).
+인계용이므로 결과 CSV 를 읽어 보여주는 것이 아니라, 노트북 안에서 번들을 만들고
+가중치를 학습·저장하고 OOS 지표까지 낸다. 기본값은 기존 가중치가 있으면 건너뛴다
+(RETRAIN=True 로 강제 재학습).
 
- 실행: python generate/build_nb_training.py
+실행: python generate/build_nb_training.py
 """
 import json
 from pathlib import Path
@@ -23,13 +23,20 @@ def md(t):
 
 
 def code(t):
-    return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
-            "source": _src(t.strip("\n"))}
+    return {
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": _src(t.strip("\n")),
+    }
 
 
 cells = []
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 # 2. 모형 학습
 
 `module` 패키지를 불러와 **이 노트북 안에서 직접 학습**합니다. 저장된 결과를 읽어 보여주는 것이 아니라
@@ -55,9 +62,13 @@ cells.append(md("""
 
 **누수 방지는 구조로 보장합니다.** 폴드는 확장 윈도우이고 시험구간은 언제나 미래입니다.
 검증표본은 각 폴드의 학습구간 안에서만 뽑고, 정규화 통계도 학습 인덱스로만 계산합니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 import copy, json, os, time, yaml
 from pathlib import Path
 
@@ -98,9 +109,13 @@ cfg0 = yaml.safe_load(open(fm.ROOT / "config.yaml", encoding="utf-8"))
 print("장치", "cuda" if torch.cuda.is_available() else "cpu",
       "| 반복", cfg0["train"]["nit"], "| 배치", cfg0["train"]["batch"],
       "| 잠재차원", cfg0["networks"]["P"])
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 2-1. 학습 번들 — 1·2·3스타를 한 배열로
 
 흩어진 자료를 **하나의 입력 규약**으로 모읍니다. 3스타는 그대로, 1·2스타는 슬롯 중복 패딩으로
@@ -114,9 +129,13 @@ cells.append(md("""
 
 입력은 세 갈래입니다. **곡선**(부트스트랩 제로금리 10노드) · **변동성·상관**(6개월 EWMA 3개 +
 상관 3개 + 실효변동성 + 배당수익률 3개) · **계약**(행사가·지급률·리자드 각 12칸 + 배리어·쿠폰·만기).
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 t0 = time.time()
 D = ST.make_all()
 oos = np.concatenate([te for _, _, te in D.WF])
@@ -126,9 +145,13 @@ print("  곡선 {} | 변동성·상관 {} | 계약 {}".format(D.CURVE.shape, D.V
 print("  폴드 {}개 | OOS 합계 {:,}건".format(len(D.WF), len(oos)))
 for k, (tr, va, te) in enumerate(D.WF):
     print("    폴드{} 학습 {:6,} 검증 {:5,} 시험 {:6,}".format(k, len(tr), len(va), len(te)))
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 2-2. V_base 프록시 (잔차 학습용, 선택)
 
 **V_base 란.** worst-of 바스켓을 단일 자산처럼 근사해 닫힌식으로 계산한 **간이 가격**입니다
@@ -144,9 +167,13 @@ cells.append(md("""
 스칼라 GBM 하나로 바꾸되, 원문의 단순 평균 변동성 대신 **Clark(1961) worst-of 적률맞춤**을 씁니다.
 
 기준 모형(Direct)은 이것을 쓰지 않습니다. 잔차 타깃 변형과 비교하려고 함께 계산해 둘 뿐입니다.
-""" ))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 vb = ST.vbase_all(D)
 y = D.MC[oos] * FACE
 e = (vb[oos] - D.MC[oos]) * FACE
@@ -155,9 +182,13 @@ print("  MAE {:.0f}원 | 편향 {:+.0f}원 | 상관 {:.4f} | 분산설명 {:.1f}
     np.abs(e).mean(), e.mean(), np.corrcoef(vb[oos], D.MC[oos])[0, 1],
     (1 - ((D.MC[oos] - vb[oos]).std() / D.MC[oos].std()) ** 2) * 100))
 print("  → 프록시의 역할은 '맞히는 것' 이 아니라 '구조를 떼어내는 것' 이다.")
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 2-3. 학습 — 일곱 벌을 같은 조건에서
 
 **기준 모형은 `ball_d` 입니다**: 1·2·3스타 **통합** 학습 · Direct 타깃 · 단조손실.
@@ -197,9 +228,13 @@ XGBoost 두 벌은 `.pkl`, DeepONet 다섯 벌은 `.pt` 로 저장됩니다 — 
 
 기본 설정은 `kinds=["lz_pmt"]` 입니다. 기준 모형이 유일하게 위반하던 항목만 겁니다.
 MC 라벨을 더 만들지 않고도 기울기와 부호를 잡는 것이 목적입니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 def train_variant(tag, resid=False, feat=False, only3=False, seeds=SEEDS):
     \"\"\"가중치를 학습·저장한다. 이미 있으면 건너뛴다 (RETRAIN=True 면 다시 학습).\"\"\"
     Dx = copy.copy(D)
@@ -251,9 +286,13 @@ train_xgb("ball3_xgb", only3=True)
 WSTAMP.write_text(json.dumps(BMV.read_stamp(BMV.OUT / BMV.OUT_NAME) or {}, ensure_ascii=False),
                   encoding="utf-8")        # 어떤 라벨로 학습했는지 남긴다
 print("저장 위치:", MDIR, "| 가중치", len(list(MDIR.glob("*"))), "개")
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 2-4. OOS 평가 — 시험구간 전량
 
 폴드별 가중치로 그 폴드의 **시험구간만** 예측해 이어붙입니다. 학습에 쓰인 구간은 한 건도 들어가지 않습니다.
@@ -268,9 +307,13 @@ cells.append(md("""
 않고 배열을 직접 받으므로, 계약을 바꿔 넣는 분석에서도 같은 함수를 씁니다.
 
 **1단계 성능은 MC 재현만으로 잽니다.** 공정가 지표는 섞지 않습니다.
-"""))
+"""
+    )
+)
 
-cells.append(code("""
+cells.append(
+    code(
+        """
 def predict(tag, feat=False, resid=False):
     \"\"\"폴드별 가중치로 OOS 전량을 예측 (시드 평균).\"\"\"
     CONf = np.concatenate([D.CON, vb[:, None]], 1).astype("float32")
@@ -321,9 +364,13 @@ T = pd.DataFrame(rows)
 T.to_csv(fm.stat("nb_training_level"), index=False, encoding="utf-8-sig")
 print(T[["group", "model", "n", "R2", "R2_se", "MAPE", "MAPE_se", "MAE", "RMSE", "MSE", "bias"]]
       .round(4).to_string(index=False))
-"""))
+"""
+    )
+)
 
-cells.append(md("""
+cells.append(
+    md(
+        """
 ## 결론
 
 1. **통합 학습이 필수입니다.** 3스타 전용 모형은 1스타에서 무너집니다. 통합해도 3스타 성능 손실은 거의 없습니다.
@@ -331,13 +378,19 @@ cells.append(md("""
 3. **가중치는 `result/models/` 에 폴드·시드별로 저장됩니다.** 3장 시각화와 계약조건 분석이 이것을 되읽습니다.
 
 다음 장(3. 시각화)에서 예측 분포 · 계약조건 반응 · 기초자산별 오차를 그림으로 봅니다.
-"""))
+"""
+    )
+)
 
-nb = {"cells": cells,
-      "metadata": {"kernelspec": {"display_name": "els-abacus", "language": "python",
-                                  "name": "els-abacus"},
-                   "language_info": {"name": "python"}},
-      "nbformat": 4, "nbformat_minor": 5}
+nb = {
+    "cells": cells,
+    "metadata": {
+        "kernelspec": {"display_name": "els-abacus", "language": "python", "name": "els-abacus"},
+        "language_info": {"name": "python"},
+    },
+    "nbformat": 4,
+    "nbformat_minor": 5,
+}
 
 if __name__ == "__main__":
     OUT.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")

@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """가격 공급원 전환 — PX_SOURCE 환경변수.
 
- `cache`      현행 `data/cache/px_*.parquet` (배당 역조정 = 총수익 계열)
- `underlying` `data/share_underlyings_v2` 의 Close_Adj (액면분할만 조정)
+`cache`      현행 `data/cache/px_*.parquet` (배당 역조정 = 총수익 계열)
+`underlying` `data/share_underlyings_v2` 의 Close_Adj (액면분할만 조정)
 
- **기본값은 `underlying` 이다.** 캐시는 입력이 아니라 산출물이므로, 캐시를 격리한 뒤에도
- 아무것도 막히지 않아야 한다. `cache` 는 구 계열과의 대조(generate/measure_source_switch.py)에서만 쓴다.
+**기본값은 `underlying` 이다.** 캐시는 입력이 아니라 산출물이므로, 캐시를 격리한 뒤에도
+아무것도 막히지 않아야 한다. `cache` 는 구 계열과의 대조(generate/measure_source_switch.py)에서만 쓴다.
 
- 두 계열은 개별주식에서 실제로 다르다(삼성전자 2015-01-02: 20,419 vs 26,600).
- 지수는 거의 같다(^KS200 수익률 상관 0.99994).
+두 계열은 개별주식에서 실제로 다르다(삼성전자 2015-01-02: 20,419 vs 26,600).
+지수는 거의 같다(^KS200 수익률 상관 0.99994).
 """
 import os
 import sys
@@ -19,9 +19,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from util import file_manager as fm          # noqa: E402
-import module.mc as MC                        # noqa: E402
-import module.underlying as UL                # noqa: E402
+from util import file_manager as fm  # noqa: E402
+import module.mc as MC  # noqa: E402
+import module.underlying as UL  # noqa: E402
 
 TK = "005930.KS"
 
@@ -72,8 +72,9 @@ def test_unknown_source_is_rejected(monkeypatch):
 def test_build_source_inputs_honor_px_source(monkeypatch):
     """build_source 도 같은 전환을 따라야 한다 — px_* 를 직접 읽는 두 번째 경로였다.
 
-     load_market 만 고치면 원천 전용 실행에서 build_source 가 전 상품을 탈락시킨다."""
+    load_market 만 고치면 원천 전용 실행에서 build_source 가 전 상품을 탈락시킨다."""
     import module.build_source as BS
+
     monkeypatch.setenv("PX_SOURCE", "underlying")
     ctx = BS.load_inputs()
     assert len(ctx.RET) > 20
@@ -85,19 +86,21 @@ def test_build_source_inputs_honor_px_source(monkeypatch):
 def test_returns_by_ticker_is_the_single_source_of_truth(monkeypatch):
     """가격 적재는 한 함수에서만 일어나야 한다.
 
-     같은 로직이 module.mc.load_market · module.build_source.load_inputs ·
-     generate.build_12star.main 세 곳에 복사돼 있었고, 원천 전용 실행에서 한 곳씩 차례로 터졌다."""
+    같은 로직이 module.mc.load_market · module.build_source.load_inputs ·
+    generate.build_12star.main 세 곳에 복사돼 있었고, 원천 전용 실행에서 한 곳씩 차례로 터졌다."""
     monkeypatch.setenv("PX_SOURCE", "underlying")
     mapping = {"A": "^KS200", "B": "005930.KS", "C": None, "D": "__NO_SUCH__"}
     got = MC.returns_by_ticker(mapping)
     assert set(got) == {"^KS200", "005930.KS"}
     pd.testing.assert_series_equal(
-        got["005930.KS"], np.log(UL.price("005930.KS")).diff(), check_names=False)
+        got["005930.KS"], np.log(UL.price("005930.KS")).diff(), check_names=False
+    )
 
 
 def test_build_12star_uses_the_shared_loader():
     import generate.build_12star as B12
     import inspect
+
     src = inspect.getsource(B12.main)
     assert "returns_by_ticker" in src, "build_12star 가 가격 적재를 또 복사했다"
     assert "_safe(t)" not in src, "build_12star 에 px_* 직접 읽기가 남아 있다"

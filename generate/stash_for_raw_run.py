@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """원천 전용 실행을 위한 산출물 격리 — 되돌림 수단을 남기는 이동.
 
- `data/cache/` 전체 · `result/` 의 산출물 · `data/` 의 조립 데이터셋을 한 디렉터리로 옮겨,
- **원천만 남은** 상태에서 노트북 4장이 전 과정을 다시 만드는지 본다.
+`data/cache/` 전체 · `result/` 의 산출물 · `data/` 의 조립 데이터셋을 한 디렉터리로 옮겨,
+**원천만 남은** 상태에서 노트북 4장이 전 과정을 다시 만드는지 본다.
 
- 남기는 것 (건드리지 않는다):
-   data/raw/                     DART 공시 3종 + rates/ 금리 커브 3파일
-   data/share_underlyings_v2/    기초자산 187 CSV (가격 + 배당수익률)
+남기는 것 (건드리지 않는다):
+  data/raw/                     DART 공시 3종 + rates/ 금리 커브 3파일
+  data/share_underlyings_v2/    기초자산 187 CSV (가격 + 배당수익률)
 
- 옮긴 디렉터리가 **유일한 되돌림 수단**이다. 검증이 끝나고 사람이 승인하기 전에는 지우지 않는다.
- 그래서 목적지가 이미 있으면 덮어쓰지 않고 거부한다.
+옮긴 디렉터리가 **유일한 되돌림 수단**이다. 검증이 끝나고 사람이 승인하기 전에는 지우지 않는다.
+그래서 목적지가 이미 있으면 덮어쓰지 않고 거부한다.
 
- 실행: python generate/stash_for_raw_run.py scratch/raw_run_baseline
+실행: python generate/stash_for_raw_run.py scratch/raw_run_baseline
 """
 import shutil
 import sys
@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from util import file_manager as fm      # noqa: E402
+from util import file_manager as fm  # noqa: E402
 
 KINDS = ("cache", "models", "statistics", "predictions", "image", "datasets")
 DATASET_FILES = ("els3_dataset.parquet", "els12_dataset.parquet", "ml.csv", "deeponet.csv")
@@ -40,10 +40,12 @@ def _move_dir_contents(src, dst):
 def stash(dst):
     """산출물을 dst 로 옮기고 범주별 개수를 돌려준다.
 
-     dst 가 이미 있으면 FileExistsError — 기존 백업을 덮어쓰면 되돌림 수단을 잃는다."""
+    dst 가 이미 있으면 FileExistsError — 기존 백업을 덮어쓰면 되돌림 수단을 잃는다."""
     dst = Path(dst)
     if dst.exists() and any(dst.iterdir()):
-        raise FileExistsError("백업 디렉터리가 이미 있다: {} (되돌림 수단을 덮어쓸 수 없다)".format(dst))
+        raise FileExistsError(
+            "백업 디렉터리가 이미 있다: {} (되돌림 수단을 덮어쓸 수 없다)".format(dst)
+        )
     dst.mkdir(parents=True, exist_ok=True)
 
     got = {k: 0 for k in KINDS}

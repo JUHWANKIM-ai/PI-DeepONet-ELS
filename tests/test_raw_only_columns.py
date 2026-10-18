@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """공정가 시대 열(`mc` · `recent_margin`)에 대한 의존 끊기.
 
- `els3_dataset.parquet` 의 `mc` · `mc_seed` · `recent_margin` 은 `module.mc_shards.combine()` 이
- 샤드 캐시 28개를 합쳐 붙인다. 원천 전용 재현에서는 그 캐시가 없다.
+`els3_dataset.parquet` 의 `mc` · `mc_seed` · `recent_margin` 은 `module.mc_shards.combine()` 이
+샤드 캐시 28개를 합쳐 붙인다. 원천 전용 재현에서는 그 캐시가 없다.
 
- 그런데 지금 실제로 쓰이는 것은 두 가지뿐이다.
-   mc_seed   MC 공통난수 — 발행일 정렬 후 행 인덱스일 뿐, 결정적 계산이다
-   mc 열 존재 build_datasets 가 공통 열로 넣고 module.data.load 가 D.MC 로 읽는다
-             (그 값은 module.mcvar.make_D 가 곧바로 변형 B 로 갈아끼운다)
+그런데 지금 실제로 쓰이는 것은 두 가지뿐이다.
+  mc_seed   MC 공통난수 — 발행일 정렬 후 행 인덱스일 뿐, 결정적 계산이다
+  mc 열 존재 build_datasets 가 공통 열로 넣고 module.data.load 가 D.MC 로 읽는다
+            (그 값은 module.mcvar.make_D 가 곧바로 변형 B 로 갈아끼운다)
 
- 그래서 셋을 이렇게 가른다.
-   1. mc_seed 는 build_source 가 부여한다 (MC 와 무관한 결정적 계산)
-   2. build_datasets 는 mc · recent_margin 결측을 허용하되 열은 유지한다
-   3. 공정가 2단계 경로(module.infer)는 mc 가 없으면 **명시적으로 거부**한다
-      — 조용히 NaN 을 퍼뜨리면 안 된다
+그래서 셋을 이렇게 가른다.
+  1. mc_seed 는 build_source 가 부여한다 (MC 와 무관한 결정적 계산)
+  2. build_datasets 는 mc · recent_margin 결측을 허용하되 열은 유지한다
+  3. 공정가 2단계 경로(module.infer)는 mc 가 없으면 **명시적으로 거부**한다
+     — 조용히 NaN 을 퍼뜨리면 안 된다
 """
 import os
 import sys
@@ -25,20 +25,21 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from util import file_manager as fm          # noqa: E402
-import module.data as MD                      # noqa: E402
-import module.infer as infer                  # noqa: E402
+from util import file_manager as fm  # noqa: E402
+import module.data as MD  # noqa: E402
+import module.infer as infer  # noqa: E402
 
 
 def _build_into(tmp_path, monkeypatch, nolabel=False):
     """mc · recent_margin 없는 원천 30건으로 build_datasets 를 돌린다."""
     src = pd.read_parquet(fm.source()).head(30).copy()
     src = src.drop(columns=[c for c in ("mc", "recent_margin") if c in src.columns])
-    src["issue_intensity"] = 0          # _load_source 가 붙이는 열 — 이 테스트의 관심사가 아니다
+    src["issue_intensity"] = 0  # _load_source 가 붙이는 열 — 이 테스트의 관심사가 아니다
     monkeypatch.setattr(MD, "_load_source", lambda: MD.fill_lizard_neutral(src))
     monkeypatch.setattr(fm, "DATA", tmp_path)
-    monkeypatch.setattr(fm, "DATASETS", {k: tmp_path / os.path.basename(str(v))
-                                         for k, v in fm.DATASETS.items()})
+    monkeypatch.setattr(
+        fm, "DATASETS", {k: tmp_path / os.path.basename(str(v)) for k, v in fm.DATASETS.items()}
+    )
     monkeypatch.setattr(fm, "dataset", lambda n: tmp_path / (n + ".csv"))
     if nolabel:
         monkeypatch.setattr(MD, "_label_path", lambda: tmp_path / "no_such_label.parquet")
@@ -49,8 +50,8 @@ def _build_into(tmp_path, monkeypatch, nolabel=False):
 def test_build_datasets_tolerates_missing_anchor(tmp_path, monkeypatch):
     """mc · recent_margin 이 없는 원천으로도 ml.csv · deeponet.csv 가 만들어진다.
 
-     열은 **반드시 유지**된다 — module.data.load 의 스키마가 깨지면 안 되기 때문이다.
-     recent_margin 은 공급원이 없어 NaN 으로 남는다."""
+    열은 **반드시 유지**된다 — module.data.load 의 스키마가 깨지면 안 되기 때문이다.
+    recent_margin 은 공급원이 없어 NaN 으로 남는다."""
     info, ml = _build_into(tmp_path, monkeypatch)
     assert info["ml"] == 30
     assert MD.ANCHOR in ml.columns and MD.MARGIN in ml.columns
@@ -60,7 +61,7 @@ def test_build_datasets_tolerates_missing_anchor(tmp_path, monkeypatch):
 def test_anchor_is_filled_from_the_canonical_label_when_present(tmp_path, monkeypatch):
     """라벨 파일이 있으면 MC 열을 채운다 — 빈 라벨 열을 배포하면 조용히 오용된다.
 
-     종전에는 열만 만들고 NaN 으로 뒀고, 그래서 ml.csv 의 MC 가 58,913행 전부 비어 있었다."""
+    종전에는 열만 만들고 NaN 으로 뒀고, 그래서 ml.csv 의 MC 가 58,913행 전부 비어 있었다."""
     _, ml = _build_into(tmp_path, monkeypatch)
     assert ml[MD.ANCHOR].notna().all()
 
@@ -75,9 +76,14 @@ def test_anchor_stays_nan_without_a_label_file(tmp_path, monkeypatch):
 def _fake_D_without_mc():
     n = 6
     return SimpleNamespace(
-        n=n, FAIR=np.full(n, 0.95, "float32"), MC=np.full(n, np.nan, "float32"),
-        rm=np.zeros(n, "float32"), ITEM=np.array([f"I{i}" for i in range(n)]),
-        ORD=np.arange(n), WF=[(np.arange(4), np.arange(2, 4), np.array([4, 5]))])
+        n=n,
+        FAIR=np.full(n, 0.95, "float32"),
+        MC=np.full(n, np.nan, "float32"),
+        rm=np.zeros(n, "float32"),
+        ITEM=np.array([f"I{i}" for i in range(n)]),
+        ORD=np.arange(n),
+        WF=[(np.arange(4), np.arange(2, 4), np.array([4, 5]))],
+    )
 
 
 def test_infer_raises_when_mc_is_missing():
@@ -89,11 +95,11 @@ def test_infer_raises_when_mc_is_missing():
 def test_infer_rejects_a_missing_margin_too():
     """`recent_margin` 이 없으면 거부해야 한다 — mc 가드만으로는 못 막는다.
 
-     fill_anchor 가 mc 를 정본 라벨로 채운 뒤 mc 가드는 **절대 발동하지 않는다**.
-     그런데 recent_margin 은 원천 전용 트리에서 여전히 전부 NaN 이고, 그대로
-     y = mc + rm + resid 와 resid_true 로 흘러들어 조용히 NaN 을 퍼뜨린다."""
+    fill_anchor 가 mc 를 정본 라벨로 채운 뒤 mc 가드는 **절대 발동하지 않는다**.
+    그런데 recent_margin 은 원천 전용 트리에서 여전히 전부 NaN 이고, 그대로
+    y = mc + rm + resid 와 resid_true 로 흘러들어 조용히 NaN 을 퍼뜨린다."""
     D = _fake_D_without_mc()
-    D.MC = np.full(len(D.FAIR), 0.95, dtype="float32")     # mc 는 있다
-    D.rm = np.full(len(D.FAIR), np.nan, dtype="float32")   # 마진만 없다
+    D.MC = np.full(len(D.FAIR), 0.95, dtype="float32")  # mc 는 있다
+    D.rm = np.full(len(D.FAIR), np.nan, dtype="float32")  # 마진만 없다
     with pytest.raises(ValueError, match="recent_margin"):
         infer.predict_all_from_weights(D, {})

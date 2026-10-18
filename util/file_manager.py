@@ -27,13 +27,9 @@ class ELSDirectoryPath:
         self.data_dir_name = os.path.join(self.base_directory, "data")
         self.raw_dir_name = os.path.join(self.data_dir_name, "raw")
         self.cache_dir_name = os.path.join(self.data_dir_name, "cache")
-        self.source_file_name = os.path.join(
-            self.data_dir_name, "els3_dataset.parquet"
-        )
+        self.source_file_name = os.path.join(self.data_dir_name, "els3_dataset.parquet")
         self.ml_dataset_file_name = os.path.join(self.data_dir_name, "ml.csv")
-        self.deeponet_dataset_file_name = os.path.join(
-            self.data_dir_name, "deeponet.csv"
-        )
+        self.deeponet_dataset_file_name = os.path.join(self.data_dir_name, "deeponet.csv")
 
         ############################################################
         # Result (예측 · 그림 · 통계)
@@ -167,9 +163,9 @@ def dataset(name: str) -> Path:
 def rate(name: str) -> Path:
     """금리 커브 **원천** 경로 (data/raw/rates/).
 
-     CD 91일(krw_curve.parquet 의 m3) · IRS par(irs_bondweb.parquet) ·
-     NS 노드(krw_curve_fred.parquet)는 ECOS·본드웹·FRED 에서 받아오는 수집물이지
-     우리 코드의 산출물이 아니다. Underlying 폴더에는 금리가 없어 원천에 따로 둔다."""
+    CD 91일(krw_curve.parquet 의 m3) · IRS par(irs_bondweb.parquet) ·
+    NS 노드(krw_curve_fred.parquet)는 ECOS·본드웹·FRED 에서 받아오는 수집물이지
+    우리 코드의 산출물이 아니다. Underlying 폴더에는 금리가 없어 원천에 따로 둔다."""
     return RAW / "rates" / name
 
 

@@ -1,24 +1,24 @@
 # -*- coding: utf-8 -*-
 """ATM 내재변동성 + 차용 기간구조 -> ELS 만기 변동성 σ(T).
 
- 보유 자료는 기초자산별 **단일 만기 ATM IV** 뿐이다 (data/raw/iv_daily_atm, 만기·행사가 차원 없음).
- 그래서 기간구조는 공표 변동성지수에서 **형태만** 빌려온다:
+보유 자료는 기초자산별 **단일 만기 ATM IV** 뿐이다 (data/raw/iv_daily_atm, 만기·행사가 차원 없음).
+그래서 기간구조는 공표 변동성지수에서 **형태만** 빌려온다:
 
-     σ_udl(T) = ATM_udl · σ_VIX(T) / σ_VIX(T_ref)
+    σ_udl(T) = ATM_udl · σ_VIX(T) / σ_VIX(T_ref)
 
- σ_VIX(T) 는 같은 날의 VIX9D·VIX·VIX3M·VIX6M(9·30·93·182일)으로 만든 **총분산 곡선**에서 읽는다.
+σ_VIX(T) 는 같은 날의 VIX9D·VIX·VIX3M·VIX6M(9·30·93·182일)으로 만든 **총분산 곡선**에서 읽는다.
 
-     w(T) = σ²(T)·T,   σ(T) = sqrt(w(T) / T)
+    w(T) = σ²(T)·T,   σ(T) = sqrt(w(T) / T)
 
- - 노드 사이는 w 에 대해 **선형보간** — IV 자체를 보간하면 캘린더 차익 부재가 깨지므로 반드시 w 축에서.
- - 노드는 w 가 비감소가 되도록 누적최댓값으로 정리한다 (역전 구간의 캘린더 차익 제거).
- - 최장 노드(182일) 이후는 마지막 구간 기울기로 **선형 외삽** = 6개월 이후 선도분산 일정.
-   ELS 만기(대부분 3년)는 항상 이 외삽 구간이다.
+- 노드 사이는 w 에 대해 **선형보간** — IV 자체를 보간하면 캘린더 차익 부재가 깨지므로 반드시 w 축에서.
+- 노드는 w 가 비감소가 되도록 누적최댓값으로 정리한다 (역전 구간의 캘린더 차익 제거).
+- 최장 노드(182일) 이후는 마지막 구간 기울기로 **선형 외삽** = 6개월 이후 선도분산 일정.
+  ELS 만기(대부분 3년)는 항상 이 외삽 구간이다.
 
- 한계(자문 시 확인 필요):
-   - 미국 S&P 500 의 기간구조 형태를 유로·홍콩·한국·일본 지수에 그대로 차용한다.
-   - 6개월 이후는 시장 자료가 아니라 외삽이다.
-   - ATM 이라 하방 스큐는 담지 못한다.
+한계(자문 시 확인 필요):
+  - 미국 S&P 500 의 기간구조 형태를 유로·홍콩·한국·일본 지수에 그대로 차용한다.
+  - 6개월 이후는 시장 자료가 아니라 외삽이다.
+  - ATM 이라 하방 스큐는 담지 못한다.
 """
 from pathlib import Path
 import glob
@@ -28,14 +28,22 @@ import pandas as pd
 
 from util import file_manager as fm
 
-T_REF_DAYS = 30                         # 보유 ATM IV 의 만기 가정 (1개월, 관례)
+T_REF_DAYS = 30  # 보유 ATM IV 의 만기 가정 (1개월, 관례)
 VIX_NODES = [("VIX9D", 9), ("VIX", 30), ("VIX3M", 93), ("VIX6M", 182)]
 
 # ELS 기초자산(야후식 티커) -> ATM IV 원천 notion_ric.
 #   ^STOXX50E 는 원천에 EURO STOXX 50(.STOXX50E) 이 없어 STOXX Europe 50(.STOXX50) 으로 대용한다.
 #   다른 지수(영국·스위스 방어주 포함)라 IV 가 HV 보다 평균 2.8%p 낮다 -> variant 로 분리해 다룬다.
-IVMAP = {"^KS200": ".KS200", "^GSPC": ".SPX", "^HSCE": ".HSCE", "^HSI": ".HSI",
-         "^N225": ".N225", "^NDX": ".NDX", "^GDAXI": ".GDAXI", "^STOXX50E": ".STOXX50"}
+IVMAP = {
+    "^KS200": ".KS200",
+    "^GSPC": ".SPX",
+    "^HSCE": ".HSCE",
+    "^HSI": ".HSI",
+    "^N225": ".N225",
+    "^NDX": ".NDX",
+    "^GDAXI": ".GDAXI",
+    "^STOXX50E": ".STOXX50",
+}
 PROXY_SUSPECT = {"^STOXX50E"}
 
 
@@ -75,17 +83,17 @@ def total_variance_curve(sig_nodes, days_nodes):
         return None
     o = np.argsort(t)
     t, s = t[o], s[o]
-    w = np.maximum.accumulate(s ** 2 * t)            # 비감소 강제
+    w = np.maximum.accumulate(s**2 * t)  # 비감소 강제
     return t, w
 
 
 def sigma_at(t, w, T):
     """총분산 곡선에서 만기 T[년] 의 변동성. 노드 사이 선형보간, 마지막 노드 이후 선형 외삽."""
     if T <= t[0]:
-        return float(np.sqrt(w[0] / t[0]))          # 최단 노드보다 짧으면 그 노드의 변동성
+        return float(np.sqrt(w[0] / t[0]))  # 최단 노드보다 짧으면 그 노드의 변동성
     if T <= t[-1]:
         return float(np.sqrt(np.interp(T, t, w) / T))
-    slope = max((w[-1] - w[-2]) / (t[-1] - t[-2]), 0.0)   # 선도분산 (음수 불가)
+    slope = max((w[-1] - w[-2]) / (t[-1] - t[-2]), 0.0)  # 선도분산 (음수 불가)
     return float(np.sqrt((w[-1] + slope * (T - t[-1])) / T))
 
 

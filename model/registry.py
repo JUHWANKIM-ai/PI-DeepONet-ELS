@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """model/ 플러그인 자동발견. model/*.py 가 `run(D, cfg) -> {name: DataFrame}` 규약만 지키면
- 여기서 자동 발견·실행된다. 새 모델은 파일 하나만 model/ 에 넣으면 2_run 에 자동 편입.
- 규약·입력(D) 설명은 model/_template.py 참고."""
+여기서 자동 발견·실행된다. 새 모델은 파일 하나만 model/ 에 넣으면 2_run 에 자동 편입.
+규약·입력(D) 설명은 model/_template.py 참고."""
 import importlib
 import pkgutil
 
 import model as _pkg
 
-_SKIP = {"registry"}   # 언더스코어(_template 등)로 시작하는 모듈은 자동 제외
+_SKIP = {"registry"}  # 언더스코어(_template 등)로 시작하는 모듈은 자동 제외
 
 
 def discover():
@@ -30,7 +30,9 @@ def run_all(D, cfg, verbose=True):
         out = fn(D, cfg)
         dup = preds.keys() & out.keys()
         if dup:
-            raise ValueError(f"중복 모델 이름 {sorted(dup)} (module 'model.{name}'). 예측 이름은 유일해야 합니다.")
+            raise ValueError(
+                f"중복 모델 이름 {sorted(dup)} (module 'model.{name}'). 예측 이름은 유일해야 합니다."
+            )
         preds.update(out)
         if verbose:
             print(f"[model.{name}] -> {list(out.keys())}")
