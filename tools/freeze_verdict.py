@@ -39,12 +39,12 @@ def build():
     # 기준선 스냅샷이 없으면 만들 수 없다. 픽스처는 **그 시점의 기록**이고 지금 자료로 다시
     # 만들 수 있는 것이 아니다 — model_old 는 구본 성능이고 구본은 이미 지워졌다.
     # 승인 후 삭제가 정상 경로이므로, 불명확한 TypeError 대신 그 사실을 말한다.
-    if not (BASE / "statistics" / V.IMPACT).exists():
+    if not (V.BASE / "statistics" / V.IMPACT).exists():
         raise SystemExit(
             "기준선 스냅샷이 없다 ({}).\n"
             "판정 근거는 이미 {} 에 고정돼 있고, 그것이 유일한 기록이다.\n"
             "다시 만들려면 스냅샷이 필요하다 — 지금 자료로는 재구성할 수 없다.".format(
-                BASE, OUT.relative_to(ROOT)))
+                V.BASE, OUT.relative_to(ROOT)))
     px = {s: dict(n=int(n), mad=float(mad), bias=float(bias),
                   se=None if not np.isfinite(se) else float(se),
                   hi=None if not np.isfinite(hi) else float(hi))
