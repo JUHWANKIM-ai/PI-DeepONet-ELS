@@ -61,3 +61,46 @@ def test_allstar_panels_use_r2_and_mape_not_mae():
     assert EAS.STAR_PANELS == ("R2", "MAPE")
     assert "OOS MAE [KRW]" not in src, "스타별 패널에 MAE 막대가 남아 있다"
     assert "mean |1 - slope / MC slope|" in src, "기울기 패널은 유지한다"
+
+
+def test_main_can_actually_call_headline_fig(tmp_path, monkeypatch):
+    """**생성기를 실제로 호출한다.** 소스 문자열과 디스크 산출물만 보는 테스트는
+     깨진 생성기가 남긴 그림을 보고 녹색을 내준다 — 실제로 그랬다.
+
+     main() 이 `headline_fig(LV)` 를 부르는데 LV 가 어디에도 정의돼 있지 않아
+     NameError 로 죽었고, 그래서 노트북 3 이 완주하지 못했다. 그림이 디스크에 있던 것은
+     사람이 손으로 함수를 불렀기 때문이다."""
+    import inspect
+    import tools.eval_all_stars as EAS
+
+    # (1) main() 안에서 headline_fig 에 넘기는 이름이 실제로 묶이는가
+    src = inspect.getsource(EAS.main)
+    assert "headline_fig(" in src, "main() 이 헤드라인 그림을 만들지 않는다"
+    import ast
+    tree = ast.parse(inspect.getsource(EAS))
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    bound = {t.id for node in ast.walk(fn) for t in ast.walk(node)
+             if isinstance(t, ast.Name) and isinstance(t.ctx, ast.Store)}
+    call = next(n for n in ast.walk(fn) if isinstance(n, ast.Call)
+                and getattr(n.func, "id", None) == "headline_fig")
+    for a in call.args:
+        if isinstance(a, ast.Name):
+            assert a.id in bound or hasattr(EAS, a.id),                 "main() 이 정의되지 않은 {} 를 headline_fig 에 넘긴다".format(a.id)
+
+    # (2) 정의가 __main__ 가드보다 앞에 있는가 (스크립트 실행 시 미바인딩 방지)
+    names = [(n.lineno, n.name) for n in tree.body if isinstance(n, ast.FunctionDef)]
+    guard = [n.lineno for n in tree.body if isinstance(n, ast.If)
+             and ast.unparse(n.test).replace(" ", "").startswith("__name__==")]
+    if guard:
+        hl = dict((nm, ln) for ln, nm in names)["headline_fig"]
+        assert hl < guard[0], "headline_fig 가 __main__ 가드 뒤에 정의돼 있다"
+
+    # (3) 실제로 그려지는가 — 가중치 없이 두 행짜리 합성 프레임으로
+    monkeypatch.setattr(fm, "image", lambda n: tmp_path / (n + ".png"))
+    LV = pd.DataFrame([
+        {"group": "3star", "model": MODELS[0], "n": 100, "R2": .97, "R2_se": .001,
+         "MAPE": .38, "MAPE_se": .01},
+        {"group": "3star", "model": MODELS[1], "n": 100, "R2": .91, "R2_se": .001,
+         "MAPE": .72, "MAPE_se": .01}])
+    EAS.headline_fig(LV)
+    assert (tmp_path / (NAME + ".png")).stat().st_size > 10_000

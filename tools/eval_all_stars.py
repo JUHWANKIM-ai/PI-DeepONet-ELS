@@ -105,7 +105,8 @@ def main():
                 v = [p[k_] for p in per]
                 r[k_] = float(np.mean(v)); r[k_ + "_se"] = float(np.std(v, ddof=1) / np.sqrt(len(v)))
             rows.append(r)
-    T = pd.DataFrame(rows).set_index(["group", "model"])
+    LV = pd.DataFrame(rows)                     # headline_fig 가 쓰는 인덱스 없는 프레임
+    T = LV.set_index(["group", "model"])
     T.to_csv(fm.stat("allstar_level"), encoding="utf-8-sig")
     for gl, _ in GR:
         print()
@@ -212,10 +213,6 @@ def main():
     print("saved -> allstar.png, headline_3star.png ({:.0f}s)".format(time.time() - t0))
 
 
-if __name__ == "__main__":
-    main()
-
-
 def headline_fig(LV):
     """3스타 · 기준 모형 vs 표형 벤치마크 · R²와 MAPE 두 패널.
 
@@ -250,3 +247,7 @@ def headline_fig(LV):
     fig.suptitle("3-star ELS — stage-1 accuracy  (n={:,}, mean of 5 single models ± 1 SE)".format(
         int(T.n.iloc[0])), fontsize=13, fontweight="bold", y=1.02)
     fig.tight_layout(); fig.savefig(fm.image("headline_3star")); plt.close(fig)
+
+
+if __name__ == "__main__":
+    main()
