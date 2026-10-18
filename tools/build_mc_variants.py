@@ -39,6 +39,20 @@ TAG = "" if DIV == "lseg" else "_" + DIV          # 기본값이 접미사 없�
 _STAMP_KEY = b"els_label_stamp"
 
 
+STALE_KEYS = ("npath", "div", "px_source", "n_rows")   # 비교에 쓰는 키 (built_at 은 제외)
+
+
+def stamp_differs(got, want):
+    """두 스탬프가 다른가. **증명할 수 없으면 True** (= 낡은 것으로 본다).
+
+     종전에는 같은 비교식이 네 곳에 복사돼 있었고, 스탬프가 없으면 전부 '최신' 으로 보고해
+     스탬프 이전 라벨이 놓인 트리에서 모든 단계가 건너뛰어졌다 — 이 장치가 막으려던 실패다.
+     가중치에 대해서는 '증명할 수 없으면 보수적으로 다시' 를 택했으므로 같은 기준을 쓴다."""
+    if got is None or want is None:
+        return True
+    return any(str(got.get(k)) != str(want.get(k)) for k in STALE_KEYS)
+
+
 def stamp(n_rows=None):
     """이 실행이 만든 라벨의 출처. 소비자는 이걸로 '낡음' 을 판단한다."""
     return {"npath": NPATH, "div": DIV,
@@ -70,15 +84,6 @@ def read_stamp(path):
     return json.loads(raw.decode()) if raw else None
 
 
-def stale(path, n_rows):
-    """지금 설정으로 다시 만들어야 하는가. 없거나 스탬프가 없거나 다르면 True.
-
-     "파일이 있는가" 대신 "무엇으로 만든 파일인가" 를 묻는다."""
-    got = read_stamp(path)
-    if got is None:
-        return True
-    want = stamp(n_rows)
-    return any(str(got.get(k)) != str(want[k]) for k in ("npath", "div", "px_source", "n_rows"))
 
 
 OUT_NAME = "mc_variants{}.parquet".format(TAG)
@@ -315,12 +320,8 @@ def step_stale(path):
     m = _mark_path(p)
     if not m.exists():
         return True
-    want = read_stamp(OUT / OUT_NAME)
-    if want is None:
-        return False                    # 라벨에 스탬프가 없으면 판단 보류
     try:
         got = json.loads(m.read_text(encoding="utf-8"))
     except Exception:
         return True
-    return any(str(got.get(k)) != str(want.get(k))
-               for k in ("npath", "div", "px_source", "n_rows"))
+    return stamp_differs(got, read_stamp(OUT / OUT_NAME))

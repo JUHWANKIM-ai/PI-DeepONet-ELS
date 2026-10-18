@@ -73,7 +73,10 @@ def test_every_assignment_site_uses_the_shared_helper():
     """네 곳에 복사돼 있던 것을 한 곳으로 모았다 — 되돌아가면 유니버스 변경에 또 깨진다."""
     import inspect
     import importlib
-    for name in ("module.build_source", "module.mc_shards",
+    # module.mc_shards 는 **일부러 뺀다.** 그 경로의 mc 값은 행 번호 시드로 계산된
+    # 공정가 시대 샤드에서 오므로, 내용 기반 시드를 적으면 값이 갖지 않은 출처를 주장하게 된다.
+    # 거기서는 실제로 쓰인 시드를 그대로 기록하는 것이 맞다 (tests/test_mc_shards_alignment.py).
+    for name in ("module.build_source",
                  "tools.build_mc_variants", "tools.mc_check_12star"):
         src = inspect.getsource(importlib.import_module(name))
         assert "mc_seed_for" in src, "{} 가 공용 헬퍼를 쓰지 않는다".format(name)

@@ -136,7 +136,9 @@ def _frozen_table():
     for sub_ in ("TIGHT", "IDX", "OTHER"):
         px, lb = d["px_effect"][sub_], d["label_summary"][sub_]
         rows.append(dict(
-            subset=sub_, n=-1, n_cmp=lb["n_cmp"], n_only_new=lb["n_only_new"],
+            # n(부분집합 전체 건수)은 고정 근거에 담지 않았다. 센티넬(-1) 대신 비워 둔다 —
+            # 사람이 읽는 표에 -1 이 섞이면 수치로 오독된다.
+            subset=sub_, n=np.nan, n_cmp=lb["n_cmp"], n_only_new=lb["n_only_new"],
             n_only_old=lb["n_only_old"], mc_corr=lb["mc_corr"], mc_mad=lb["mc_mad"],
             mc_mad_se=lb["mc_mad_se"], mc_mad_exp=EXP_MAD, mc_bias=lb["mc_bias"],
             px_n=px["n"], px_mad=px["mad"],
@@ -313,6 +315,12 @@ def model_verdict():
 
 
 def main():
+    # 윈도우 기본 콘솔은 cp949 라 — 나 ± 같은 글자를 찍지 못해 UnicodeEncodeError 로 죽는다.
+    # CSV 를 먼저 쓰고 그 뒤에 죽으므로, 이걸 게이트로 걸면 인코딩 때문에 '실패' 로 끝난다.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
     T = compare()
     fm.stat(LEVEL.replace(".csv", ""))          # statistics 디렉터리 보장
     out = fm.stat("raw_run_verification")
@@ -321,8 +329,12 @@ def main():
     pd.set_option("display.width", 200)
     print(T.to_string(index=False, float_format=lambda x: "{:.5f}".format(x)))
     print()
+    gated = set(GATE)
     for s, (ok, why) in verdict(T).items():
-        mark = "기준없음" if ok is None else ("통과" if ok else "미달")
+        # 세 상태를 세 단어로. 게이트가 걸렸는데 결론을 못 낸 것(미결론)과
+        # 애초에 게이트가 없는 것(기준없음)은 다른 말이어야 한다.
+        mark = ("통과" if ok else "미달") if ok is not None else (
+            "미결론" if s in gated else "기준없음")
         print("  {:6} {:8} {}".format(s, mark, why))
 
     print()

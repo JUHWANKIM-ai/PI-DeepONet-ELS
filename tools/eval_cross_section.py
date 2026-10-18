@@ -41,7 +41,10 @@ EN = {"barrier": "KI barrier", "coupon": "coupon (annual)", "strike_shift": "fir
 # XGBoost(통합 학습)를 벤치마크로 둔다. 프록시(Residual)는 이 그림에 넣지 않는다.
 M = [("Direct+m (1·2·3)", "ball_d", False, False, "don"),
      ("Direct+m (3star only)", "ball3_d", False, False, "don"),
-     ("XGBoost (1·2·3)", "ball_xgb", False, False, "xgb")]
+     ("XGBoost (1·2·3)", "ball_xgb", False, False, "xgb"),
+     # 기준 모형(Direct+f+m). 종전에는 빠져 있어서 README 가 "기울기는 전수 횡단면으로" 라는
+     # 기록을 두고도 섭동 격자(기준상품 12개/스타) 수치를 인용해야 했다.
+     ("Direct+f+m (1·2·3)", "ball_dm", False, True, "don")]
 
 _c = {}
 

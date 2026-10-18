@@ -150,12 +150,8 @@ def datasets_stale():
     import tools.build_mc_variants as BMV
     want = BMV.read_stamp(_label_path())
     if want is None:
-        return False                      # 라벨이 없거나 스탬프 이전 파일 — 판단 보류
-    got = dataset_stamp()
-    if got is None:
-        return True
-    keys = ("npath", "div", "px_source", "n_rows")
-    return any(str(got.get(k)) != str(want.get(k)) for k in keys)
+        return False          # 라벨 자체가 없다 — 채울 것이 없으므로 판단 보류
+    return BMV.stamp_differs(dataset_stamp(), want)
 
 
 def fill_anchor(df):

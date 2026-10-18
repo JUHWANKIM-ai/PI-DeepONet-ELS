@@ -48,12 +48,17 @@ def test_read_stamp_is_none_for_an_unstamped_file(tmp_path):
     assert BMV.read_stamp(f) is None
 
 
-def test_stale_is_true_when_the_stamp_differs(tmp_path):
+def test_stamp_differs_is_the_single_comparator(tmp_path):
+    """`stale()` 은 테스트만 부르던 죽은 코드라 지웠다. 비교는 stamp_differs 한 곳에서만 한다.
+
+     판정 대상은 tests/test_stamp_unified.py 가 따로 못박는다 — 여기서는 라벨 파일에서
+     읽은 스탬프가 그 비교에 그대로 쓰인다는 것만 확인한다."""
     f = tmp_path / "lab.parquet"
     BMV.write_labeled(pd.DataFrame({"item": ["A"], "mc_B": [0.9]}), f)
-    assert BMV.stale(f, n_rows=1) is False
-    assert BMV.stale(f, n_rows=2) is True                            # 유니버스가 바뀌었다
-    assert BMV.stale(tmp_path / "nope.parquet", n_rows=1) is True    # 없으면 낡은 것으로 본다
+    st = BMV.read_stamp(f)
+    assert BMV.stamp_differs(st, dict(st)) is False
+    assert BMV.stamp_differs(st, dict(st, n_rows=2)) is True          # 유니버스가 바뀌었다
+    assert BMV.stamp_differs(BMV.read_stamp(tmp_path / "nope.parquet"), st) is True
 
 
 @pytest.mark.skipif(not (fm.CACHE / "mcvar" / "mc_variants.parquet").exists(),

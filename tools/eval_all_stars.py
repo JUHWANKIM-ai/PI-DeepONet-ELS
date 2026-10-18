@@ -48,6 +48,9 @@ HEADLINE = ("Direct+f+m (1·2·3)", "XGBoost (1·2·3)")
 HEADLINE_PANELS = ("R2", "MAPE")
 # 스타별 성능 패널도 같은 규약 — R²·MAPE 두 지표만. MAE·RMSE 등은 allstar_level.csv 로만 낸다.
 STAR_PANELS = ("R2", "MAPE")
+# 기울기 집계: 시드 **예측**을 먼저 평균하면 5-모형 앙상블의 기울기가 되어, 시드별 지표를
+# 평균하는 수준 표(allstar_level)와 다른 대상을 재게 된다. 같은 규약으로 맞춘다.
+SLOPE_AGG = "per-seed"
 PANEL_AXIS = {"R2": ("R²  (vs MC price)", "{:.3f}"),
               "MAPE": ("OOS MAPE  [%]", "{:.2f}")}
 
@@ -139,8 +142,10 @@ def main():
         Xi = np.concatenate([X, np.array([[b]], "float32")], 1).astype("float32")
         for lab, pre, res, ft, _ in M:
             Xu = Xi if ft else X
-            v = np.mean([don(pre, s, k)(D.CURVE[[i]], D.VC[[i]], Xu)[0] for s in SEEDS])
-            newc[lab].append((v + (b if res else 0.0)) * FACE)
+            # 시드별 가격을 그대로 담는다 (앙상블로 뭉개지 않는다). 기울기는 시드마다 따로
+            # 회귀한 뒤 평균한다 — 수준 표와 같은 집계 규약.
+            vs = [float(don(pre, s, k)(D.CURVE[[i]], D.VC[[i]], Xu)[0]) for s in SEEDS]
+            newc[lab].append([(v + (b if res else 0.0)) * FACE for v in vs])
     for lab in newc:
         C[lab] = newc[lab]
     C.to_csv(fm.stat("allstar_slope_raw"), index=False, encoding="utf-8-sig")
@@ -150,13 +155,20 @@ def main():
             z = C[(C.nstar == ns) & (C.factor == f)]
             if not len(z):
                 continue
-            z = z.groupby("level")[["mc"] + [l for l, *_ in M]].mean().sort_index()
-            zz = z[z.index < 1.0] if f == "barrier" else z
-            lo, hi = zz.index.min(), zz.index.max()
-            sl = {c: (zz[c][hi] - zz[c][lo]) / (hi - lo) * UNIT[f] for c in z.columns}
-            r = {"nstar": ns, "factor": EN[f], "MC": sl["mc"]}
+            def _slope(col):
+                g = col.groupby(z.level).mean().sort_index()
+                gg = g[g.index < 1.0] if f == "barrier" else g
+                lo, hi = gg.index.min(), gg.index.max()
+                return (gg[hi] - gg[lo]) / (hi - lo) * UNIT[f]
+
+            sl_mc = _slope(z["mc"])
+            r = {"nstar": ns, "factor": EN[f], "MC": sl_mc}
             for lab, *_ in M:
-                r[lab] = sl[lab] / sl["mc"]
+                # **시드별로 기울기를 내고 비율을 평균한다.** 시드 예측을 먼저 평균하면
+                # 앙상블의 기울기가 되어, 시드별 지표를 평균하는 수준 표와 다른 것을 잰다.
+                rs = [_slope(z[lab].str[si]) / sl_mc for si in range(len(SEEDS))]
+                r[lab] = float(np.mean(rs))
+                r[lab + "_se"] = float(np.std(rs, ddof=1) / np.sqrt(len(rs))) if len(rs) > 1 else 0.0
             out.append(r)
     SL = pd.DataFrame(out).set_index(["nstar", "factor"])
     SL.to_csv(fm.stat("allstar_slope"), encoding="utf-8-sig")

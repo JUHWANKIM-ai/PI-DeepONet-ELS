@@ -91,6 +91,16 @@ def combine(N=None, verbose=True, engine="cuda"):
             raise FileNotFoundError(f"{p.name} 없음 — 샤드 0..{N-1} 이 모두 있어야 합니다(shard 재실행).")
         for ky, v in json.loads(p.read_text()).items():
             res[int(ky)] = v
+    # **정렬을 증명할 수 없으면 거부한다.** 샤드 JSON 의 키는 상품코드가 아니라 **행 번호**다.
+    # 유니버스가 바뀌면(이 브랜치에서 58,790 -> 59,037, 새 상품 124건이 중간에 삽입됨)
+    # 첫 삽입 지점 이후의 모든 결과가 다른 상품에 꽂힌다. JSON 에 상품코드가 없어
+    # 직접 대조할 수 없으므로, 할 수 있는 유일한 검사인 행 수 일치를 본다.
+    n_shard = max(res) + 1 if res else 0
+    if n_shard != len(df):
+        raise ValueError(
+            "샤드와 데이터셋의 행 수가 다르다 (샤드 {:,} vs 데이터셋 {:,}) — 샤드는 행 번호로 "
+            "꽂히므로 유니버스가 바뀐 뒤에는 다른 상품에 들어간다. 샤드를 다시 만들거나 "
+            "module.mcvar 의 라벨을 쓸 것.".format(n_shard, len(df)))
     arr = {c: np.full(len(df), np.nan) for c in MC.MC_COLS}
     for i, v in res.items():
         for c, val in zip(MC.MC_COLS, v):
@@ -98,7 +108,9 @@ def combine(N=None, verbose=True, engine="cuda"):
     for c in MC.MC_COLS:
         df[c] = arr[c].astype("float32")
     df["mc_engine"] = engine
-    df["mc_seed"] = mc_seed_for(df["item"])     # 상품 내용에서 유도 (행 번호 아님)
+    # **시드를 덮어쓰지 않는다.** 이 mc 값들은 행 번호 시드로 매겨졌으므로, 내용 기반 시드를
+    # 적으면 값이 갖지 않은 출처를 주장하게 된다. 실제로 쓰인 시드를 그대로 기록한다.
+    df["mc_seed"] = np.arange(len(df), dtype="int32")
     df["fair_minus_mc"] = (df["fair"] - df["mc"]).astype("float32")
     df["mc_krw"] = (df["mc"] * FACE).round().astype("float32")
     df["fair_krw"] = (df["fair"] * FACE).round().astype("float32")

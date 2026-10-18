@@ -88,9 +88,7 @@ def weights_stale():
         return False
     if not WSTAMP.exists():
         return any(MDIR.glob("*"))        # 가중치는 있는데 어떤 라벨로 학습했는지 모른다
-    got = json.loads(WSTAMP.read_text(encoding="utf-8"))
-    return any(str(got.get(k)) != str(want.get(k))
-               for k in ("npath", "div", "px_source", "n_rows"))
+    return BMV.stamp_differs(json.loads(WSTAMP.read_text(encoding="utf-8")), want)
 
 
 RETRAIN = os.environ.get("RETRAIN", "0") == "1" or weights_stale()
