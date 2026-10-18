@@ -141,9 +141,21 @@ def run_shard(k, N, limit=None):
     print(f"shard {k}/{N} DONE {len(R):,} in {(time.time()-t0)/60:.1f}분", flush=True)
 
 
+def ensure_fail(R):
+    """`fail` 열을 보장한다. price_row 는 실패했을 때만 그 열을 넣으므로, 전건 성공하면
+     열이 아예 없는 프레임이 나오고 뒤쪽 `R["fail"].isna()` 가 KeyError 로 죽는다.
+
+     라벨 스키마가 **실패 유무에 따라 달라지면 안 된다**. 실제로 전건 성공한 59,037건에서
+     137분짜리 산출 직후에 터졌다 — 성공할수록 깨지는 코드였다."""
+    if "fail" not in R.columns:
+        R["fail"] = pd.Series([None] * len(R), index=R.index, dtype=object)
+    return R
+
+
 def combine(N):
     R = pd.concat([pd.read_parquet(OUT / f"shard_{k}of{N}{TAG}.parquet") for k in range(N)]).sort_values("i").reset_index(drop=True)
     assert len(R) == len(MK.dataset()) and (R["item"].values == MK.dataset()["item"].values).all(), "행 불일치"
+    R = ensure_fail(R)
     write_labeled(R, OUT / OUT_NAME)
     print(f"combined {len(R):,} | fail {int(R.get('fail', pd.Series(dtype=object)).notna().sum())} | "
           f"mc_A {R.mc_A.mean():.4f} | mc_B {R.mc_B.mean():.4f} | fair {MK.dataset().fair.mean():.4f}")
@@ -240,8 +252,8 @@ def fix():
     """실패 행 재계산(IRS 14일 규칙 적용 후) + 가격 신선도 표시.
      stale_px = 기초자산 중 하나라도 발행일 전 최신 수익률이 STALE_DAYS 일보다 오래됨 (가격 캐시가 2025-06-30 에 끊긴 34종목 등).
      stale_px 상품은 σ·상관이 오래된 가격으로 계산되므로 비교에서 제외한다."""
-    p = OUT / OUT_NAME; R = pd.read_parquet(p)
-    bad = R.index[R["fail"].notna()] if "fail" in R else []
+    p = OUT / OUT_NAME; R = ensure_fail(pd.read_parquet(p))
+    bad = R.index[R["fail"].notna()]
     for j in bad:
         rec = price_row(int(R.at[j, "i"]), MK.dataset().iloc[int(R.at[j, "i"])])
         for c, v in rec.items():
