@@ -127,30 +127,14 @@ STEPS = [
     ("ΔMC 요인분해 200건", fm.stat("mc_boot_curve_200"), "1분", lambda: build_decomp.build(200)),
 ]
 
-def _done(path):
-    \"\"\"그 단계가 **끝났는지**. 3스타 라벨은 fix() 까지 돌아야 완료다 (stale_px 열이 그 표시).
-
-     파일이 '있다' 는 것만 보면, fix() 가 끝나기 전에 죽은 경우 영영 건너뛴다 —
-     실제로 전건 성공으로 fix() 가 KeyError 를 낸 뒤 그 상태가 됐다.\"\"\"
-    q = Path(path)
-    if not q.exists():
-        return False
-    if q.name == "mc_variants.parquet":
-        import pyarrow.parquet as _pq
-        # fix() 가 만드는 세 열이 **모두** 있어야 완료다. stale_px 하나만 보면
-        # write_labeled 뒤에서 죽은 반쪽 파일을 완료로 오판한다.
-        have = set(_pq.read_schema(str(q)).names)
-        return {"fail", "px_lag_days", "stale_px"} <= have
-    return True
-
-
 for name, path, est, fn in STEPS:
-    if _done(path) and not REBUILD:
-        print("건너뜀  {:26} (이미 있음)".format(name), flush=True)
+    if not BMV.step_stale(path) and not REBUILD:
+        print("건너뜀  {:26} (지금 라벨과 일치)".format(name), flush=True)
         continue
     print("산출중  {:26} 예상 {} ...".format(name, est), flush=True)
     t0 = time.time()
     fn()
+    BMV.mark_step(path)          # 어떤 라벨로 만든 산출물인지 남긴다
     print("  완료 {:.1f}분".format((time.time() - t0) / 60), flush=True)
 
 print()

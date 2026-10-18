@@ -289,3 +289,38 @@ if __name__ == "__main__":
         R, el = run_shard(0, 1000, limit=n)          # 전 기간에 흩어진 n 개
         F = 10000; fair = MK.dataset().fair.values[R.i.values]
         print(f"bench {len(R)}개 {el:.1f}s → {el/len(R):.2f}s/상품 | fair−A {np.mean(fair-R.mc_A)*F:+.0f}원 | fair−B {np.mean(fair-R.mc_B)*F:+.0f}원")
+
+
+def _mark_path(path):
+    return Path(str(path) + ".stamp.json")
+
+
+def mark_step(path):
+    """그 산출물이 **어떤 라벨로** 만들어졌는지 남긴다 (`<path>.stamp.json`).
+
+     노트북 1 의 단계들은 전부 mc_seed 를 쓰므로 라벨이 바뀌면 같이 낡는다. 산출물마다
+     다른 완료 표식을 고르면(열 존재, 전부 NaN, 파일 존재 ...) 다음 산출물에서 또 틀린다 —
+     이 세션에서 그 실수를 네 번 했다. 표식을 하나로 통일한다."""
+    import json
+    st = read_stamp(OUT / OUT_NAME)
+    _mark_path(path).write_text(json.dumps(st or {}, ensure_ascii=False), encoding="utf-8")
+
+
+def step_stale(path):
+    """지금 라벨로 그 단계를 다시 돌려야 하는가. 없거나 표식이 없거나 다르면 True."""
+    import json
+    p = Path(str(path))
+    if not p.exists():
+        return True
+    m = _mark_path(p)
+    if not m.exists():
+        return True
+    want = read_stamp(OUT / OUT_NAME)
+    if want is None:
+        return False                    # 라벨에 스탬프가 없으면 판단 보류
+    try:
+        got = json.loads(m.read_text(encoding="utf-8"))
+    except Exception:
+        return True
+    return any(str(got.get(k)) != str(want.get(k))
+               for k in ("npath", "div", "px_source", "n_rows"))
