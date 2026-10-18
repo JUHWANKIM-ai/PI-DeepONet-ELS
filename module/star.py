@@ -17,7 +17,7 @@ els12_dataset.parquet 은 generate/build_12star.py 가, mc_variants12 는 genera
 from types import SimpleNamespace
 
 import numpy as np
-import pandas as pd
+import pandas as pd  # noqa: F401  (타입 주석에서 쓴다)
 
 from util import file_manager as fm, utils
 from . import mcvar as MV
@@ -30,7 +30,7 @@ from .vbase import vbase_els
 CACHE_VB = fm.CACHE / "els_vbase_clark_all{}.npy".format(MV.TAG)
 
 
-def _con12(d):
+def _con12(d: pd.DataFrame) -> np.ndarray:
     """els12_dataset -> CONTRACT(51) 배열. 이름이 다른 3열 매핑 + 리자드 중립값 채우기.
 
     리자드가 없는 상품은 원천에 lz_barr/lz_pmt 가 비어 있다. 3스타 deeponet.csv 와 같은 규약으로
@@ -53,7 +53,7 @@ def _con12(d):
     return X.values.astype("float32")
 
 
-def make_all(var="B"):
+def make_all(var: str = "B") -> SimpleNamespace:
     """1·2·3스타를 합쳐 stage-1 학습용 묶음을 만든다 — 같은 입력 규약 · 같은 walk-forward.
 
     1·2스타는 슬롯 중복 패딩으로 3자산 규약에 맞춘다 (1스타 A,A,A / 2스타 A,B,B).
@@ -124,7 +124,7 @@ def make_all(var="B"):
     return D
 
 
-def vbase_all(D, cache=True):
+def vbase_all(D: SimpleNamespace, cache: bool = True) -> np.ndarray:
     """합친 묶음 전체의 V_base 프록시를 계산한다 (느려서 캐시한다).
 
     캐시 파일명에 배당 소스 태그가 들어간다 — 한 파일을 쓰면 길이가 같다는 이유로 다른

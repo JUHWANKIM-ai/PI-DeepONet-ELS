@@ -10,6 +10,9 @@
 
 연속 근사도 같이 돌려준다(qc) — 실측상 이산과 연속의 가격 차이는 0.4원 수준이라 거의 같다.
 """
+from collections.abc import Collection, Sequence
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -54,7 +57,7 @@ ZERO_DIV = frozenset({"^GDAXI"})  # 총수익지수 — 배당이 이미 지수�
 _HIST = {}
 
 
-def _safe(t):
+def _safe(t: str) -> str:
     """티커를 파일명에 쓸 수 있는 형태로 바꾼다.
 
     입력
@@ -65,7 +68,7 @@ def _safe(t):
     return t.replace(".", "_").replace("^", "_")
 
 
-def div_hist(tk):
+def div_hist(tk: str) -> pd.DataFrame:
     """티커(또는 프록시 ETF)의 배당·종가 이력. 캐시 파일을 지연 적재한다.
 
     입력
@@ -82,7 +85,7 @@ def div_hist(tk):
     return _HIST[s]
 
 
-def div_events(tk, t0):
+def div_events(tk: str, t0: pd.Timestamp) -> list[tuple[pd.Timestamp, float]]:
     """발행일 t0 이전 최근 분배일 d_k 로 끝나는 창의 배당락 이벤트를 뽑는다.
 
     창은 (d_k − WINDOW_DAYS, d_k] 다 — 분기배당 4회를 담되 같은 분기를 두 번 세지 않는 폭이다.
@@ -108,7 +111,9 @@ def div_events(tk, t0):
     return out
 
 
-def build_div(tks, t0, ten, skip=ZERO_DIV):
+def build_div(
+    tks: Sequence[str], t0: pd.Timestamp, ten: float, skip: Collection[str] = ZERO_DIV
+) -> tuple[np.ndarray, np.ndarray, int, list[tuple[int, str, int, int, float]]]:
     """최근 1년 배당이 만기까지 매년 같은 기념일에 되풀이된다고 보고 이산배당 행렬을 만든다.
 
     입력
@@ -155,7 +160,7 @@ _LS_MASTER = None
 _LS_Y = {}
 
 
-def _lseg_master():
+def _lseg_master() -> pd.DataFrame:
     """share_underlyings_v2 의 master.csv 를 지연 적재한다.
 
     `module.underlying.master` 와 같은 파일을 읽지만 캐시는 따로 둔다 — 두 모듈이
@@ -172,7 +177,7 @@ def _lseg_master():
     return _LS_MASTER
 
 
-def lseg_yield(tk):
+def lseg_yield(tk: str) -> pd.Series | None:
     """티커 -> LSEG 일별 배당수익률. 본체(`가격티커`)를 먼저 보고 없으면 관련 ETF 를 본다.
 
     입력
@@ -198,7 +203,9 @@ def lseg_yield(tk):
     return out
 
 
-def qcont_lseg(tks, t0, skip=ZERO_DIV):
+def qcont_lseg(
+    tks: Sequence[str], t0: pd.Timestamp, skip: Collection[str] = ZERO_DIV
+) -> np.ndarray | None:
     """발행일 t0 이전 최신 LSEG 배당수익률 3개 (연속 q). 하나라도 없으면 None.
 
     인과성: t0 **이전** 값만 본다. 프록시 규칙은 yfinance 쪽(PROXY)과 같은 매핑을 쓴다.
@@ -235,7 +242,9 @@ DEFAULT_SRC = "lseg"  # 원천 전용 재현의 기본값 — LSEG 는 연속 q 
 SRCS = ("lseg", "yf")
 
 
-def div_kwargs(tks, t0, ten, src=DEFAULT_SRC):
+def div_kwargs(
+    tks: Sequence[str], t0: pd.Timestamp, ten: float, src: str = DEFAULT_SRC
+) -> tuple[dict[str, Any], np.ndarray, int] | None:
     """(엔진 kwargs, qcont(3), 이산 이벤트수). LSEG 수익률이 없으면 None.
 
     mc_engine.mc_daily_t 에 그대로 풀어 넘길 dict 를 돌려준다 —

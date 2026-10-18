@@ -12,6 +12,10 @@ scratch/contract_sensitivity.py 가 로더를 따로 구현해 쓰고 있었다.
 `load_curve_predictor`(module/train) 와 다른 점: 이쪽은 D 를 닫아 잡지 않고 (CURVE, VC, CON)
 배열을 직접 받는다. 그래서 '계약을 바꾼 입력' 을 표현할 수 있다.
 """
+from collections.abc import Callable
+
+import numpy as np
+
 from util import file_manager as fm
 from .tabular import load_tab_forward
 from .train import load_curve_forward
@@ -23,7 +27,7 @@ load_don = load_curve_forward  # (CURVE, VC, CON) -> 예측
 load_xgb = load_tab_forward
 
 
-def path(prefix, seed, fold, kind="don"):
+def path(prefix: str, seed: int, fold: int, kind: str = "don") -> str:
     """체크포인트 경로를 조립한다 (파일 존재는 확인하지 않는다).
 
     입력
@@ -39,7 +43,9 @@ def path(prefix, seed, fold, kind="don"):
     return str(MDIR / f"{prefix}_{mid}_seed{seed}_fold{fold}") + ext
 
 
-def load(prefix, seed, fold, kind="don"):
+def load(
+    prefix: str, seed: int, fold: int, kind: str = "don"
+) -> Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
     """접두사·시드·폴드로 예측기 하나를 만든다.
 
     `load_curve_predictor`(module/train) 와 달리 D 를 닫아 잡지 않는다 — 돌려받은 예측기에

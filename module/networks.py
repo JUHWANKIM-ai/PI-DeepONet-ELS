@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 
 
-def mlp(d, p=128):
+def mlp(d: int, p: int = 128) -> nn.Sequential:
     """branch·trunk 공용 3층 MLP 를 만든다.
 
     마지막 층에 활성함수가 **없다** — 출력이 내적에 들어가는 잠재벡터이므로 부호와 크기를
@@ -25,7 +25,7 @@ def mlp(d, p=128):
 class MarginOperator(nn.Module):
     """stage-2 잔차 DeepONet: branch=MLP(vol·corr·sig_eff), trunk=MLP(곡선+계약). 내적으로 잔차 회귀."""
 
-    def __init__(self, nb, nt, P):
+    def __init__(self, nb: int, nt: int, P: int) -> None:
         """branch·trunk MLP 한 쌍과 학습 가능한 편향을 만든다.
 
         입력
@@ -40,7 +40,7 @@ class MarginOperator(nn.Module):
         self.t = mlp(nt, P)  # trunk: 나머지(계약+발행+범주형 one-hot)
         self.b0 = nn.Parameter(torch.zeros(1))
 
-    def V(self, bx, tx):
+    def V(self, bx: torch.Tensor, tx: torch.Tensor) -> torch.Tensor:
         """branch·trunk 잠재벡터를 내적해 잔차를 낸다.
 
         입력
@@ -55,7 +55,7 @@ class MarginOperator(nn.Module):
 class CurveOperatorV2(nn.Module):
     """DeepONet-Curve: branch=1D-CNN(곡선)+vol·corr 융합, trunk=계약. 스팟 없음."""
 
-    def __init__(self, nvc, ncon, P):
+    def __init__(self, nvc: int, ncon: int, P: int) -> None:
         """곡선 CNN · 융합 branch · 계약 trunk · 편향을 만든다.
 
         CNN 은 10노드 곡선을 32차원으로 요약한다 (Conv→ReLU→MaxPool→Conv→ReLU→전역평균).
@@ -84,7 +84,7 @@ class CurveOperatorV2(nn.Module):
         self.t = mlp(ncon, P)  # trunk: 계약
         self.b0 = nn.Parameter(torch.zeros(1))
 
-    def V(self, curve, vc, con):
+    def V(self, curve: torch.Tensor, vc: torch.Tensor, con: torch.Tensor) -> torch.Tensor:
         """시장상태(곡선+vol·corr)와 계약을 각각 잠재공간으로 보내 내적한다.
 
         입력
@@ -108,7 +108,7 @@ class PIStateDeepONet(nn.Module):
 
     state_dim = 10
 
-    def __init__(self, nvc, ncon, P):
+    def __init__(self, nvc: int, ncon: int, P: int) -> None:
         """CurveOperatorV2 와 같은 branch + trunk 입력만 state_dim 만큼 넓힌 망을 만든다.
 
         trunk fan_in 이 ncon+10 으로 커져 초기화 분산이 작아진다 — 물리항을 끄고 state 를
@@ -136,7 +136,9 @@ class PIStateDeepONet(nn.Module):
         self.t = mlp(ncon + self.state_dim, P)  # trunk: 계약 + 경로상태
         self.b0 = nn.Parameter(torch.zeros(1))
 
-    def V(self, curve, vc, con, state):
+    def V(
+        self, curve: torch.Tensor, vc: torch.Tensor, con: torch.Tensor, state: torch.Tensor
+    ) -> torch.Tensor:
         """계약에 경로상태를 이어 붙여 trunk 에 넣는다 — 임의의 (S, M, tau) 에서 평가 가능하다.
 
         입력
@@ -157,7 +159,7 @@ class CurveOperatorMoE(nn.Module):
     """arm A4b (XPINN 게이팅): CurveOperatorV2 공유 branch/trunk + K 전문가 헤드 + 배리어 게이트(soft routing).
     불연속(낙인 배리어)에서 영역 특화하되 전량 데이터로 학습(하드분할의 데이터굴주 회피). ib=계약 내 배리어 인덱스."""
 
-    def __init__(self, nvc, ncon, P, K=3, ib=0):
+    def __init__(self, nvc: int, ncon: int, P: int, K: int = 3, ib: int = 0) -> None:
         """공유 branch/trunk 위에 K 전문가 헤드와 배리어 기준 soft 게이트를 올린다.
 
         입력
@@ -189,7 +191,7 @@ class CurveOperatorMoE(nn.Module):
         )  # 배리어 기준 soft 게이트
         self.ib = ib
 
-    def V(self, curve, vc, con):
+    def V(self, curve: torch.Tensor, vc: torch.Tensor, con: torch.Tensor) -> torch.Tensor:
         """전문가별 가격을 배리어 게이트로 가중평균한다.
 
         하드 분할이 아니라 soft routing 이다 — 전 데이터로 학습하므로 영역별 데이터 굶주림이

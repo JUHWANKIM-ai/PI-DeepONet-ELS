@@ -13,7 +13,11 @@
 NS 커브(변형 A 비교용)는 ns_zero 로 따로 둔다 — 드리프트·할인에 쓰는 대체 커브다.
 전부 발행일 **이전** 자료만 본다.
 """
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from util import file_manager as fm
@@ -26,7 +30,7 @@ NS_LAM = 1.5
 _D = None
 
 
-def dataset():
+def dataset() -> pd.DataFrame:
     """els3_dataset 을 발행일 순으로 읽어 돌려준다. 첫 호출에서만 읽고 전역에 캐시한다.
 
     입력
@@ -45,7 +49,7 @@ def dataset():
     return _D
 
 
-def returns():
+def returns() -> dict[str, pd.Series]:
     """티커 -> 로그수익률 Series. `module.mc.load_market` 의 RET 과 같은 객체다.
 
     입력
@@ -59,7 +63,7 @@ def returns():
     return load_market()["RET"]
 
 
-def calendar(ret=None):
+def calendar(ret: dict[str, pd.Series] | None = None) -> pd.DatetimeIndex:
     """KRX 거래일 달력 (^KS200 수익률의 인덱스).
 
     입력
@@ -72,7 +76,9 @@ def calendar(ret=None):
     return r.dropna().index
 
 
-def ns_zero(dt, krw_file="krw_curve_fred.parquet"):
+def ns_zero(
+    dt: pd.Timestamp, krw_file: str = "krw_curve_fred.parquet"
+) -> Callable[[npt.ArrayLike], np.ndarray] | None:
     """FRED 3노드에 Nelson-Siegel 을 맞춘 제로커브 콜러블 (변형 A 비교용).
 
     정본(변형 B)은 `curve.zero_from_date` 의 CD+IRS 부트스트랩이다. 이쪽 NS 는 1~3년을
@@ -94,7 +100,7 @@ def ns_zero(dt, krw_file="krw_curve_fred.parquet"):
     A = np.stack([np.ones(3), (1 - e) / x, (1 - e) / x - e], 1)
     b, *_ = np.linalg.lstsq(A, krow, rcond=None)
 
-    def dz(times, b=b):
+    def dz(times: npt.ArrayLike, b: np.ndarray = b) -> np.ndarray:
         """만기 → NS 제로금리. b 를 기본인수로 묶어 적합 결과를 고정한다.
 
         입력
@@ -110,7 +116,9 @@ def ns_zero(dt, krw_file="krw_curve_fred.parquet"):
     return dz
 
 
-def schedule(row):
+def schedule(
+    row: pd.Series,
+) -> tuple[list[float], list[float], list[float], list[float]]:
     """계약 스케줄을 유효 회차 길이로 잘라 네 리스트로 돌려준다.
 
     입력
@@ -128,7 +136,12 @@ def schedule(row):
     )
 
 
-def state_for(row, ret=None, cal=None, div="lseg"):
+def state_for(
+    row: pd.Series,
+    ret: dict[str, pd.Series] | None = None,
+    cal: pd.DatetimeIndex | None = None,
+    div: str = "lseg",
+) -> dict[str, Any] | None:
     """**현행 방법론**의 발행일 시장상태. 하나라도 못 만들면 None.
 
     div: 배당 소스

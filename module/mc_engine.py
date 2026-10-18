@@ -8,7 +8,11 @@ worst-of 비교는 log-space 에서 한다 (min exp(x) >= K  <=>  min x >= log K
 
 규칙 우선순위: 조기상환(회차별 지급률) > 리자드(FROM_ISU no-touch, 축소 지급률) > 만기(낙인 판정).
 B >= 1.0 은 노낙인 = 만기 미상환이면 항상 worst 수취."""
+from collections.abc import Callable, Sequence
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from . import features as F
@@ -18,8 +22,20 @@ DEFAULT_DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def payoff_from_path_summary_t(
-    wobs, wrun, wmin, wT, logK, rate, lz_on, loglzb, lzp, always_ki, logB, DF, obs_day
-):
+    wobs: torch.Tensor,
+    wrun: torch.Tensor | None,
+    wmin: torch.Tensor,
+    wT: torch.Tensor,
+    logK: torch.Tensor,
+    rate: torch.Tensor,
+    lz_on: torch.Tensor,
+    loglzb: torch.Tensor,
+    lzp: torch.Tensor,
+    always_ki: bool,
+    logB: float,
+    DF: torch.Tensor,
+    obs_day: torch.Tensor,
+) -> torch.Tensor:
     """경로요약 -> 할인 페이오프. mc_daily_t 가 쓰는 페이오프 블록을 그대로 함수로 분리한 것.
 
     PI 물리항(module.pi_physics)이 '실측 MC 규약'과 일치하는지 테스트에서 직접 대조하려고 노출한다.
@@ -56,7 +72,9 @@ def payoff_from_path_summary_t(
     return torch.where(any_ev, early, sv * DF[-1])
 
 
-def _zero(beta, times):
+def _zero(
+    beta: np.ndarray | Callable[[npt.ArrayLike], np.ndarray], times: np.ndarray
+) -> np.ndarray:
     """무위험금리를 두 표현 중 무엇이 와도 같은 방식으로 읽는다.
 
     입력
@@ -70,20 +88,20 @@ def _zero(beta, times):
 
 
 def _setup(
-    sigs,
-    corr,
-    beta,
-    B,
-    strikes,
-    ten,
-    c,
-    pmts,
-    lz_barr,
-    lz_pmt,
-    qcont=None,
-    divlog=None,
-    disc_beta=None,
-):
+    sigs: Sequence[float],
+    corr: np.ndarray,
+    beta: np.ndarray | Callable[[npt.ArrayLike], np.ndarray],
+    B: float,
+    strikes: Sequence[float],
+    ten: float,
+    c: float,
+    pmts: Sequence[float] | None,
+    lz_barr: Sequence[float] | None,
+    lz_pmt: Sequence[float] | None,
+    qcont: npt.ArrayLike | None = None,
+    divlog: np.ndarray | None = None,
+    disc_beta: np.ndarray | Callable[[npt.ArrayLike], np.ndarray] | None = None,
+) -> dict[str, Any]:
     """경로 생성에 필요한 상수를 미리 전부 numpy 로 만들어 둔다 (장치 전송 전 단계).
 
     드리프트·할인·배당·상관·리자드 마스크를 여기서 한 번에 조립하므로, 배당 소스나 커브를
@@ -155,25 +173,25 @@ def _setup(
 
 
 def mc_daily_t(
-    sigs,
-    corr,
-    beta,
-    B,
-    strikes,
-    ten,
-    n=NPATH,
-    seed=0,
-    c=0.0,
-    pmts=None,
-    lz_barr=None,
-    lz_pmt=None,
-    dev=None,
-    path_chunk=20_000,
-    tblock=512,
-    qcont=None,
-    divlog=None,
-    disc_beta=None,
-):
+    sigs: Sequence[float],
+    corr: np.ndarray,
+    beta: np.ndarray | Callable[[npt.ArrayLike], np.ndarray],
+    B: float,
+    strikes: Sequence[float],
+    ten: float,
+    n: int = NPATH,
+    seed: int = 0,
+    c: float = 0.0,
+    pmts: Sequence[float] | None = None,
+    lz_barr: Sequence[float] | None = None,
+    lz_pmt: Sequence[float] | None = None,
+    dev: str | None = None,
+    path_chunk: int = 20_000,
+    tblock: int = 512,
+    qcont: npt.ArrayLike | None = None,
+    divlog: np.ndarray | None = None,
+    disc_beta: np.ndarray | Callable[[npt.ArrayLike], np.ndarray] | None = None,
+) -> float:
     """일별 MC (torch). pmts=None 이면 (1 + c*경과연수), 주어지면 (1 + pmts[j]).
     lz_barr[j] 가 유한하면 정규 조건 실패 경로에 대해 발행 이후 최저 worst >= 배리어일 때 리자드 상환.
 
@@ -260,22 +278,22 @@ def mc_daily_t(
 
 
 def price_one_t(
-    mk,
-    kmap,
-    item,
-    iord,
-    B,
-    c,
-    ten,
-    sig_eff,
-    n=NPATH,
-    seed=0,
-    strikes=None,
-    pmts=None,
-    lz_barr=None,
-    lz_pmt=None,
-    dev=None,
-):
+    mk: dict[str, Any],
+    kmap: dict[str, list[float]] | None,
+    item: str,
+    iord: int,
+    B: float,
+    c: float,
+    ten: float,
+    sig_eff: float,
+    n: int = NPATH,
+    seed: int = 0,
+    strikes: Sequence[float] | None = None,
+    pmts: Sequence[float] | None = None,
+    lz_barr: Sequence[float] | None = None,
+    lz_pmt: Sequence[float] | None = None,
+    dev: str | None = None,
+) -> tuple[float, ...]:
     """상품 하나를 torch 엔진(정본)으로 가격한다. 반환 형태는 `mc.price_one` 과 같다.
 
     입력

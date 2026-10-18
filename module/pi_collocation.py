@@ -11,7 +11,10 @@
   sample_terminal      만기 (tau=0)
   sample_ki_boundary   배리어 ±eps 양측 상태 쌍 (KI 지시자만 다른 쌍)
 """
+from types import SimpleNamespace
+
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from .pi_physics import event_tau, feasible_ki_states
@@ -20,7 +23,7 @@ from .pi_physics import event_tau, feasible_ki_states
 class PICollocationSampler:
     """D.CON 레이아웃 의존: [0:12]=strk, [12:24]=pmt, [24:36]=lz_barr, [36:48]=lz_pmt, D.iBARR=배리어."""
 
-    def __init__(self, D, train_idx, seed=0):
+    def __init__(self, D: SimpleNamespace, train_idx: npt.ArrayLike, seed: int = 0) -> None:
         """학습 계약만으로 샘플 범위를 도출한다 — 범위 자체가 누출 경로이기 때문이다.
 
         스팟 상·하한과 러닝최소 하한을 **fold train 계약**의 행사가·배리어 분위수에서 뽑는다.
@@ -52,7 +55,7 @@ class PICollocationSampler:
         self.train_items = set(D.ITEM[self.train_idx].astype(str))
 
     # ---- 내부 유틸 ----
-    def _contracts(self, n):
+    def _contracts(self, n: int) -> np.ndarray:
         """학습 계약에서 n 개를 **복원추출**한다.
 
         입력
@@ -62,7 +65,16 @@ class PICollocationSampler:
         """
         return self.train_idx[self.rng.integers(0, len(self.train_idx), n)]
 
-    def _state(self, idx, spot, run, tau, ki, event_pre=0.0, frac=0.0):
+    def _state(
+        self,
+        idx: np.ndarray,
+        spot: np.ndarray,
+        run: np.ndarray,
+        tau: np.ndarray,
+        ki: np.ndarray,
+        event_pre: float = 0.0,
+        frac: float | np.ndarray = 0.0,
+    ) -> np.ndarray:
         """(n, 10) 상태행렬을 조립한다. 열 규약은 `module.pi_physics` 머리말 참고.
 
         입력
@@ -80,7 +92,7 @@ class PICollocationSampler:
             spot, run, tau, ki, np.full(len(idx), event_pre), np.asarray(frac) + np.zeros(len(idx))
         ].astype("float32")
 
-    def _ki(self, idx, run):
+    def _ki(self, idx: np.ndarray, run: np.ndarray) -> np.ndarray:
         """러닝최소와 계약 배리어로 **물리적으로 가능한** KI 지시자를 만든다.
 
         배리어를 이미 깬 상태에 KI=0 을 붙이면 모순이므로 `feasible_ki_states` 로 교정한다.
@@ -95,7 +107,7 @@ class PICollocationSampler:
         return feasible_ki_states(torch.tensor(run), torch.tensor(barr)).numpy()
 
     # ---- 4종 샘플러 ----
-    def sample_interior(self, n, device):
+    def sample_interior(self, n: int, device: str) -> tuple[np.ndarray, torch.Tensor]:
         """PDE 잔차용 내부점. 관측일에서 만기의 2.5% 이상 떨어진 tau 만 채택한다.
 
         관측일은 가치가 점프하는 불연속점이라 PDE 가 성립하지 않는다. 재추첨은 최대 100회이고,
@@ -127,7 +139,9 @@ class PICollocationSampler:
             self._state(idx, spot, run, tau, self._ki(idx, run), 0.0, frac), device=device
         )
 
-    def sample_event(self, n, device):
+    def sample_event(
+        self, n: int, device: str
+    ) -> tuple[np.ndarray, np.ndarray, torch.Tensor, torch.Tensor]:
         """관측일의 pre/post 상태 쌍을 뽑는다 — 세 모드를 균등 추첨한다.
 
         mode 0=정규상환(worst ≥ K), 1=리자드, 2=연속(둘 다 실패).
@@ -176,7 +190,7 @@ class PICollocationSampler:
         post = self._state(idx, spot, run, tau, ki, 0.0, frac)
         return idx, j, torch.tensor(pre, device=device), torch.tensor(post, device=device)
 
-    def sample_terminal(self, n, device):
+    def sample_terminal(self, n: int, device: str) -> tuple[np.ndarray, torch.Tensor]:
         """만기(tau=0) 경계점을 뽑는다.
 
         입력
@@ -192,7 +206,9 @@ class PICollocationSampler:
         state = self._state(idx, spot, run, np.zeros(n), self._ki(idx, run), 0.0, 1.0)
         return idx, torch.tensor(state, device=device)
 
-    def sample_ki_boundary(self, n, device, eps=0.002):
+    def sample_ki_boundary(
+        self, n: int, device: str, eps: float = 0.002
+    ) -> tuple[np.ndarray, torch.Tensor, torch.Tensor]:
         """배리어 바로 위(KI=0) vs 바로 아래(KI=1) 상태 쌍을 뽑는다.
 
         낙인 계약(B<1) 만 대상이다 — 노낙인은 KI 전이가 없다. 그래서 **반환 길이가 n 보다
@@ -222,7 +238,7 @@ class PICollocationSampler:
         s1 = self._state(idx, spot, below, tau, np.ones(n), 0.0, frac)
         return idx, torch.tensor(s0, device=device), torch.tensor(s1, device=device)
 
-    def assert_train_only(self, idx):
+    def assert_train_only(self, idx: npt.ArrayLike) -> None:
         """collocation 이 비학습 계약을 건드리면 즉시 실패시킨다 (누출 방지 가드).
 
         물리항은 라벨이 필요 없어 어디서든 뽑을 수 있고, 그게 곧 누출 경로다 — 매 스텝 부른다.

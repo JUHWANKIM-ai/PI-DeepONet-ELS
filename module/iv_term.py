@@ -20,10 +20,12 @@
   - 6개월 이후는 시장 자료가 아니라 외삽이다.
   - ATM 이라 하방 스큐는 담지 못한다.
 """
+from collections.abc import Sequence
 from pathlib import Path
 import glob
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from util import file_manager as fm
@@ -47,7 +49,7 @@ IVMAP = {
 PROXY_SUSPECT = {"^STOXX50E"}
 
 
-def load_atm_iv(root=None):
+def load_atm_iv(root: str | Path | None = None) -> dict[str, pd.Series]:
     """원천 ATM IV CSV 전부를 읽어 자산별 계열로 묶는다.
 
     입력
@@ -71,7 +73,7 @@ def load_atm_iv(root=None):
     return out
 
 
-def load_vix_term(root=None):
+def load_vix_term(root: str | Path | None = None) -> pd.DataFrame:
     """VIX 기간구조 네 노드를 하나의 패널로 묶는다.
 
     입력
@@ -89,7 +91,9 @@ def load_vix_term(root=None):
     return pd.DataFrame(cols).sort_index()
 
 
-def total_variance_curve(sig_nodes, days_nodes):
+def total_variance_curve(
+    sig_nodes: npt.ArrayLike, days_nodes: npt.ArrayLike
+) -> tuple[np.ndarray, np.ndarray] | None:
     """노드 (σ, 일수) 를 총분산 곡선 (T, w=σ²T) 으로 바꾼다.
 
     w 를 누적최댓값으로 눌러 **비감소**를 강제한다 — 역전 구간을 그대로 두면 캘린더 차익이
@@ -115,7 +119,7 @@ def total_variance_curve(sig_nodes, days_nodes):
     return t, w
 
 
-def sigma_at(t, w, T):
+def sigma_at(t: np.ndarray, w: np.ndarray, T: float) -> float:
     """총분산 곡선에서 만기 T 의 변동성을 읽는다.
 
     보간은 **w 축에서** 한다 — IV 자체를 보간하면 캘린더 차익 부재가 깨진다.
@@ -138,7 +142,7 @@ def sigma_at(t, w, T):
     return float(np.sqrt((w[-1] + slope * (T - t[-1])) / T))
 
 
-def term_ratio(vix_row, T, t_ref_days=T_REF_DAYS):
+def term_ratio(vix_row: npt.ArrayLike, T: float, t_ref_days: int = T_REF_DAYS) -> float:
     """σ_VIX(T) / σ_VIX(T_ref) — 자산별 ATM IV 에 곱할 기간구조 **배수**.
 
     비율로 쓰기 때문에 VIX 의 절대 수준은 상쇄되고 형태만 빌려온다.
@@ -157,7 +161,7 @@ def term_ratio(vix_row, T, t_ref_days=T_REF_DAYS):
     return sigma_at(t, w, T) / sigma_at(t, w, t_ref_days / 365.0)
 
 
-def asof(series, dt):
+def asof(series: pd.Series, dt: pd.Timestamp) -> float:
     """dt 이하의 마지막 관측값 (미래정보 차단).
 
     `market.state_for` 의 다른 입력들이 dt **미만**을 쓰는 것과 달리 여기는 dt **이하**다 —

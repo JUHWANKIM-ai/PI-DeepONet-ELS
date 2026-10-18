@@ -15,10 +15,14 @@ variant(물리항 조합):
 
 curriculum: init_path 를 주면 그 체크포인트에서 시작한다(data_only → pde 순서 전제).
 """
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 import time
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from .data import to_tensor, zstats, znorm
@@ -48,7 +52,7 @@ ILZB = 24  # lz_barr_j 시작
 ILZP = 36  # lz_pmt_j 시작
 
 
-def issuance_state(D, idx):
+def issuance_state(D: SimpleNamespace, idx: npt.ArrayLike) -> np.ndarray:
     """발행시점 상태벡터를 만든다 — PI 앵커의 '가격' 은 이 상태에서 평가한 값이다.
 
     S=1, 러닝최소=1, tau=만기, KI=(노낙인이면 1), event_pre=0, 진행률=0.
@@ -68,7 +72,7 @@ def issuance_state(D, idx):
     return np.c_[spot, spot.copy(), D.TEN[idx], ki, np.zeros(n), np.zeros(n)].astype("float32")
 
 
-def state_norm(x, ten_m, ten_s):
+def state_norm(x: torch.Tensor, ten_m: float, ten_s: float) -> torch.Tensor:
     """상태벡터를 정규화한다 — 가격비는 고정 스케일, tau 만 데이터 기준 z-score.
 
     S·M 을 z-score 로 하지 않는 이유는 collocation 이 학습분포 밖 값을 넣기 때문이다.
@@ -88,7 +92,7 @@ def state_norm(x, ten_m, ten_s):
     return y
 
 
-def _corr_matrix(D, ci, dev):
+def _corr_matrix(D: SimpleNamespace, ci: np.ndarray, dev: str) -> torch.Tensor:
     """VC 의 쌍별 상관 3개를 3×3 행렬로 펼친다.
 
     입력
@@ -107,7 +111,9 @@ def _corr_matrix(D, ci, dev):
     return corr
 
 
-def _gather_schedule(raw, cit, j):
+def _gather_schedule(
+    raw: torch.Tensor, cit: torch.Tensor, j: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """관측 j 의 계약 조항 네 개를 계약별로 뽑는다 (elementwise 고급인덱싱).
 
     행마다 **다른 j** 를 집는다 — `raw[cit, j]` 의 두 인덱스가 같은 길이라 짝지어 색인된다.
@@ -124,16 +130,16 @@ def _gather_schedule(raw, cit, j):
 
 
 def train_pi_curve(
-    D,
-    cfg,
-    tr,
-    va,
-    variant="pde",
-    save_path=None,
-    init_path=None,
-    return_predict=True,
-    mask_state=False,
-):
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    va: np.ndarray | None,
+    variant: str = "pde",
+    save_path: str | None = None,
+    init_path: str | None = None,
+    return_predict: bool = True,
+    mask_state: bool = False,
+) -> tuple[Callable[[npt.ArrayLike], np.ndarray], dict[str, Any]] | dict[str, Any]:
     """PI 앵커 학습. target 은 항상 D.MC(이론가). 반환 (predict, meta).
 
     predict(idx) -> np.ndarray  (발행시점 상태에서 평가한 MC_hat)
@@ -209,7 +215,7 @@ def train_pi_curve(
     scales = {}
     t0 = time.time()
 
-    def actual(idx, state):
+    def actual(idx: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
         """원본 스케일 가치 — 물리항은 전부 이것을 쓴다 (페이오프가 원 단위라서다).
 
         입력
@@ -220,7 +226,7 @@ def train_pi_curve(
         """
         return net.V(U[idx], VC[idx], C[idx], state_norm(state, ten_m, ten_s)) * ysd + ym
 
-    def data_loss(idx):
+    def data_loss(idx: torch.Tensor) -> torch.Tensor:
         """라벨 손실 — 발행시점 상태(X0)에서 MC 라벨과의 MSE.
 
         표준화 공간에서 재므로 물리항(원 스케일)과 단위가 다르다 — 그래서 첫 스텝에서
@@ -243,7 +249,7 @@ def train_pi_curve(
             cit = torch.tensor(ci, device=dev)
             fixed = st.detach().clone()
 
-            def value_fn(spot, tau):
+            def value_fn(spot: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
                 """스팟·tau 만 바꿔 가치를 내는 함수 — autograd 가 이 둘로 미분한다.
 
                 나머지 상태 채널은 샘플한 값으로 고정한다 (fixed 의 사본).
@@ -377,7 +383,7 @@ def train_pi_curve(
             p,
         )
 
-    def predict(idx):
+    def predict(idx: npt.ArrayLike) -> np.ndarray:
         """발행시점 상태에서 MC_hat 을 낸다 — 기존 앵커와 같은 인터페이스.
 
         입력
@@ -396,7 +402,7 @@ def train_pi_curve(
     return (predict, meta) if return_predict else meta
 
 
-def load_pi_predictor(D, path):
+def load_pi_predictor(D: SimpleNamespace, path: str) -> Callable[[npt.ArrayLike], np.ndarray]:
     """저장된 PI 앵커 가중치를 행 인덱스 예측기로 되살린다 (forward 만, 재학습 없음).
 
     mask_state 는 체크포인트에 기록된 값을 따른다 — 학습과 추론 경로가 어긋나면 안 된다.
@@ -416,7 +422,7 @@ def load_pi_predictor(D, path):
     C = to_tensor(znorm(D.CON, ck["cm"], ck["cs"]), D.DEV)
     masked = bool(ck.get("mask_state", False))
 
-    def predict(idx):
+    def predict(idx: npt.ArrayLike) -> np.ndarray:
         """복원된 망으로 발행시점 MC_hat 을 낸다.
 
         입력
@@ -436,7 +442,7 @@ def load_pi_predictor(D, path):
     return predict
 
 
-def lizard_no_ki_mask(D):
+def lizard_no_ki_mask(D: SimpleNamespace) -> np.ndarray:
     """LIZARD no-KI 라우팅 키 — **계약 조건만으로** 유도(parquet 라벨 불필요, 누출 없음).
     LIZARD = 리자드 배리어가 중립(1.2)이 아닌 회차가 하나라도 있음 / no-KI = 낙인배리어 B >= 1.
     (parquet 의 opt_type·ki_yn 과 58,790건 전부 일치 확인됨)
@@ -451,7 +457,14 @@ def lizard_no_ki_mask(D):
     return is_lizard & no_ki
 
 
-def physics_diagnostics(D, cfg, path, tr, n=256, seed=0):
+def physics_diagnostics(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    path: str,
+    tr: np.ndarray,
+    n: int = 256,
+    seed: int = 0,
+) -> dict[str, float]:
     """저장된 앵커의 **물리 위반량**을 fold-train collocation 에서 측정 (variant 무관, 동일 조건 비교용).
 
     물리항을 안 켠 모델(data_only)에도 그대로 적용해 '물리가 실제로 좋아졌는지' 를 본다.
@@ -478,7 +491,7 @@ def physics_diagnostics(D, cfg, path, tr, n=256, seed=0):
     raw = to_tensor(D.CON, dev)
     ten_m, ten_s, ym, ysd = ck["ten_m"], ck["ten_s"], ck["ym"], ck["ysd"]
 
-    def actual(idx, state):
+    def actual(idx: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
         """원본 스케일 가치 — `train_pi_curve` 의 같은 이름 함수와 같은 정의다.
 
         입력
@@ -496,7 +509,7 @@ def physics_diagnostics(D, cfg, path, tr, n=256, seed=0):
     cit = torch.tensor(ci, device=dev)
     fixed = st.detach().clone()
 
-    def value_fn(spot, tau):
+    def value_fn(spot: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
         """스팟·tau 만 바꿔 가치를 내는 함수 (PDE 잔차 측정용).
 
         입력

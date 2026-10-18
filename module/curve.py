@@ -11,7 +11,11 @@ mc_engine.mc_daily_t 의 beta 인자가 콜러블을 받으므로 curve_dz(...) 
 인과성: market_inputs(dt) 는 발행일 dt **이전**에 공시된 값만 본다.
 산출물 아님 — 원천(data/raw/rates/ 의 irs_bondweb.parquet, krw_curve.parquet)을 읽기만 한다.
 """
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from scipy.optimize import brentq
 
@@ -27,7 +31,7 @@ _IRS = None
 _CD_M = None
 
 
-def _load():
+def _load() -> tuple[pd.DataFrame, pd.Series]:
     """원천 금리 파일을 지연 적재한다. 테스트가 경로를 monkeypatch 할 수 있도록 호출 시점에 읽는다.
 
     입력
@@ -44,7 +48,7 @@ def _load():
     return _IRS, _CD_M
 
 
-def market_inputs(dt):
+def market_inputs(dt: pd.Timestamp) -> dict[str, Any] | None:
     """발행일 dt 에 알려진 CD·IRS 만 반환. 쓸 수 없으면 None.
 
     IRS 는 14일 이내 최신 호가까지 허용한다 (2017 추석 10일 연휴처럼 시장이 닫힌 기간에는
@@ -70,7 +74,7 @@ def market_inputs(dt):
     )
 
 
-def bootstrap(cd, swaps):
+def bootstrap(cd: float | None, swaps: npt.ArrayLike) -> tuple[np.ndarray, np.ndarray]:
     """CD 단기 끝 + IRS par 금리를 분기 고정(ALPHA)으로 부트스트랩한다.
 
     입력
@@ -90,7 +94,7 @@ def bootstrap(cd, swaps):
             continue
         ti = np.arange(1, int(round(T / ALPHA)) + 1) * ALPHA
 
-        def gap(lx, T=T, s=s, ti=ti):
+        def gap(lx: float, T: float = T, s: float = s, ti: np.ndarray = ti) -> float:
             """이 만기 스왑의 가치 오차 — brentq 가 0 으로 만드는 함수.
 
             T·s·ti 를 기본인수로 묶어 둔다. 늦은 바인딩이면 루프의 마지막 만기만 쓰이게 된다.
@@ -109,7 +113,7 @@ def bootstrap(cd, swaps):
     return np.array(kt), np.array(kl)
 
 
-def curve_dz(kt, kl):
+def curve_dz(kt: np.ndarray, kl: np.ndarray) -> Callable[[npt.ArrayLike], np.ndarray]:
     """부트스트랩 노드를 '만기배열 → 제로금리' 콜러블로 바꾼다.
 
     `mc_engine.mc_daily_t` 의 beta 인자가 콜러블을 받으므로 결과를 그대로 넘기면 된다.
@@ -123,7 +127,7 @@ def curve_dz(kt, kl):
     """
     slope = (kl[-1] - kl[-2]) / (kt[-1] - kt[-2])
 
-    def dz(times):
+    def dz(times: npt.ArrayLike) -> np.ndarray:
         """만기 → 제로금리.
 
         입력
@@ -138,7 +142,7 @@ def curve_dz(kt, kl):
     return dz
 
 
-def par_rates(dz):
+def par_rates(dz: Callable[[npt.ArrayLike], np.ndarray]) -> np.ndarray:
     """커브에서 IRS par 금리를 되계산한다 (부트스트랩 재현 검증용).
 
     입력한 par 금리와 이 결과가 일치하면 부트스트랩이 맞다 — 왕복 검증용이다.
@@ -156,7 +160,7 @@ def par_rates(dz):
     return np.array(out)
 
 
-def zero_from_date(dt):
+def zero_from_date(dt: pd.Timestamp) -> Callable[[npt.ArrayLike], np.ndarray] | None:
     """발행일 하나로 바로 제로커브 콜러블을 얻는 지름길 (market_inputs → bootstrap → curve_dz).
 
     입력

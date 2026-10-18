@@ -20,13 +20,15 @@
 (공통난수 자체가 원래 상품 간에 난수를 공유하는 기법이다).
 """
 import hashlib
+from collections.abc import Iterable
 
 import numpy as np
+import pandas as pd
 
 SEED_MAX = 2**31 - 1  # mc_seed 는 int32 로 저장된다
 
 
-def mc_seed_for(items):
+def mc_seed_for(items: Iterable[object]) -> np.ndarray:
     """상품코드 목록 -> 공통난수 시드 배열.
 
     위치와 무관하고, 프로세스·플랫폼·파이썬 버전에 걸쳐 같은 값을 준다.
@@ -44,7 +46,7 @@ def mc_seed_for(items):
     )
 
 
-def seeds_stale(df):
+def seeds_stale(df: pd.DataFrame) -> bool:
     """저장된 데이터셋의 mc_seed 가 지금의 정의와 다른가 (열이 없으면 낡은 것으로 본다).
 
     "파일이 있는가" 가 아니라 "무엇으로 만든 파일인가" 를 묻기 위한 것이다. 시드 정의를

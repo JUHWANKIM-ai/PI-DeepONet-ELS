@@ -23,6 +23,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 프로젝트 루트 (직접 실행 대비)
 import json, time, gc, bisect
+from collections.abc import Sequence
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from util import file_manager as fm
@@ -33,7 +36,7 @@ from module.mc_engine import price_one_t, DEFAULT_DEV
 FACE = 10000
 
 
-def _tasks():
+def _tasks() -> tuple[pd.DataFrame, list[dict[str, Any]]]:
     """parquet 을 읽어 샤드가 돌릴 태스크 목록을 만든다.
 
     스케줄 배열은 실제 회차 수(nobs)만큼만 잘라 넘긴다 — 12칸 패딩을 그대로 주면
@@ -69,7 +72,7 @@ def _tasks():
     return df, tasks
 
 
-def _clean(x):
+def _clean(x: float) -> float | None:
     """NaN 을 JSON 이 담을 수 있는 null 로 바꾼다.
 
     `json.dumps` 는 NaN 을 비표준 리터럴 `NaN` 으로 쓰기 때문에, 다른 파서가 읽으면 깨진다.
@@ -86,7 +89,9 @@ RM_WINDOW = 90
 RM_BY = ("opt_type", "ki_yn")
 
 
-def recent_margin(df, window=RM_WINDOW, by=RM_BY):
+def recent_margin(
+    df: pd.DataFrame, window: int = RM_WINDOW, by: Sequence[str] = RM_BY
+) -> np.ndarray:
     """인과적 recent_margin = 발행 전 window 일 (fair-mc) 평균, **같은 구조 안에서만**.
 
     4구조를 섞어 평균내면 구조별 마진 차이(예: LIZARD-noKI -0.057 vs STEP-noKI -0.047)가
@@ -120,7 +125,7 @@ def recent_margin(df, window=RM_WINDOW, by=RM_BY):
     return rm.astype("float32")
 
 
-def combine(N=None, verbose=True, engine="cuda"):
+def combine(N: int | None = None, verbose: bool = True, engine: str = "cuda") -> pd.DataFrame:
     """캐시된 샤드 JSON(data/cache/mccal_shard_*.json)을 읽어 els3_dataset.parquet 에
     mc·MC입력·recent_margin 을 붙여 저장(재시뮬 없이 수 초). 노트북·CLI 공용.
 
@@ -195,7 +200,9 @@ def combine(N=None, verbose=True, engine="cuda"):
     return df
 
 
-def recompute_gpu(N=28, kmap=None, verbose=True):
+def recompute_gpu(
+    N: int = 28, kmap: dict[str, list[float]] | None = None, verbose: bool = True
+) -> int:
     """torch 엔진(module.mc_engine)으로 전량 MC 재산출. 청크를 순차 처리하며 청크마다
     data/cache/mccal_shard_<k>.json 을 쓴다. 이미 있는 청크는 건너뛰므로 중단 후 재개 가능.
     CLI(`python -m module.mc_shards gpu N`)와 노트북(1_MC_pricer)이 공유한다.
@@ -264,7 +271,7 @@ def recompute_gpu(N=28, kmap=None, verbose=True):
     return N
 
 
-def main():
+def main() -> None:
     """CLI 진입점 — argv 로 모드를 고른다.
 
     입력 (sys.argv)
@@ -290,7 +297,7 @@ def main():
         pdir.mkdir(parents=True, exist_ok=True)
         hb = pdir / f"shard_{k}.json"
 
-        def _beat(done, finished=False):
+        def _beat(done: int, finished: bool = False) -> None:
             """진행 heartbeat 를 파일에 쓴다 — monitor 모드가 이것을 합산한다.
 
             입력

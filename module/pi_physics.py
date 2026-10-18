@@ -14,11 +14,15 @@ stage-1 앵커(MC 이론가 근사)에만 쓰인다. stage-2 잔차(시장마진
   [8]   이벤트 직전 여부 (1=pre, 0=post)
   [9]   관측 진행률 (0=발행, 1=만기)
 """
+from collections.abc import Callable
+
 import torch
 
 
 # ===== 경계조건 (만기·조기상환 이벤트) =====
-def terminal_payoff(spot, strike, pmt, ki_state):
+def terminal_payoff(
+    spot: torch.Tensor, strike: torch.Tensor, pmt: torch.Tensor, ki_state: torch.Tensor
+) -> torch.Tensor:
     """만기 페이오프. worst >= 만기행사가면 (1+pmt), 실패 시 KI 면 worst, 아니면 원금 1.
 
     노낙인(B>=1) 은 collocation 단계에서 ki_state=1 로 들어와 항상 worst 가 된다 (MC 규약과 동일).
@@ -37,7 +41,14 @@ def terminal_payoff(spot, strike, pmt, ki_state):
     return torch.where(hit, 1.0 + pmt, survival)
 
 
-def event_payoff(spot, running_min, strike, pmt, lz_barrier, lz_pmt):
+def event_payoff(
+    spot: torch.Tensor,
+    running_min: torch.Tensor,
+    strike: torch.Tensor,
+    pmt: torch.Tensor,
+    lz_barrier: torch.Tensor,
+    lz_pmt: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """조기상환 관측일 페이오프.
 
     정규 상환이 리자드보다 **우선**이다 (MC 규약과 동일). 둘 다 실패한 경로는 상환되지 않으므로
@@ -65,7 +76,7 @@ def event_payoff(spot, running_min, strike, pmt, lz_barrier, lz_pmt):
     return value, active, regular, lizard
 
 
-def event_tau(tenor, nobs, event_index):
+def event_tau(tenor: torch.Tensor, nobs: torch.Tensor, event_index: torch.Tensor) -> torch.Tensor:
     """관측 j 직후의 잔존만기. 균등 관측 가정: elapsed = tenor·(j+1)/nobs.
 
     입력
@@ -79,7 +90,7 @@ def event_tau(tenor, nobs, event_index):
     return (tenor - elapsed).clamp_min(0.0)
 
 
-def ki_transition_mask(running_min, barrier):
+def ki_transition_mask(running_min: torch.Tensor, barrier: torch.Tensor) -> torch.Tensor:
     """러닝최소가 배리어를 깬 경로(=KI 발생). 상태 전이 판정용.
 
     입력
@@ -91,7 +102,9 @@ def ki_transition_mask(running_min, barrier):
     return running_min.amin(dim=1) < barrier
 
 
-def feasible_ki_states(running_min, barrier, proposed=None):
+def feasible_ki_states(
+    running_min: torch.Tensor, barrier: torch.Tensor, proposed: torch.Tensor | None = None
+) -> torch.Tensor:
     """물리적으로 가능한 KI 지시자만 남긴다 — 배리어를 이미 깬 경로는 KI=0 이 될 수 없다.
 
     collocation 이 '배리어 아래인데 KI=0' 같은 모순 상태를 만들지 않게 하는 교정 장치다.
@@ -111,7 +124,9 @@ def feasible_ki_states(running_min, barrier, proposed=None):
     return torch.where(breached, torch.ones_like(proposed), proposed)
 
 
-def continuation_relation(value_before, value_after, non_redemption_mask):
+def continuation_relation(
+    value_before: torch.Tensor, value_after: torch.Tensor, non_redemption_mask: torch.Tensor
+) -> torch.Tensor:
     """상환 조건을 만족하지 못한 관측일에서는 가치가 연속이어야 한다 (V_before == V_after).
 
     상환된 경로는 값이 점프하므로 마스크로 제외한다.
@@ -130,7 +145,14 @@ def continuation_relation(value_before, value_after, non_redemption_mask):
 
 
 # ===== PDE 잔차 =====
-def pde_residual(value_fn, spot, tau, sigma, corr, rate):
+def pde_residual(
+    value_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    spot: torch.Tensor,
+    tau: torch.Tensor,
+    sigma: torch.Tensor,
+    corr: torch.Tensor,
+    rate: torch.Tensor,
+) -> torch.Tensor:
     """3자산 백워드 Black-Scholes 잔차: -V_tau + Σ r·Si·V_Si + ½ΣΣ ρij·σi·σj·Si·Sj·V_SiSj - r·V.
 
     입력
@@ -164,7 +186,7 @@ def pde_residual(value_fn, spot, tau, sigma, corr, rate):
     return -dtau + drift + diffusion - rate * value
 
 
-def finite_or_raise(name, tensor):
+def finite_or_raise(name: str, tensor: torch.Tensor) -> torch.Tensor:
     """물리손실은 발산하기 쉬우므로 NaN/Inf 를 조용히 흘리지 않고 즉시 실패시킨다.
 
     입력

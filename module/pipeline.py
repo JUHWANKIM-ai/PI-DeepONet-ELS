@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """walk-forward OOS 예측 조립: 직접(tabular 벤치마크)·하이브리드. 반환 DataFrame.
 name 주면 폴드별 학습 모델 가중치를 result/models/<name>_fold{k}.{pt|pkl} 로 저장."""
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from .tabular import fit_tab
@@ -9,7 +14,7 @@ from model.stage2 import ml_resid
 from util import file_manager as fm
 
 
-def _mp(name, k):
+def _mp(name: str | None, k: int) -> str | None:
     """폴드별 모델 저장 경로 접두를 만든다. 확장자는 각 학습함수가 붙인다.
 
     입력
@@ -26,7 +31,9 @@ def _mp(name, k):
     return str(d / f"{name}_fold{k}")
 
 
-def hybrid_residual_target(fair, mc_hat, rm):
+def hybrid_residual_target(
+    fair: npt.ArrayLike, mc_hat: npt.ArrayLike, rm: npt.ArrayLike
+) -> np.ndarray:
     """stage-2 잔차 타깃 = FAIR − stage1예측(MC_hat) − recent_margin.
 
     기존엔 MC 참값을 썼으나 stage1 **예측값** 기준으로 재정의했다 → 학습·추론이 일치하고
@@ -43,7 +50,13 @@ def hybrid_residual_target(fair, mc_hat, rm):
     return (np.asarray(fair) - np.asarray(mc_hat) - np.asarray(rm)).astype("float32")
 
 
-def predict_direct_tab(D, cfg, model_key, name=None, target=None):
+def predict_direct_tab(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    model_key: str,
+    name: str | None = None,
+    target: np.ndarray | None = None,
+) -> pd.DataFrame:
     """직접(단일 단계) tabular 회귀 벤치마크 — ml.csv 전 특성으로 타깃을 바로 예측(2단계 아님).
 
     입력
@@ -78,7 +91,15 @@ def predict_direct_tab(D, cfg, model_key, name=None, target=None):
     return pd.concat(rows, ignore_index=True)
 
 
-def predict_hybrid(D, cfg, anchor_fn, resid_fn=None, name=None, target=None, use_margin=True):
+def predict_hybrid(
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    anchor_fn: Callable[..., Callable[[npt.ArrayLike], np.ndarray]],
+    resid_fn: Callable[..., tuple[Any, np.ndarray]] | None = None,
+    name: str | None = None,
+    target: np.ndarray | None = None,
+    use_margin: bool = True,
+) -> pd.DataFrame:
     """2단계 하이브리드: y = stage1예측(MC_hat) [+ recent_margin] + resid_hat(stage2).
 
     target=None → D.FAIR (기본, 공정가치 예측). target=D.MC → 이론가 2단계 예측.

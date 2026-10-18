@@ -2,7 +2,10 @@
 """공용 피처 유틸 (DRY) — KRW Nelson-Siegel 곡선 + 180일 역사 변동성·상관.
 0_data(데이터셋 branch 피처 재유도)와 MC 재산출 노트북이 공유한다.
 곡선/변동성 정의는 데이터셋을 만든 프라이서와 동일하게 유지(재현성)."""
+from collections.abc import Sequence
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 LAM = 1.5
@@ -15,7 +18,7 @@ ADV_CORR_WIN = 120  # 6개월 = 120 영업일 (현행 방법론의 변동성·�
 EWMA_LAM = 0.99  # 현행 방법론의 EWMA 감쇠 (반감기 ≈ 69 거래일). 정본 mc 가 이 값이다
 
 
-def nsb(t):
+def nsb(t: npt.ArrayLike) -> np.ndarray:
     """Nelson-Siegel 기저 [level, slope, curvature] (LAM 고정).
 
     입력
@@ -29,7 +32,7 @@ def nsb(t):
     return np.stack([np.ones_like(t), (1 - e) / x, (1 - e) / x - e], 1)
 
 
-def zero_curve(beta, times):
+def zero_curve(beta: np.ndarray, times: npt.ArrayLike) -> np.ndarray:
     """NS 제로금리 곡선 = nsb(times) @ beta / 100.
 
     입력
@@ -41,7 +44,7 @@ def zero_curve(beta, times):
     return (nsb(np.maximum(np.atleast_1d(times), 1e-6)) @ beta) / 100.0
 
 
-def krw_beta(row):
+def krw_beta(row: npt.ArrayLike) -> np.ndarray | None:
     """세 금리 관측점에 NS 를 최소제곱 적합한다.
 
     입력
@@ -58,7 +61,7 @@ def krw_beta(row):
     return beta
 
 
-def krw_curve_nodes(beta):
+def krw_curve_nodes(beta: np.ndarray) -> np.ndarray:
     """branch 곡선 노드 u0..u9 = MSAMP 만기점의 KRW NS 제로금리.
 
     입력
@@ -70,7 +73,7 @@ def krw_curve_nodes(beta):
     return zero_curve(beta, MSAMP).astype(np.float32)
 
 
-def chol_psd(corr):
+def chol_psd(corr: np.ndarray) -> np.ndarray:
     """촐레스키 분해. 양정부호가 아니면 고유값을 깎아 보정한 뒤 다시 분해한다.
 
     쌍별 상관(`corr_bd`)은 각 쌍이 다른 날짜 집합을 쓰므로 PSD 가 보장되지 않는다 —
@@ -92,7 +95,7 @@ def chol_psd(corr):
         return np.linalg.cholesky(c2)
 
 
-def vol180(ret, dt):
+def vol180(ret: pd.Series, dt: pd.Timestamp) -> float:
     """발행 전 180 거래일 로그수익률 연율 변동성 (std × √252).
 
     입력
@@ -105,7 +108,7 @@ def vol180(ret, dt):
     return float(w.std() * np.sqrt(252)) if len(w) >= 60 else np.nan
 
 
-def vol_win(ret, dt, win):
+def vol_win(ret: pd.Series, dt: pd.Timestamp, win: int) -> float:
     """발행 전 win 거래일 **단순** 역사변동성 (std × √252).
 
     `vol180` 은 win 이 180 으로 고정된 특수화다 — MC 변형 A 는 win=120 을 쓴다.
@@ -121,7 +124,7 @@ def vol_win(ret, dt, win):
     return float(w.std() * np.sqrt(252)) if len(w) >= 60 else np.nan
 
 
-def vol_ewma(ret, dt, span=EWMA_SPAN):
+def vol_ewma(ret: pd.Series, dt: pd.Timestamp, span: int = EWMA_SPAN) -> float:
     """발행 전 span 거래일 EWMA 연율 변동성 — ewm(span) 가중 표준편차의 마지막 값 × √252.
 
     가중치 (1−α)^i 는 창 안에서 재정규화된다(adjust=True).
@@ -142,7 +145,9 @@ def vol_ewma(ret, dt, span=EWMA_SPAN):
     )
 
 
-def vol_ewma_lam(ret, dt, lam=EWMA_LAM, win=ADV_CORR_WIN):
+def vol_ewma_lam(
+    ret: pd.Series, dt: pd.Timestamp, lam: float = EWMA_LAM, win: int = ADV_CORR_WIN
+) -> float:
     """**현행 방법론의 변동성** — 발행 전 win 거래일(=6개월) EWMA, 감쇠 λ 를 직접 지정.
 
     `vol_ewma` 의 span 표기와 달리 λ 를 그대로 받는다 (λ=0.99 → α=0.01).
@@ -164,7 +169,12 @@ def vol_ewma_lam(ret, dt, lam=EWMA_LAM, win=ADV_CORR_WIN):
     )
 
 
-def corr_bd(rets, dt, calendar, win=ADV_CORR_WIN):
+def corr_bd(
+    rets: Sequence[pd.Series],
+    dt: pd.Timestamp,
+    calendar: pd.DatetimeIndex,
+    win: int = ADV_CORR_WIN,
+) -> tuple[np.ndarray, pd.Timestamp] | tuple[None, None]:
     """**현행 방법론의 상관** — 발행 전 한국 영업일 win 일(=6개월) 창에서 쌍별 Pearson.
 
     calendar 는 KRX 거래일 DatetimeIndex (보통 ^KS200 수익률의 인덱스).
@@ -193,7 +203,7 @@ def corr_bd(rets, dt, calendar, win=ADV_CORR_WIN):
     return C, bd[-win]
 
 
-def corr180(rets, dt, win=CORR_WIN):
+def corr180(rets: Sequence[pd.Series], dt: pd.Timestamp, win: int = CORR_WIN) -> np.ndarray | None:
     """발행 전 win 거래일 **3시장 공통 거래일**로 정렬한 Pearson 상관행렬.
 
     `corr_bd` 와 달리 세 자산이 모두 거래한 날만 쓴다 — 그래서 실제 창이 달력상 6.2~6.9개월로

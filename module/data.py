@@ -5,10 +5,13 @@ PI-DeepONet만 trunk에 평가좌표(S,τ,I)를 추가로 넣고 BS-PDE 물리�
 컬럼명은 raw DART와 직접 비교되도록 raw 이름 활용. 데이터셋은 CSV.
 """
 import bisect
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import torch
 
@@ -45,7 +48,7 @@ RENAME = {
 INV = {v: k for k, v in RENAME.items()}
 
 
-def _new(name):
+def _new(name: str) -> str:
     """원천 컬럼명을 데이터셋 컬럼명으로 바꾼다 (RENAME 에 없으면 그대로).
 
     입력
@@ -140,7 +143,7 @@ SIGEFF = "sig_eff"
 CSV_ENC = "utf-8-sig"
 
 
-def featnum(feat):
+def featnum(feat: str) -> list[str]:
     """피처셋 이름으로 수치 특성 열 목록을 만든다.
 
     입력
@@ -152,7 +155,7 @@ def featnum(feat):
     return BASE + (REG if feat == "regime" else []) + (DRIVER if feat == "driver" else [])
 
 
-def fill_lizard_neutral(df):
+def fill_lizard_neutral(df: pd.DataFrame) -> pd.DataFrame:
     """리자드 없는 회차의 NaN 을 중립값으로 채운다 (parquet 은 NaN 유지, CSV·모델 입력만 채움).
 
     lz_barr=1.2 는 스팟 위라 no-touch 조건이 즉시 깨져 '발동 불가' 가 명확하다.
@@ -171,7 +174,7 @@ def fill_lizard_neutral(df):
     return df
 
 
-def _load_source():
+def _load_source() -> pd.DataFrame:
     """원천 parquet 을 읽고 발행 밀집도(issue_intensity)를 붙인다.
 
     행사가·지급률·리자드 스케줄이 이미 parquet 에 있으므로 raw 를 다시 읽지 않는다.
@@ -197,7 +200,7 @@ def _load_source():
 
 
 # ===== 0_data: 데이터셋 생성 (CSV) =====
-def _label_path():
+def _label_path() -> Path:
     """정본 MC 라벨 파일. module.mcvar 가 MCVAR_DIV 로 고르는 것과 같은 경로.
 
     module.mcvar 는 module.data 를 쓰므로 모듈 최상단에서 불러올 수 없다 — 함수 안에서 늦게 부른다.
@@ -215,7 +218,7 @@ def _label_path():
 STAMP_FILE = ".dataset_label_stamp.json"  # 데이터셋이 어떤 라벨로 채워졌는지
 
 
-def dataset_stamp():
+def dataset_stamp() -> dict[str, Any] | None:
     """데이터셋이 채워진 라벨의 출처를 읽는다.
 
     입력
@@ -235,7 +238,7 @@ def dataset_stamp():
         return None
 
 
-def record_dataset_stamp(st):
+def record_dataset_stamp(st: dict[str, Any] | None) -> None:
     """데이터셋을 채운 라벨의 출처를 남긴다.
 
     라벨에 스탬프가 없으면(스탬프 도입 이전 파일) `{"unstamped": true}` 를 남긴다 —
@@ -252,7 +255,7 @@ def record_dataset_stamp(st):
     (fm.DATA / STAMP_FILE).write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
 
 
-def datasets_stale():
+def datasets_stale() -> bool:
     """지금 라벨로 데이터셋을 다시 써야 하는가.
 
     종전 조건은 "MC 가 전부 NaN" 이었다. 그러면 라벨이 **바뀐** 경우는 걸리지 않고
@@ -276,7 +279,7 @@ def datasets_stale():
     return BMV.stamp_differs(dataset_stamp(), want)
 
 
-def fill_anchor(df):
+def fill_anchor(df: pd.DataFrame) -> int:
     """`mc` 열의 빈 자리를 정본 라벨(`mc_B`)로 채우고 채운 행 수를 돌려준다.
 
     Task 4 에서 `mc` 열 의존을 끊어 열만 만들고 NaN 으로 뒀는데, 그 결과 README 가 데이터셋으로
@@ -306,7 +309,7 @@ def fill_anchor(df):
     return int(hit.sum())
 
 
-def build_datasets():
+def build_datasets() -> dict[str, Any]:
     """원천 -> data/ml.csv, data/deeponet.csv 생성.
     ml = tabular(BASE+REG+CAT), deeponet = 연산자망 입력(곡선 u0-9 + vol·corr·sig_eff + 계약 + r).
     둘 다 공통(fair·mc·recent_margin) 포함.
@@ -342,7 +345,7 @@ def build_datasets():
 
         record_dataset_stamp(_BMV.read_stamp(_label_path()))  # 어떤 라벨로 채웠는지 남긴다
 
-    def write(name, new_cols):
+    def write(name: str, new_cols: Iterable[str]) -> list[str]:
         """데이터셋 하나를 CSV 로 쓴다 — 열 중복은 **순서를 지키며** 제거한다.
 
         입력
@@ -367,7 +370,7 @@ def build_datasets():
 
 
 # ===== 1_run: 통합 로딩 =====
-def load(cfg):
+def load(cfg: dict[str, Any]) -> SimpleNamespace:
     """두 CSV 를 읽어 학습·추론이 공유하는 번들 D 를 만든다 — **정본 D 의 정의**다.
 
     두 파일을 같은 키(ORDER)로 정렬해 행을 맞춘다. 행 수가 다르면 거부한다.
@@ -434,7 +437,9 @@ def load(cfg):
     return D
 
 
-def walk_forward(n, bounds, val_frac=0.0, val_seed=0):
+def walk_forward(
+    n: int, bounds: Sequence[float], val_frac: float = 0.0, val_seed: int = 0
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """확장윈도우 walk-forward 폴드를 만든다.
 
     va 는 train 에서 **무작위로** 뽑으므로 미래 참조를 허용한다 — 조기종료 전용이고,
@@ -465,7 +470,9 @@ def walk_forward(n, bounds, val_frac=0.0, val_seed=0):
     return folds
 
 
-def time_weights(D, tr, half_life=365.25):
+def time_weights(
+    D: SimpleNamespace, tr: np.ndarray, half_life: float | None = 365.25
+) -> np.ndarray:
     """시간감쇠 표본가중 0.5^(dt/half_life).
 
     기준점은 **학습 폴드의 최신일**이다 — 전체 최신일이 아니므로 폴드마다 기준이 다르다.
@@ -482,7 +489,7 @@ def time_weights(D, tr, half_life=365.25):
     return (0.5 ** ((D.ORD[tr].max() - D.ORD[tr]) / half_life)).astype("float32")
 
 
-def to_tensor(a, dev):
+def to_tensor(a: npt.ArrayLike, dev: str) -> torch.Tensor:
     """배열을 float32 torch 텐서로 올린다.
 
     입력
@@ -497,7 +504,7 @@ def to_tensor(a, dev):
 ZCLIP = 10.0  # 표준화값 한계 (정규 표본이면 절대 안 걸리는 수준)
 
 
-def zstats(a, tr):
+def zstats(a: np.ndarray, tr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """train 기준 표준화 통계. **학습 폴드만** 보므로 누출이 없다.
 
     입력
@@ -510,7 +517,7 @@ def zstats(a, tr):
     return a[tr].mean(0), a[tr].std(0) + 1e-8
 
 
-def znorm(a, m, s, clip=ZCLIP):
+def znorm(a: np.ndarray, m: np.ndarray, s: np.ndarray, clip: float = ZCLIP) -> np.ndarray:
     """train 기준 표준화 + 클리핑.
 
     train 폴드에서 상수인 열(예: 리자드 lz_pmt_5/6/7 — 그 회차에 리자드가 붙은 상품이

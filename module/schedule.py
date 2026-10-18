@@ -5,6 +5,8 @@
 패딩: strk/pmt 는 마지막값 forward-fill(만기 조건이 반복되는 것과 같은 의미).
       리자드는 '그 회차에만 붙는 조항'이므로 forward-fill 하지 않고 NaN 으로 둔다.
 제외: 회차 2 미만 / NSTRK 초과 / 행사가·지급률 결측 (sched_ok=False, sched_drop 에 사유)."""
+from collections.abc import Iterable, Sequence
+
 import numpy as np
 import pandas as pd
 
@@ -22,7 +24,7 @@ SCHED_COLS = (
 )
 
 
-def _pad_ffill(vals, k=NSTRK):
+def _pad_ffill(vals: Sequence[float], k: int = NSTRK) -> list[float]:
     """길이 k 로 고정: 짧으면 마지막값 forward-fill, 길면 앞에서 k 개만 쓴다.
 
     만기 조건이 반복되는 것과 같은 의미다 — 행사가·지급률은 이 방식이 맞다.
@@ -37,7 +39,7 @@ def _pad_ffill(vals, k=NSTRK):
     return v + [v[-1]] * (k - len(v))
 
 
-def _pad_nan(pairs, k=NSTRK):
+def _pad_nan(pairs: Iterable[tuple[int, float]], k: int = NSTRK) -> list[float]:
     """(회차 인덱스, 값) 목록을 길이 k 배열의 해당 위치에만 채우고 나머지는 NaN 으로 둔다.
 
     리자드는 '그 회차에만 붙는 조항' 이므로 forward-fill 하면 안 된다 — 그래서 이 함수가
@@ -56,7 +58,7 @@ def _pad_nan(pairs, k=NSTRK):
     return out
 
 
-def build_schedules(sc):
+def build_schedules(sc: pd.DataFrame) -> pd.DataFrame:
     """raw SCHD_INFO DataFrame -> ITEM_CD 인덱스 고정폭 스케줄 테이블.
 
     단위 변환은 여기서 한다: STRK_1 · LZRD_BARR 는 raw 가 퍼센트라 /100, PMT_1 · LZRD_PMT 는
@@ -134,7 +136,7 @@ def build_schedules(sc):
     return pd.DataFrame(rows).set_index("ITEM_CD")
 
 
-def load_schedules():
+def load_schedules() -> pd.DataFrame:
     """raw CSV 를 읽어 build_schedules 를 적용한다.
 
     입력

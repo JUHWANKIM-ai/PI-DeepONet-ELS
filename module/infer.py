@@ -3,7 +3,12 @@
 (2_DeepONet_model 이 예측 CSV 대신 이걸 써서 가중치→예측 재현)
 전 모델이 **이론가(MC) 2단계 예측**: y = MC_hat(stage1) + resid(stage2), 마진 없음, y_true = MC.
 result/models/<name>_fold{k}.{pt|pkl} 규약은 pipeline 의 저장 규약과 동일."""
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import joblib
 
@@ -14,7 +19,7 @@ from .tabular import load_tab_predictor
 from model.stage2 import load_xgb_resid, load_don_resid, load_ml_resid
 
 
-def _mp(name, k):
+def _mp(name: str, k: int) -> str:
     """폴드별 가중치 경로 접두. `pipeline._mp` 와 같은 규약이지만 **디렉터리를 만들지 않는다**.
 
     여기는 읽기 전용 경로라서다 — 없는 경로면 로더가 FileNotFoundError 를 올려야 한다.
@@ -28,7 +33,7 @@ def _mp(name, k):
     return str(fm.RESULT / "models" / f"{name}_fold{k}")
 
 
-def _load_xgb_anchor(D, path):
+def _load_xgb_anchor(D: SimpleNamespace, path: str) -> Callable[[npt.ArrayLike], np.ndarray]:
     """benchmark._xgb_anchor 가 저장한 .pkl 을 행 인덱스 예측기로 되살린다.
 
     입력
@@ -59,7 +64,9 @@ _HYBRID = {
 _ROUTED = {"deeponet_hybrid_pi_lizard": 0}
 
 
-def _anchor_loader(D, atype, base):
+def _anchor_loader(
+    D: SimpleNamespace, atype: str, base: str
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """앵커 종류에 맞는 로더를 골라 예측기를 만든다 — 확장자도 종류가 정한다.
 
     입력
@@ -80,7 +87,9 @@ def _anchor_loader(D, atype, base):
     raise ValueError(atype)
 
 
-def _resid_loader(D, rtype, base):
+def _resid_loader(
+    D: SimpleNamespace, rtype: str, base: str
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """stage-2 종류에 맞는 로더를 골라 예측기를 만든다.
 
     입력
@@ -102,7 +111,7 @@ def _resid_loader(D, rtype, base):
     raise ValueError(rtype)
 
 
-def predict_all_from_weights(D, cfg):
+def predict_all_from_weights(D: SimpleNamespace, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
     """저장 가중치로 전 모델의 공정가(FAIR) OOS 예측을 조립. pipeline 산출 DataFrame 과 동일 스키마.
     직접(단일 단계) 벤치마크: y = 예측(FAIR) (stage 컬럼 없음).
     2단계 하이브리드: y = MC_hat + recent_margin + resid, y_true = FAIR,

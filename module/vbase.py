@@ -18,7 +18,10 @@
 종전에는 scratch/els_vbase.py 에만 있어 추적 파이프라인에서 쓸 수 없었다.
 프록시 단독 성능 리포트는 generate/report_vbase.py 가 만든다.
 """
+from collections.abc import Callable
+
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from .features import MSAMP
@@ -30,7 +33,7 @@ iB, iC, iT = 4 * NS, 4 * NS + 1, 4 * NS + 2
 _G = None
 
 
-def _grid(dev):
+def _grid(dev: str) -> tuple[torch.Tensor, torch.Tensor, float]:
     """순차 합성곱용 격자와 전이핵을 만든다 (장치별 1회 캐시).
 
     표준정규 증분의 전이핵을 미리 행렬로 만들어 두면, 회차마다 `p @ K` 한 번으로
@@ -53,7 +56,9 @@ def _grid(dev):
     return _G
 
 
-def _clark_min(m, v, rho):
+def _clark_min(
+    m: torch.Tensor, v: torch.Tensor, rho: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Clark(1961) 근사로 min(Y_1, Y_2, Y_3) 의 평균·분산을 낸다.
 
     min = −max(−Y) 를 쓴다. 두 개를 합쳐 하나로 만들고, 그 결과와 세 번째를 다시 합친다
@@ -85,7 +90,9 @@ def _clark_min(m, v, rho):
     return -Em, (Em2 - Em**2).clamp(min=1e-12)
 
 
-def _scalarize(V, nstar, dev):
+def _scalarize(
+    V: torch.Tensor, nstar: npt.ArrayLike | None, dev: str
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """자산 수에 맞는 worst-of 스칼라화용 (sigma 목록, 공통 rho). 패딩 중복을 풀어낸다.
 
     VC 는 sigma 를 정렬해 담으므로 2스타 패딩(A,B,B)은 중복값이 두 번 나타난다.
@@ -121,7 +128,16 @@ def _scalarize(V, nstar, dev):
 
 
 @torch.no_grad()
-def vbase_els(CON, VC, CURVE, nobs, dev=DEV, mode="mean", lizard=False, nstar=None):
+def vbase_els(
+    CON: np.ndarray,
+    VC: np.ndarray,
+    CURVE: np.ndarray,
+    nobs: npt.ArrayLike,
+    dev: str = DEV,
+    mode: str = "mean",
+    lizard: bool = False,
+    nstar: npt.ArrayLike | None = None,
+) -> np.ndarray:
     """우리 stage-1 입력 -> V_base (액면 1 단위). CON/VC/CURVE 는 D.CON/D.VC/D.CURVE.
 
     mode: 3자산을 스칼라 하나로 줄이는 방식
@@ -160,7 +176,7 @@ def vbase_els(CON, VC, CURVE, nobs, dev=DEV, mode="mean", lizard=False, nstar=No
     # --- 할인·드리프트: 부트스트랩 제로금리 곡선에서 읽는다 ---
     ms = T_(MSAMP)
 
-    def zrate(t):
+    def zrate(t: torch.Tensor) -> torch.Tensor:
         """커브 노드에서 임의 만기의 제로금리를 읽는다 — 노드 사이 선형보간, 밖은 평탄 외삽.
 
         입력

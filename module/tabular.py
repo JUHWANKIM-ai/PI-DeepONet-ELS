@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 """tabular 회귀기 (직접 벤치마크 + 하이브리드 stage-2 마진모델 공용). config 파라미터 사용."""
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
+import numpy as np
+import numpy.typing as npt
 from sklearn.linear_model import Ridge
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -12,7 +18,7 @@ import xgboost as xgb
 from .data import featnum, CAT, time_weights
 
 
-def load_tab_predictor(D, path):
+def load_tab_predictor(D: SimpleNamespace, path: str) -> Callable[[npt.ArrayLike], np.ndarray]:
     """fit_tab 이 저장한 .pkl 을 읽어 예측기로 되살린다 (재학습 없이 forward).
 
     저장된 **열 목록**으로 D.ml 에서 특성을 다시 꺼낸다 — 그래서 D 의 ml 표가 학습 때와 같은
@@ -37,20 +43,20 @@ def load_tab_predictor(D, path):
 
 
 def fit_tab(
-    D,
-    cfg,
-    model,
-    tr,
-    te,
-    feat,
-    target,
-    tw=True,
-    va=None,
-    save_path=None,
-    return_predictor=False,
-    half_life=365.25,
-    objective=None,
-):
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    model: str,
+    tr: np.ndarray,
+    te: np.ndarray,
+    feat: str,
+    target: np.ndarray,
+    tw: bool = True,
+    va: np.ndarray | None = None,
+    save_path: str | None = None,
+    return_predictor: bool = False,
+    half_life: float | None = 365.25,
+    objective: str | None = None,
+) -> np.ndarray | tuple[np.ndarray, Callable[[npt.ArrayLike], np.ndarray]]:
     """표형 회귀기 네 종을 같은 규약으로 학습한다 — **학습 폴드에만** fit 하고 시간가중을 건다.
 
     입력
@@ -143,7 +149,9 @@ def fit_tab(
     return (preds, predictor) if return_predictor else preds
 
 
-def load_tab_forward(path):
+def load_tab_forward(
+    path: str,
+) -> Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
     """저장 가중치 -> **임의 입력** 예측기 predict(CURVE, VC, CON) (XGB 앵커 전용).
 
     앵커 XGB 는 [곡선 | vol·corr | 계약] 을 그대로 이어붙여 학습하므로 (load_tab_predictor 처럼
@@ -156,8 +164,7 @@ def load_tab_forward(path):
         계약을 바꾼 입력을 그대로 넣을 수 있어 민감도 분석에 쓴다
         (`module.anchors.load_xgb` 가 이 함수다)
     """
-    import numpy as _np
     import joblib
 
     m = joblib.load(path)["model"]
-    return lambda CU, VC, CON: m.predict(_np.concatenate([CU, VC, CON], axis=1)).astype("float32")
+    return lambda CU, VC, CON: m.predict(np.concatenate([CU, VC, CON], axis=1)).astype("float32")

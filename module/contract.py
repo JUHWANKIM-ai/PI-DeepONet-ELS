@@ -17,6 +17,8 @@ module/schedule.py 의 표현을 유지한다: 12칸 고정, 행사가·지급�
 종전에는 scratch/contract_sensitivity.py 에만 있어 추적 파이프라인에서 쓸 수 없었다.
 """
 import numpy as np
+import numpy.typing as npt
+import pandas as pd
 
 from .data import CONTRACT
 from .schedule import LZ_BARR_NEUTRAL, LZ_PMT_NEUTRAL
@@ -27,7 +29,7 @@ iC = CONTRACT.index("ANL_RTRN/100")
 iT = CONTRACT.index("TENOR")
 
 
-def set_coupon(CON, c):
+def set_coupon(CON: np.ndarray, c: float) -> np.ndarray:
     """연쿠폰을 c 로. 누적지급률을 같은 비율로 재조정해 스케줄 모양을 유지한다.
 
     입력
@@ -43,7 +45,7 @@ def set_coupon(CON, c):
     return X
 
 
-def set_barrier(CON, b):
+def set_barrier(CON: np.ndarray, b: float) -> np.ndarray:
     """KI 배리어를 b 로. b >= 1.0 은 노낙인이므로 리자드도 중립으로 되돌린다 (구조 일관성).
 
     입력
@@ -60,7 +62,7 @@ def set_barrier(CON, b):
     return X
 
 
-def shift_strikes(CON, d):
+def shift_strikes(CON: np.ndarray, d: float) -> np.ndarray:
     """행사가 스케줄 12칸 전체를 d 만큼 평행이동한다.
 
     입력
@@ -74,7 +76,7 @@ def shift_strikes(CON, d):
     return X
 
 
-def set_spread(CON, sp, nobs):
+def set_spread(CON: np.ndarray, sp: float, nobs: npt.ArrayLike) -> np.ndarray:
     """첫 행사가를 고정하고 첫−마지막 간격을 sp 로 맞춘다.
 
     원래 평평한(간격 0) 스케줄은 비례 조정이 불가능하므로 회차 수에 맞춰 **선형 스텝다운을
@@ -104,7 +106,7 @@ def set_spread(CON, sp, nobs):
     return X
 
 
-def shift_lizard(CON, d, has_lz):
+def shift_lizard(CON: np.ndarray, d: float, has_lz: np.ndarray) -> np.ndarray:
     """리자드 배리어를 d 만큼 평행이동한다 (리자드가 켜진 회차만).
 
     입력
@@ -121,7 +123,7 @@ def shift_lizard(CON, d, has_lz):
     return X
 
 
-def scale_lizard_pmt(CON, r, has_lz):
+def scale_lizard_pmt(CON: np.ndarray, r: float, has_lz: np.ndarray) -> np.ndarray:
     """리자드 지급률을 r 배로 한다.
 
     입력
@@ -146,7 +148,9 @@ GRID = {
 }
 
 
-def apply_factor(CON, factor, lv, nobs, has_lz):
+def apply_factor(
+    CON: np.ndarray, factor: str, lv: float, nobs: npt.ArrayLike, has_lz: np.ndarray
+) -> np.ndarray:
     """GRID 의 요인 이름 하나와 수준 하나로 계약을 변형한다 — 위 여섯 함수의 단일 입구.
 
     입력
@@ -176,7 +180,7 @@ def apply_factor(CON, factor, lv, nobs, has_lz):
     raise ValueError(factor)
 
 
-def in_domain(src, st, factor, lv, struct):
+def in_domain(src: pd.DataFrame, st: np.ndarray, factor: str, lv: float, struct: object) -> float:
     """그 구조의 표본에서 해당 수준 근처(±허용)에 실제 상품이 몇 % 인가 — 외삽 표시용.
 
     0 에 가까우면 그 수준은 **학습 분포 밖**이고, 거기서 나온 기울기는 외삽이다.

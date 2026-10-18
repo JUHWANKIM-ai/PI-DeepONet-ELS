@@ -16,9 +16,12 @@ kmap=None 이면 미보정(pre-calibration) 버전 = 원래 MC.
 """
 import json
 import os
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from util import file_manager as fm
@@ -39,7 +42,7 @@ MC_COLS = [
 ]
 
 
-def _safe(t):
+def _safe(t: str) -> str:
     """티커를 `cache` 공급원의 가격 캐시 파일명으로 바꾼다.
 
     입력
@@ -54,7 +57,7 @@ def _safe(t):
 PX_SOURCES = ("cache", "underlying")
 
 
-def returns_by_ticker(mapping):
+def returns_by_ticker(mapping: Mapping[str, str]) -> dict[str, pd.Series]:
     """기초자산 ID->티커 매핑 -> {티커: 로그수익률 Series}. **가격 적재의 유일한 출처.**
 
     공급원은 환경변수 PX_SOURCE 로 고른다.
@@ -100,7 +103,7 @@ def returns_by_ticker(mapping):
     return out
 
 
-def load_market():
+def load_market() -> dict[str, Any]:
     """cache/raw → 시장데이터 dict(RET 로그수익률, KRW 곡선, 상품→기초자산·행사가 매핑).
 
     가격 공급원은 환경변수 PX_SOURCE 로 고른다.
@@ -144,7 +147,7 @@ def load_market():
     )
 
 
-def load_kmap(path=None):
+def load_kmap(path: str | None = None) -> dict[str, list[float]] | None:
     """캘리브레이션 매핑을 읽는다.
 
     입력
@@ -159,7 +162,7 @@ def load_kmap(path=None):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def calib_k(sig_eff, kmap):
+def calib_k(sig_eff: float, kmap: dict[str, list[float]] | None) -> float:
     """관측 입력(sig_eff) → vol 프리미엄 배수 k. 연속 꺾은선 보간.
 
     버킷 계단 버전은 불연속 때문에 DeepONet 앵커 학습을 해쳐 연속형으로 대체했다.
@@ -176,7 +179,18 @@ def calib_k(sig_eff, kmap):
     return float(np.interp(float(sig_eff), kmap["x"], kmap["y"]))
 
 
-def mc_daily(sigs, corr, beta, B, strikes, c, ten, n=NPATH, seed=0, chunk=PCHUNK):
+def mc_daily(
+    sigs: Sequence[float],
+    corr: np.ndarray,
+    beta: np.ndarray,
+    B: float,
+    strikes: Sequence[float],
+    c: float,
+    ten: float,
+    n: int = NPATH,
+    seed: int = 0,
+    chunk: int = PCHUNK,
+) -> float:
     """미래에셋 방식 일별 MC — **레거시 규칙**(선형 쿠폰 · 리자드 없음).
 
     비연속 out= 인자에 cumsum 을 쓰면 abacus numpy 2.3.0 에서 메모리가 누수되므로
@@ -239,7 +253,15 @@ def mc_daily(sigs, corr, beta, B, strikes, c, ten, n=NPATH, seed=0, chunk=PCHUNK
     return tot / n
 
 
-def prepare_one(mk, kmap, item, iord, ten, sig_eff, strikes=None):
+def prepare_one(
+    mk: dict[str, Any],
+    kmap: dict[str, list[float]] | None,
+    item: str,
+    iord: int,
+    ten: float,
+    sig_eff: float,
+    strikes: Sequence[float] | None = None,
+) -> dict[str, Any] | None:
     """상품 하나를 엔진 공통 입력으로 바꾼다. numpy·torch 두 엔진이 공유한다.
 
     세 자산의 수익률 계열이 모두 있으면 자산별 변동성·상관을 쓰고, 아니면 **단일자산 근사**로
@@ -293,7 +315,19 @@ def prepare_one(mk, kmap, item, iord, ten, sig_eff, strikes=None):
     )  # 폴백: 단일자산 근사
 
 
-def price_one(mk, kmap, item, iord, B, c, ten, sig_eff, n=NPATH, seed=0, strikes=None):
+def price_one(
+    mk: dict[str, Any],
+    kmap: dict[str, list[float]] | None,
+    item: str,
+    iord: int,
+    B: float,
+    c: float,
+    ten: float,
+    sig_eff: float,
+    n: int = NPATH,
+    seed: int = 0,
+    strikes: Sequence[float] | None = None,
+) -> tuple[float, ...]:
     """상품 하나를 레거시 numpy 엔진으로 가격한다.
 
     입력

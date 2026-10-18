@@ -16,6 +16,8 @@
 매핑은 master.csv 의 기초자산 본체를 먼저 보고, 없으면 관련 ETF 를 본다 —
 module/dividend.lseg_yield 와 같은 순서다.
 """
+from collections.abc import Iterable
+
 import pandas as pd
 
 from util import file_manager as fm
@@ -25,7 +27,7 @@ _MASTER = None
 _PX = {}
 
 
-def master():
+def master() -> pd.DataFrame:
     """master.csv (159행) 를 읽어 돌려준다. 첫 호출에서만 읽고 모듈 전역에 캐시한다.
 
     입력
@@ -40,7 +42,7 @@ def master():
     return _MASTER
 
 
-def _read_px(fn):
+def _read_px(fn: str) -> pd.Series | None:
     """share_underlyings_v2 의 CSV 하나를 Close_Adj 계열로 읽는다.
 
     입력
@@ -55,7 +57,7 @@ def _read_px(fn):
     return s[~s.index.duplicated()].sort_index() if len(s) else None
 
 
-def price(tk, udly=None):
+def price(tk: str, udly: str | None = None) -> pd.Series | None:
     """티커 -> 일별 종가 Series (Close_Adj, DatetimeIndex 오름차순). 매핑 없으면 None.
 
     상장 전 구간은 **비어 있다** — 0 으로 채우지 않는다. 그래야 변동성이 NaN 이 되어
@@ -95,7 +97,7 @@ def price(tk, udly=None):
     return out
 
 
-def prices(tks):
+def prices(tks: Iterable[str]) -> dict[str, pd.Series]:
     """티커 목록 -> {티커: Series}. 매핑된 것만 담는다.
 
     **UDLY_ID 대체 경로를 쓰지 않는다** — `price(t)` 를 udly 없이 부르므로, 가격 티커가 빈

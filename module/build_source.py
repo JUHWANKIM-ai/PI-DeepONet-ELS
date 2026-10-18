@@ -6,6 +6,7 @@
       + 구조[opt_type/ki_yn] + 기초자산[udl1..3/udl_key] + 스케줄[strk/pmt/lz_barr/lz_pmt ×12]). item·isu_ord 포함.
 """
 import io, sys, json, time
+from collections.abc import Sequence
 from datetime import date
 from types import SimpleNamespace
 import os
@@ -24,7 +25,7 @@ FAIR_LO, FAIR_HI = 0.70, 1.05
 TEN_LO, TEN_HI = 0.5, 5.0
 
 
-def encode_barrier(ki_yn, barr_pct):
+def encode_barrier(ki_yn: int, barr_pct: float) -> float:
     """낙인형: BARR_1/100. 노낙인: 1.0.
     1.0 은 '만기 미상환이면 항상 worst 수취' 를 뜻하고, 엔진이 B>=1.0 을 명시적으로 always-KI 로 처리한다.
     노낙인인데 BARR_1 이 붙은 상품이 1건 있으나 KNCK_IN_YN 을 신뢰한다.
@@ -41,7 +42,7 @@ def encode_barrier(ki_yn, barr_pct):
     return 1.0
 
 
-def needs_linear_pmt(pmts, c, ten, nonmono):
+def needs_linear_pmt(pmts: Sequence[float], c: float, ten: float, nonmono: bool) -> bool:
     """상환 스케줄이 계약 쿠폰을 담고 있지 않으면 선형 c*t (기존 엔진 동작) 로 대체해야 한다.
 
     (1) 누적 지급률 비단조 = raw 오류 (1회차 슬롯에 만기값)
@@ -65,7 +66,7 @@ def needs_linear_pmt(pmts, c, ten, nonmono):
     return bool(float(pmts[-1]) < 0.5 * float(c) * float(ten))
 
 
-def structure_mask(ac, three_index):
+def structure_mask(ac: pd.DataFrame, three_index: pd.Index) -> pd.Series:
     """유니버스 필터 — 3-star ∧ KRW ∧ 4구조 ∧ 공정가·만기 범위.
 
     입력
@@ -86,7 +87,7 @@ def structure_mask(ac, three_index):
     )
 
 
-def _mom6m(rets, dt, win=126):
+def _mom6m(rets: Sequence[pd.Series | None], dt: pd.Timestamp, win: int = 126) -> float:
     """발행 전 win 거래일 누적 로그수익률의 3자산 평균 (6개월 모멘텀).
 
     입력
@@ -108,7 +109,7 @@ def _mom6m(rets, dt, win=126):
     return float(np.mean(vals)) if vals else 0.0
 
 
-def load_inputs(verbose=False):
+def load_inputs(verbose: bool = False) -> SimpleNamespace:
     """raw CSV 3종 + cache(티커맵·가격·KRW커브)를 읽어 빌드에 필요한 것만 묶어 돌려준다.
 
     반환 필드: mapping, RET(티커→로그수익률), KRW, SCHED, u3map, barr_pct, cand(후보 행).
@@ -151,7 +152,9 @@ def load_inputs(verbose=False):
     )
 
 
-def eligibility(it, rw, inp):
+def eligibility(
+    it: str, rw: pd.Series, inp: SimpleNamespace
+) -> tuple[SimpleNamespace, None] | tuple[None, str]:
     """상품 하나가 빌드 가능한지 판정. 반환 (ctx, drop_reason).
 
     통과하면 (SimpleNamespace(...), None), 탈락하면 (None, "사유 문자열").
@@ -217,7 +220,7 @@ def eligibility(it, rw, inp):
     )
 
 
-def make_record(it, rw, ctx):
+def make_record(it: str, rw: pd.Series, ctx: SimpleNamespace) -> dict[str, object]:
     """통과한 상품 하나 → els3_dataset 한 행. eligibility 가 돌려준 ctx 만 읽는다.
 
     변동성·상관은 **정렬해서** 담는다 (자산 슬롯에 이름이 없으므로). 스케줄이 계약 쿠폰을
@@ -318,7 +321,7 @@ def make_record(it, rw, ctx):
     return rec
 
 
-def _recent_mktvol(df):
+def _recent_mktvol(df: pd.DataFrame) -> np.ndarray:
     """발행 전 90일 발행분의 평균 sig_mean (인과적).
 
     같은 발행일 상품은 **서로를 보지 않는다** (bisect_left 로 자기 날짜 앞까지만 자른다).
@@ -338,7 +341,7 @@ def _recent_mktvol(df):
     return rmv.astype("float32")
 
 
-def build_source(save=True, verbose=True, strict=False):
+def build_source(save: bool = True, verbose: bool = True, strict: bool = False) -> pd.DataFrame:
     """후보를 돌며 eligibility → make_record 로 els3_dataset 을 조립한다.
 
     탈락 사유 집계는 반환 DataFrame 의 .attrs["drops"] 에 담는다 (종전에는 print 로만 나갔다).

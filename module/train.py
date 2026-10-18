@@ -3,14 +3,19 @@
 train_curve : DeepONet-Curve (CNN 곡선+vol·corr, trunk=계약). target=MC(이론가 앵커) 또는 FAIR.
 _EarlyStop/_opt 은 stage-2 (model.stage2) 에서도 공용으로 import 한다.
 """
+from collections.abc import Callable, Iterable
+from types import SimpleNamespace
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from .data import to_tensor, zstats, znorm, ZCLIP
 from .networks import CurveOperatorV2, CurveOperatorMoE
 
 
-def _opt(net, cfg):
+def _opt(net: torch.nn.Module, cfg: dict[str, Any]) -> torch.optim.Adam:
     """공용 옵티마이저 — 모든 망이 같은 설정을 쓰도록 한 곳에 둔다.
 
     입력
@@ -27,7 +32,13 @@ def _opt(net, cfg):
 class _EarlyStop:
     """val 손실 기반 조기종료 + 최적 가중치 복원. va 비면 비활성."""
 
-    def __init__(self, net, cfg, va, dev):
+    def __init__(
+        self,
+        net: torch.nn.Module,
+        cfg: dict[str, Any],
+        va: npt.ArrayLike | None,
+        dev: str,
+    ) -> None:
         """검증 행이 있으면 활성, 없으면 **아무 일도 하지 않는 상태**로 둔다.
 
         입력
@@ -47,7 +58,7 @@ class _EarlyStop:
         self.best_state = None
         self.wait = 0
 
-    def step(self, it, val_loss_fn):
+    def step(self, it: int, val_loss_fn: Callable[[torch.Tensor], torch.Tensor]) -> bool:
         """매 스텝 호출한다. es_every 의 배수일 때만 실제로 검증한다.
 
         입력
@@ -69,7 +80,7 @@ class _EarlyStop:
             self.wait += 1
         return self.wait >= self.patience
 
-    def restore(self):
+    def restore(self) -> None:
         """보관해 둔 최적 가중치를 망에 되돌린다.
 
         학습 루프가 끝나면 **항상** 부른다. 비활성이거나 보관본이 없으면 아무 일도 하지 않으므로
@@ -85,7 +96,7 @@ class _EarlyStop:
 
 
 # ===== DeepONet-Curve (데이터기반, stage-1 앵커) =====
-def _loss_fn(loss):
+def _loss_fn(loss: str) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
     """정규화 스케일 손실을 고른다.
 
     입력
@@ -102,17 +113,20 @@ def _loss_fn(loss):
 
 
 def train_curve(
-    D,
-    cfg,
-    tr,
-    te,
-    target,
-    va=None,
-    loss="mse",
-    return_predict=False,
-    save_path=None,
-    moe_k=0,
-    moe_ib=0,
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    te: np.ndarray,
+    target: np.ndarray,
+    va: np.ndarray | None = None,
+    loss: str = "mse",
+    return_predict: bool = False,
+    save_path: str | None = None,
+    moe_k: int = 0,
+    moe_ib: int = 0,
+) -> (
+    tuple[np.ndarray, np.ndarray]
+    | tuple[np.ndarray, np.ndarray, Callable[[npt.ArrayLike], np.ndarray]]
 ):
     """DeepONet-Curve 를 학습한다 — stage-1 앵커의 정본 학습기.
 
@@ -160,7 +174,7 @@ def train_curve(
     trt = torch.tensor(tr, device=dev)
     lf = _loss_fn(loss)
 
-    def bloss(pr, idx):
+    def bloss(pr: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
         """배치 손실. mape 만 역정규화해 원본 스케일 상대오차로 잰다.
 
         입력
@@ -207,7 +221,7 @@ def train_curve(
             save_path if save_path.endswith(".pt") else save_path + ".pt",
         )
 
-    def p(idx):
+    def p(idx: npt.ArrayLike) -> np.ndarray:
         """학습된 망으로 원본 스케일 예측을 낸다.
 
         입력
@@ -222,7 +236,7 @@ def train_curve(
     return (p(tr), p(te), p) if return_predict else (p(tr), p(te))
 
 
-def load_curve_predictor(D, path):
+def load_curve_predictor(D: SimpleNamespace, path: str) -> Callable[[npt.ArrayLike], np.ndarray]:
     """저장된 DeepONet-Curve 가중치를 **행 인덱스 예측기**로 되살린다 (forward 만, 재학습 없음).
 
     체크포인트에 든 표준화 통계를 그대로 쓴다 — 지금 데이터로 다시 계산하면 학습 때와
@@ -244,7 +258,7 @@ def load_curve_predictor(D, path):
     Cn = to_tensor(znorm(D.CON, ck["cm"], ck["cs"]), D.DEV)
     ym, ysd = ck["ym"], ck["ysd"]
 
-    def predict(idx):
+    def predict(idx: npt.ArrayLike) -> np.ndarray:
         """복원된 망으로 원본 스케일 예측을 낸다.
 
         입력
@@ -259,7 +273,9 @@ def load_curve_predictor(D, path):
     return predict
 
 
-def load_curve_forward(path, dev=None, chunk=16384):
+def load_curve_forward(
+    path: str, dev: str | None = None, chunk: int = 16384
+) -> Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
     """저장 가중치 -> **임의 입력** 예측기 predict(CURVE, VC, CON) -> np.ndarray.
 
     load_curve_predictor 는 D 를 닫아 잡고 행 인덱스만 받으므로 '계약을 바꾼 입력' 을 표현할 수 없다.
@@ -282,7 +298,7 @@ def load_curve_forward(path, dev=None, chunk=16384):
     net.load_state_dict(ck["state"])
     net.eval()
 
-    def predict(CU, VC, CON):
+    def predict(CU: np.ndarray, VC: np.ndarray, CON: np.ndarray) -> np.ndarray:
         """임의 입력 세 블록을 받아 chunk 단위로 forward 한다.
 
         입력
@@ -313,7 +329,7 @@ D_CPN, D_STRK, D_BARR, D_LZB, R_LZP = 0.005, 0.02, 0.02, 0.02, 1.25
 LZ_NEUTRAL = 1.2
 
 
-def _perturb(Craw, kind):
+def _perturb(Craw: torch.Tensor, kind: str) -> tuple[torch.Tensor, float, torch.Tensor]:
     """원 스케일 계약 배치에 한 가지 변형을 적용한다.
 
     `module.contract` 의 섭동 규칙과 **같은 규칙의 torch 판**이다 — 규칙을 바꾸면 양쪽을
@@ -359,19 +375,19 @@ KINDS = ("coupon", "strike", "barrier", "lz_pmt", "lz_barr")
 
 
 def train_curve_mono(
-    D,
-    cfg,
-    tr,
-    te,
-    target,
-    va=None,
-    save_path=None,
-    target_ratio=0.1,
-    verbose=False,
-    kinds=None,
-    fixed_w=None,
-    margin_krw=0.0,
-):
+    D: SimpleNamespace,
+    cfg: dict[str, Any],
+    tr: np.ndarray,
+    te: np.ndarray,
+    target: np.ndarray,
+    va: np.ndarray | None = None,
+    save_path: str | None = None,
+    target_ratio: float = 0.1,
+    verbose: bool = False,
+    kinds: Iterable[str] | None = None,
+    fixed_w: float | None = None,
+    margin_krw: float = 0.0,
+) -> Callable[[npt.ArrayLike], np.ndarray]:
     """train_curve 와 같되 단조성 hinge 페널티를 더한다 — **기준 모형의 `+m`** 이 이것이다.
 
     MC 라벨을 더 만들지 않고 계약 반응의 부호·기울기를 잡는 것이 목적이다.
@@ -418,7 +434,7 @@ def train_curve_mono(
     KS = tuple(kinds) if kinds else KINDS  # 위반하는 항목에만 걸 수 있게
     mg = margin_krw / 10000.0 / ysd  # 원 단위 최소 반응 → 정규화 단위
 
-    def mono_loss(bb, pr):
+    def mono_loss(bb: torch.Tensor, pr: torch.Tensor) -> torch.Tensor:
         """흔든 입력을 한 번에 forward 해 부호가 틀린 만큼만 벌점을 매긴다.
 
         KS 의 변형을 모두 쌓아 **한 번의 forward** 로 처리한다 (변형 수만큼 배치가 커진다).
@@ -494,7 +510,7 @@ def train_curve_mono(
             save_path if save_path.endswith(".pt") else save_path + ".pt",
         )
 
-    def p(idx):
+    def p(idx: npt.ArrayLike) -> np.ndarray:
         """학습된 망으로 원본 스케일 예측을 낸다.
 
         입력

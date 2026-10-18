@@ -19,6 +19,9 @@
 """
 import copy
 import os
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -32,7 +35,7 @@ FACE = 10000
 _ST = None
 
 
-def vc_block(s, rho, q=None):
+def vc_block(s: np.ndarray, rho: np.ndarray, q: np.ndarray | None = None) -> np.ndarray:
     """시장상태 블록을 조립한다 — [sigma 오름차순 3 | 상관 오름차순 3 | sig_eff] (+ q 3개).
 
     정렬하는 이유는 자산 슬롯에 이름이 없기 때문이다. 같은 바스켓을 어떤 순서로 적어도
@@ -58,7 +61,7 @@ DIV = os.environ.get("MCVAR_DIV", "lseg")  # 배당 소스: lseg(연속, 기본)
 TAG = "" if DIV == "lseg" else "_" + DIV
 
 
-def label_path(name="mc_variants"):
+def label_path(name: str = "mc_variants") -> Path:
     """라벨 파일 경로.
 
     MCVAR_DIV 한 손잡이로 3스타(mc_variants)와 1·2스타(mc_variants12)를 **함께** 바꾼다 —
@@ -73,7 +76,7 @@ def label_path(name="mc_variants"):
     return fm.CACHE / "mcvar" / "{}{}.parquet".format(name, TAG)
 
 
-def state():
+def state() -> dict[str, Any]:
     """지연 적재 — import 만으로 데이터셋을 읽지 않는다.
 
     라벨 파일은 MCVAR_DIV(배당 소스)로 고르고, MCVAR_FILE 로 직접 지정하면 그쪽이 이긴다
@@ -107,7 +110,7 @@ def state():
     return _ST
 
 
-def make_D(var):
+def make_D(var: str) -> SimpleNamespace:
     """변형의 stage-1 번들을 만든다. 정본 D 를 **얕게 복사**해 MC 입력만 갈아끼운다.
 
     얕은 복사이므로 CON·ml 같은 공통 배열은 정본과 같은 객체를 가리킨다 — 돌려받은 D 의
@@ -143,7 +146,9 @@ def make_D(var):
     return D
 
 
-def oos_sample(per_struct=500, seed=0):
+def oos_sample(
+    per_struct: int = 500, seed: int = 0
+) -> tuple[SimpleNamespace, pd.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
     """구조별 층화 OOS 표본을 뽑는다 — 계약조건 민감도의 기준 표본.
 
     층화하는 이유는 구조별 표본 수가 10배 이상 차이 나기 때문이다. 단순 무작위로 뽑으면
