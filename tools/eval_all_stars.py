@@ -42,6 +42,11 @@ M = [("Direct+m (1·2·3)", "ball_d", False, False, "#1f6f9c"),
      ("Resid+f+m (1·2·3)", "ball_fm", True, True, "#2a9d8f"),
      ("Resid+f+m (3star only)", "ball3_fm", True, True, "#b07cc6"),
      ("Direct+f+m (1·2·3)", "ball_dm", False, True, "#f0c05a")]
+# 헤드라인 그림: 3스타에서 기준 모형과 표형 벤치마크 둘만. 패널은 R²·MAPE 두 개로 고정한다
+# (MAE·RMSE 등 나머지 지표는 allstar_level.csv 로만 보고한다).
+HEADLINE = ("Direct+f+m (1·2·3)", "XGBoost (1·2·3)")
+HEADLINE_PANELS = ("R2", "MAPE")
+
 SHORT = ["Direct+m\n(trained 1·2·3)", "Direct+m\n(trained 3★ only)",
          "XGBoost\n(trained 1·2·3)", "XGBoost\n(trained 3★ only)",
          "Resid+f+m\n(trained 1·2·3)", "Resid+f+m\n(trained 3★ only)",
@@ -188,9 +193,46 @@ def main():
     fig.suptitle("Stage-1 extended to 1- and 2-underlying ELS  (same folds, 5 seeds; "
                  "V_base padded to 3 slots by duplication)", fontsize=12.5, y=1.02)
     fig.tight_layout(); fig.savefig(fm.image("allstar")); plt.close(fig)
+    headline_fig(LV)
     print()
-    print("saved -> allstar.png ({:.0f}s)".format(time.time() - t0))
+    print("saved -> allstar.png, headline_3star.png ({:.0f}s)".format(time.time() - t0))
 
 
 if __name__ == "__main__":
     main()
+
+
+def headline_fig(LV):
+    """3스타 · 기준 모형 vs 표형 벤치마크 · R²와 MAPE 두 패널.
+
+     README 가 내세우는 그림이다. 수치는 allstar_level.csv 의 group=3star 행 그대로 —
+     막대는 단일 모형 5시드 평균, 오차막대는 같은 시드들의 SE 다. 그림 글자는 전부 영어."""
+    T = LV[(LV.group == "3star") & (LV.model.isin(HEADLINE))].set_index("model")
+    if len(T) != len(HEADLINE):
+        print("headline_fig 건너뜀 — 3스타 행이 없다")
+        return
+    col = {HEADLINE[0]: "#f0c05a", HEADLINE[1]: "#8d99ae"}
+    lab = {HEADLINE[0]: "DeepONet\nDirect + V_base + mono",
+           HEADLINE[1]: "XGBoost\n(same inputs)"}
+    spec = [("R2", "R²  (vs MC price)", "Explained variance", "{:.4f}", 1.0),
+            ("MAPE", "OOS MAPE  [%]", "Relative error", "{:.3f}%", None)]
+    fig, ax = plt.subplots(1, 2, figsize=(10.5, 4.2))
+    for a, (key, ylab, title, fmt, top) in zip(ax, spec):
+        v = [float(T.at[m, key]) for m in HEADLINE]
+        e = [float(T.at[m, key + "_se"]) for m in HEADLINE]
+        b = a.bar(range(len(HEADLINE)), v, .55, yerr=e, capsize=4,
+                  color=[col[m] for m in HEADLINE], edgecolor="white", lw=.8)
+        for r, val in zip(b, v):
+            a.text(r.get_x() + r.get_width() / 2, val, fmt.format(val),
+                   ha="center", va="bottom", fontsize=11, fontweight="bold")
+        a.set_xticks(range(len(HEADLINE)))
+        a.set_xticklabels([lab[m] for m in HEADLINE], fontsize=9.5)
+        a.set_ylabel(ylab)
+        a.set_title(title, fontsize=12.5, fontweight="bold")
+        a.grid(axis="y", color="#dddddd", lw=.5, alpha=.6)
+        a.margins(y=.18)
+        if top:
+            a.set_ylim(0, top)
+    fig.suptitle("3-star ELS — stage-1 accuracy  (n={:,}, mean of 5 single models ± 1 SE)".format(
+        int(T.n.iloc[0])), fontsize=13, fontweight="bold", y=1.02)
+    fig.tight_layout(); fig.savefig(fm.image("headline_3star")); plt.close(fig)
