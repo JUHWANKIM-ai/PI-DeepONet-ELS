@@ -21,9 +21,12 @@
 """
 import sys
 import time
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,7 +59,9 @@ COLS = [
 ]
 
 
-def decomp_row(r, ret, cal):
+def decomp_row(
+    r: pd.Series, ret: dict[str, pd.Series], cal: pd.DatetimeIndex
+) -> dict[str, Any] | None:
     """상품 하나의 5개 가격 + 입력 요약. 시장입력이 하나라도 없으면 None."""
     dt = pd.Timestamp.fromordinal(int(r["isu_ord"]))
     tks = [r["udl1"], r["udl2"], r["udl3"]]
@@ -80,7 +85,12 @@ def decomp_row(r, ret, cal):
         n=NPATH, seed=int(r["mc_seed"]), c=float(r["coupon"]), pmts=pmts, lz_barr=lzb, lz_pmt=lzp
     )
 
-    def px(sig, beta, div=False, disc=None):
+    def px(
+        sig: Sequence[float],
+        beta: np.ndarray | Callable[[npt.ArrayLike], np.ndarray],
+        div: bool = False,
+        disc: np.ndarray | Callable[[npt.ArrayLike], np.ndarray] | None = None,
+    ) -> float:
         """div=False 가 q=0 기준선 — 배당 성분은 div=True 와의 차이로 잰다."""
         return float(
             ME.mc_daily_t(
@@ -106,7 +116,7 @@ def decomp_row(r, ret, cal):
     )
 
 
-def components(B):
+def components(B: pd.DataFrame) -> pd.DataFrame:
     """노트북 3 과 같은 분해 (원 단위)."""
     return pd.DataFrame(
         {
@@ -120,7 +130,7 @@ def components(B):
     )
 
 
-def run(items=None, n=200):
+def run(items: Iterable[str] | None = None, n: int = 200) -> pd.DataFrame:
     """상품을 골라 요인분해를 돌리고 표를 만든다.
 
     입력
@@ -151,7 +161,7 @@ def run(items=None, n=200):
     return pd.DataFrame(rows)[COLS], time.time() - t0
 
 
-def build(n=200):
+def build(n: int = 200) -> pd.DataFrame:
     """등간격 표본으로 새로 산출.
 
     발행일 순으로 len//n 간격의 자리를 잡고, 그 자리 상품의 시장입력이 없으면 **다음 행으로 밀어서**
@@ -178,7 +188,7 @@ def build(n=200):
     return T
 
 
-def verify():
+def verify() -> pd.DataFrame:
     """기존 CSV 의 상품을 다시 가격해 열별로 대조 (생성기가 그 파일을 만들 수 있는지)."""
     O = pd.read_csv(fm.stat(NAME), encoding="utf-8-sig")
     T, el = run(items=O.item.values)

@@ -11,6 +11,7 @@
 실행: python generate/eval_all_stars.py
 """
 import sys, time
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 import numpy as np, pandas as pd
@@ -78,7 +79,7 @@ SHORT = [
 ]
 
 
-def met(p, y):
+def met(p: np.ndarray, y: np.ndarray) -> dict[str, float]:
     """수준 지표 여섯 개를 한 번에 낸다 (`util.metric.metrics` 의 원 단위 판).
 
     MAPE 의 분모를 클램프하지 않는다 — 이 저장소의 가격은 원 단위 수천이라 0 에 닿지 않는다.
@@ -101,8 +102,14 @@ def met(p, y):
     )
 
 
-def main():
-    """7종 모형을 스타별로 평가해 allstar_level/slope/slope_raw.csv 와 allstar.png 를 만든다."""
+def main() -> pd.DataFrame:
+    """7종 모형을 스타별로 평가해 allstar_level/slope/slope_raw.csv 와 allstar.png 를 만든다.
+
+    입력
+      없음 (번들·가중치·V_base 캐시를 읽는다)
+    출력
+      DataFrame — 수준 지표 표 (`allstar_level.csv` 로도 저장된다)
+    """
     t0 = time.time()
     D = A.make_all()
     vb = A.vbase_all(D)
@@ -113,7 +120,7 @@ def main():
         fold[te] = k
     _dc = {}
 
-    def don(p, s, k):
+    def don(p: str, s: int, k: int) -> Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
         """(접두사, 시드, 폴드) 예측기를 캐시해 돌려준다 — 1,500행 격자에서 매번 load 하면 느리다.
 
         접두사가 "_xgb" 로 끝나면 XGB 앵커(.pkl), 아니면 DeepONet(.pt) 이다.
@@ -232,7 +239,7 @@ def main():
             if not len(z):
                 continue
 
-            def _slope(col):
+            def _slope(col: pd.Series) -> float:
                 """섭동 격자의 양 끝 수준을 이어 기울기를 낸다 (회귀가 아니라 끝점 차이).
 
                 배리어는 1.0 수준(노낙인)을 뺀다 — 구조가 달라져 같은 선상에 둘 수 없다.
@@ -353,7 +360,7 @@ def main():
     print("saved -> allstar.png, headline_3star.png ({:.0f}s)".format(time.time() - t0))
 
 
-def headline_fig(LV):
+def headline_fig(LV: pd.DataFrame) -> None:
     """3스타 · 기준 모형 vs 표형 벤치마크 · R²와 MAPE 두 패널.
 
     README 가 내세우는 그림이다. 수치는 allstar_level.csv 의 group=3star 행 그대로 —

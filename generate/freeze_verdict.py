@@ -17,6 +17,7 @@ import json
 import sys
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -35,7 +36,7 @@ NOTES = (
 )
 
 
-def build():
+def build() -> dict[str, Any]:
     """판정 근거 세 묶음을 모아 픽스처용 dict 를 만든다.
 
     입력
@@ -98,7 +99,7 @@ def build():
     }
 
 
-def main():
+def main() -> dict[str, Any]:
     """근거를 만들어 tests/fixtures/raw_run_verdict.json 에 쓰고 요약을 찍는다.
 
     입력

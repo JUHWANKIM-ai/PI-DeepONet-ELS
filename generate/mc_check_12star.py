@@ -10,8 +10,10 @@ generate/build_mc_variants.py 의 star12 모드와 동일하고, 계약만 CS.GR
 실행: python generate/mc_check_12star.py [스타당 상품수]
 """
 import os, sys, time
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
+from typing import Any
 import numpy as np, pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -35,7 +37,7 @@ KBD = MK.calendar(RET)
 REN = {"BARR_1/100": "B", "ANL_RTRN/100": "coupon", "TENOR": "tenor"}
 
 
-def exact_dup_corr(C, ts):
+def exact_dup_corr(C: np.ndarray, ts: Sequence[str]) -> np.ndarray:
     """중복 슬롯 쌍의 상관을 정확히 1.0 으로 복원 (corr_bd 가 0.999 로 자른 것)."""
     C = np.array(C, float, copy=True)
     for a in range(3):
@@ -46,7 +48,7 @@ def exact_dup_corr(C, ts):
     return C
 
 
-def con_of(row):
+def con_of(row: pd.Series) -> np.ndarray:
     """원천 행 -> CONTRACT(51) 벡터 (리자드 결측은 중립값)."""
     v = []
     for c in CONTRACT:
@@ -61,7 +63,7 @@ def con_of(row):
     return np.array([v], dtype="float32")
 
 
-def market_of(row):
+def market_of(row: pd.Series) -> dict[str, Any] | None:
     """그 상품의 MC 시장입력. 실패하면 None."""
     dt = pd.Timestamp(date.fromordinal(int(row["isu_ord"])))
     ts = [row["udl1"], row["udl2"], row["udl3"]]
@@ -80,7 +82,7 @@ def market_of(row):
     return dict(sig=sig, corr=exact_dup_corr(C, ts), dz=dz, dkw=got[0])
 
 
-def price_con(CONv, mk, row, nobs):
+def price_con(CONv: np.ndarray, mk: dict[str, Any], row: pd.Series, nobs: int) -> float:
     """CONTRACT 벡터 하나를 MC 로 가격. 스케줄은 CON 에서 되읽는다."""
     k = int(nobs)
     strikes = [float(CONv[0, CONTRACT.index("strk_{}".format(j))]) for j in range(k)]
@@ -108,7 +110,7 @@ def price_con(CONv, mk, row, nobs):
     )
 
 
-def main(nper=12):
+def main(nper: int = 12) -> pd.DataFrame:
     """스타별 섭동 격자 MC 참값을 만들어 result/statistics/mc_check_allstar.csv 에 저장한다.
 
     nper: 스타당 기준상품 수 (리자드/스텝 절반씩)."""

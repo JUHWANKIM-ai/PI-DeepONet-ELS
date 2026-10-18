@@ -20,7 +20,9 @@ MC 선 대비 모델 선의 차이만 읽는다.
 실행: python generate/slope_cross_section.py
 """
 import sys, time
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 import numpy as np, pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,7 +59,9 @@ M = [
 _c = {}
 
 
-def pred(pre, kind, s, k):
+def pred(
+    pre: str, kind: str, s: int, k: int
+) -> Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
     """(접두사, 시드, 폴드) 예측기를 캐시해 돌려준다.
 
     입력
@@ -81,7 +85,9 @@ def pred(pre, kind, s, k):
     return _c[key]
 
 
-def ols_cluster(x, y, g):
+def ols_cluster(
+    x: np.ndarray, y: np.ndarray, g: np.ndarray
+) -> tuple[float, float, float, float, float, int, int]:
     """y = a + b x, 군집(g) 보정 표준오차. 반환 (b, se_b, a, se_a, R2, n, n_clu)."""
     X = np.c_[np.ones(len(x)), x]
     bet = np.linalg.lstsq(X, y, rcond=None)[0]
@@ -100,7 +106,7 @@ def ols_cluster(x, y, g):
     return bet[1], np.sqrt(V[1, 1]), bet[0], np.sqrt(V[0, 0]), r2, n, G
 
 
-def build_terms(D):
+def build_terms(D: SimpleNamespace) -> dict[str, np.ndarray]:
     """상품별 실제 계약조건 값. 리자드가 없는 상품은 리자드 항목이 NaN 이다."""
     nobs = np.asarray(D.nobs).astype(int)
     K = D.CON[:, CS.iS]
@@ -119,7 +125,7 @@ def build_terms(D):
     }
 
 
-def predictions(D):
+def predictions(D: SimpleNamespace) -> tuple[dict[str, np.ndarray], np.ndarray]:
     """실제 계약 그대로의 폴드별·5시드 평균 예측 (원 단위)."""
     vb = A.vbase_all(D)
     CONf = np.concatenate([D.CON, vb[:, None]], 1).astype("float32")
@@ -136,7 +142,7 @@ def predictions(D):
     return P, fold
 
 
-def groups(D, fold):
+def groups(D: SimpleNamespace, fold: np.ndarray) -> list[tuple[object, np.ndarray]]:
     """평가 묶음 네 개를 만든다 — 스타별 셋 + 전체.
 
     입력
@@ -154,8 +160,14 @@ def groups(D, fold):
     ]
 
 
-def main():
-    """OOS 전수 횡단면 기울기를 재어 xsec_slope.csv · xsec_resid.csv 를 만든다."""
+def main() -> pd.DataFrame:
+    """OOS 전수 횡단면 기울기를 재어 xsec_slope.csv · xsec_resid.csv 를 만든다.
+
+    입력
+      없음 (번들과 가중치를 읽는다)
+    출력
+      DataFrame — 기울기 표 (`xsec_slope.csv` 로도 저장된다)
+    """
     t0 = time.time()
     D = A.make_all()
     ref = build_terms(D)

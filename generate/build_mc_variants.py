@@ -12,8 +12,10 @@ stage-1 입력도 함께 저장: 자산별 σ(A: HV120, B: EWMA120) · 쌍별 �
                       |   combine <N>   |   fix   |   star12
 배당 소스는 MCVAR_DIV 환경변수 (yf 기본 = 이산, 정본 / lseg = 연속). 소스별로 파일명이 갈린다."""
 import os, sys, time
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
+from typing import Any
 import numpy as np, pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,7 +46,7 @@ _STAMP_KEY = b"els_label_stamp"
 STALE_KEYS = ("npath", "div", "px_source", "n_rows")  # 비교에 쓰는 키 (built_at 은 제외)
 
 
-def stamp_differs(got, want):
+def stamp_differs(got: dict[str, Any] | None, want: dict[str, Any] | None) -> bool:
     """두 스탬프가 다른가. **증명할 수 없으면 True** (= 낡은 것으로 본다).
 
     종전에는 같은 비교식이 네 곳에 복사돼 있었고, 스탬프가 없으면 전부 '최신' 으로 보고해
@@ -55,7 +57,7 @@ def stamp_differs(got, want):
     return any(str(got.get(k)) != str(want.get(k)) for k in STALE_KEYS)
 
 
-def stamp(n_rows=None):
+def stamp(n_rows: int | None = None) -> dict[str, Any]:
     """이 실행이 만든 라벨의 출처. 소비자는 이걸로 '낡음' 을 판단한다."""
     return {
         "npath": NPATH,
@@ -66,7 +68,7 @@ def stamp(n_rows=None):
     }
 
 
-def write_labeled(df, path, n_rows=None):
+def write_labeled(df: pd.DataFrame, path: str | Path, n_rows: int | None = None) -> None:
     """라벨 DataFrame 을 출처 스탬프와 함께 쓴다."""
     import json
     import pyarrow as pa
@@ -78,7 +80,7 @@ def write_labeled(df, path, n_rows=None):
     pq.write_table(t.replace_schema_metadata(meta), str(path))
 
 
-def read_stamp(path):
+def read_stamp(path: str | Path) -> dict[str, Any] | None:
     """저장된 출처. 스탬프가 없으면 None (스탬프 도입 이전 파일)."""
     import json
     import pyarrow.parquet as pq
@@ -96,7 +98,7 @@ RET = MK.returns()
 KBD = MK.calendar(RET)
 
 
-def price_row(i, r):
+def price_row(i: int, r: pd.Series) -> dict[str, Any]:
     """상품 한 행을 **두 변형으로 함께** 가격한다 — 같은 공통난수를 써서 차이를 입력 탓으로 돌린다.
 
     변형 A = NS 커브 · 단순 HV120 · 배당 없음, 변형 B = 부트스트랩 커브 · EWMA120(λ=0.99) ·
@@ -148,7 +150,7 @@ def price_row(i, r):
     return rec
 
 
-def run_shard(k, N, limit=None):
+def run_shard(k: int, N: int, limit: int | None = None) -> None:
     """이 샤드 몫(`[k::N]`)을 가격해 parquet 으로 쓴다. 중단 후 재개된다.
 
     500건마다 `.part.parquet` 에 중간 저장하고, 다시 돌리면 그 파일에서 이어 간다.
@@ -192,7 +194,7 @@ def run_shard(k, N, limit=None):
     print(f"shard {k}/{N} DONE {len(R):,} in {(time.time()-t0)/60:.1f}분", flush=True)
 
 
-def ensure_fail(R):
+def ensure_fail(R: pd.DataFrame) -> pd.DataFrame:
     """`fail` 열을 보장한다. price_row 는 실패했을 때만 그 열을 넣으므로, 전건 성공하면
     열이 아예 없는 프레임이 나오고 뒤쪽 `R["fail"].isna()` 가 KeyError 로 죽는다.
 
@@ -203,7 +205,7 @@ def ensure_fail(R):
     return R
 
 
-def combine(N):
+def combine(N: int) -> pd.DataFrame:
     """샤드 N 개를 합쳐 정본 라벨 파일을 쓴다 — **행 정렬을 상품코드로 증명한다**.
 
     샤드는 행 번호로 꽂히므로, 행 수와 `item` 순서가 둘 다 데이터셋과 맞아야 한다.
@@ -241,7 +243,7 @@ def combine(N):
 OUT12_NAME = "mc_variants12{}.parquet".format(TAG)
 
 
-def dataset12():
+def dataset12() -> pd.DataFrame:
     """els12_dataset (발행일 정렬) + 행번호 seed. mc_seed 열이 원천에 없어 여기서 만든다."""
     d = (
         pd.read_parquet(fm.DATA / "els12_dataset.parquet")
@@ -252,7 +254,7 @@ def dataset12():
     return d
 
 
-def dup_corr(C, ts):
+def dup_corr(C: np.ndarray, ts: Sequence[str]) -> np.ndarray:
     """중복 슬롯 쌍의 상관을 1.0 으로 복원. generate/mc_check_12star.exact_dup_corr 와 같은 규칙."""
     C = np.array(C, float, copy=True)
     for a in range(3):
@@ -263,7 +265,7 @@ def dup_corr(C, ts):
     return C
 
 
-def price_row12(i, r):
+def price_row12(i: int, r: pd.Series) -> dict[str, Any]:
     """1·2스타 한 행을 **변형 B 만** 가격한다 (`module/star.py` 가 B 라벨만 쓴다).
 
     중복 슬롯 쌍의 상관을 정확히 1.0 으로 되돌린다 — `corr_bd` 가 0.999… 로 자르는 것을
@@ -313,7 +315,7 @@ def price_row12(i, r):
     return rec
 
 
-def run12(limit=None):
+def run12(limit: int | None = None) -> None:
     """1·2스타 전건을 한 프로세스로 가격해 라벨 파일을 쓴다 (3스타와 달리 샤드로 나누지 않는다).
 
     500건마다 중간 저장하고 재개한다.
@@ -358,7 +360,7 @@ def run12(limit=None):
 STALE_DAYS = 14
 
 
-def fix():
+def fix() -> None:
     """실패 행 재계산(IRS 14일 규칙 적용 후) + 가격 신선도 표시.
     stale_px = 기초자산 중 하나라도 발행일 전 최신 수익률이 STALE_DAYS 일보다 오래됨 (가격 캐시가 2025-06-30 에 끊긴 34종목 등).
     stale_px 상품은 σ·상관이 오래된 가격으로 계산되므로 비교에서 제외한다."""
@@ -411,7 +413,7 @@ if __name__ == "__main__":
         )
 
 
-def _mark_path(path):
+def _mark_path(path: str | Path) -> Path:
     """산출물 경로에 대응하는 완료 표식 경로.
 
     입력
@@ -422,7 +424,7 @@ def _mark_path(path):
     return Path(str(path) + ".stamp.json")
 
 
-def mark_step(path):
+def mark_step(path: str | Path) -> None:
     """그 산출물이 **어떤 라벨로** 만들어졌는지 남긴다 (`<path>.stamp.json`).
 
     노트북 1 의 단계들은 전부 mc_seed 를 쓰므로 라벨이 바뀌면 같이 낡는다. 산출물마다
@@ -434,7 +436,7 @@ def mark_step(path):
     _mark_path(path).write_text(json.dumps(st or {}, ensure_ascii=False), encoding="utf-8")
 
 
-def step_stale(path):
+def step_stale(path: str | Path) -> bool:
     """지금 라벨로 그 단계를 다시 돌려야 하는가. 없거나 표식이 없거나 다르면 True."""
     import json
 

@@ -14,7 +14,9 @@
 실행: python generate/measure_source_switch.py [표본수]
 """
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import os
 
@@ -43,7 +45,7 @@ _UDLY_OF = {}
 IU = np.triu_indices(3, 1)
 
 
-def ret_new(tk):
+def ret_new(tk: str) -> pd.Series | None:
     """Underlying 가격 -> 로그수익률. module.mc.load_market 의 RET 과 같은 규약."""
     # **운영 경로와 같게 읽는다.** udly 를 안 넘기면 UDLY_ID 로만 해석되는 기초자산
     # (^SX7E)이 빠져, 가격계열 교체를 판정하는 측정이 그 교체로 들어온 상품을 제외하게 된다.
@@ -51,7 +53,9 @@ def ret_new(tk):
     return None if s is None else np.log(s).diff()
 
 
-def _inputs(rets, dt, cal):
+def _inputs(
+    rets: Sequence[pd.Series], dt: pd.Timestamp, cal: pd.DatetimeIndex
+) -> tuple[list[float], np.ndarray] | tuple[None, None]:
     """(평균 σ, 상관행렬, 평균 ρ, 자산별 σ). 하나라도 못 만들면 전부 None."""
     sig = [F.vol_ewma_lam(r, dt) for r in rets]
     corr, _ = F.corr_bd(rets, dt, cal)
@@ -61,7 +65,7 @@ def _inputs(rets, dt, cal):
     return float(np.mean(sig)), corr, rho, sig
 
 
-def _load_udly_map():
+def _load_udly_map() -> dict[str, str]:
     """티커 -> UDLY_ID. 한 티커에 여러 ID 가 붙으면 첫 것을 쓴다 (가격 파일은 같다)."""
     import json
 
@@ -73,7 +77,7 @@ def _load_udly_map():
             _UDLY_OF[tk] = uid
 
 
-def measure(nprod=200):
+def measure(nprod: int = 200) -> pd.DataFrame:
     """요인별 영향 표. 지수전용과 개별회사포함을 절반씩 담는다.
 
     **구 계열은 PX_SOURCE=cache 로 못박아 읽는다.** 이 도구의 존재 이유가 구/신 가격계열을
@@ -127,7 +131,7 @@ def measure(nprod=200):
         base = (float(r["B"]), k, float(r["tenor"]))
         kw = dict(seed=int(r["mc_seed"]), c=float(r["coupon"]), pmts=p, lz_barr=lb, lz_pmt=lp)
 
-        def px(sig, corr, n, **dkw):
+        def px(sig: Sequence[float], corr: np.ndarray, n: int, **dkw: Any) -> float:
             """이 상품을 주어진 변동성·상관·배당으로 가격한다 (원 단위).
 
             커브·계약·공통난수는 바깥에서 고정했으므로, 바뀌는 것은 인자로 준 것뿐이다 —
@@ -162,7 +166,7 @@ def measure(nprod=200):
     return pd.DataFrame(rows)
 
 
-def report(T):
+def report(T: pd.DataFrame) -> None:
     """요인별 변화를 지수전용 / 개별회사포함으로 나눠 출력."""
     pd.set_option("display.width", 200)
     print(

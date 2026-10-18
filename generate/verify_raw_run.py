@@ -34,6 +34,7 @@ TIGHT 0.10원(최대 0.49) · IDX 8.15원 · OTHER 24.59원 이다.
 """
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -82,7 +83,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "raw_run_verdict.json"  # 기준선 삭�
 BOOT = 2000  # px_mad 신뢰구간용 부트스트랩 반복 (분포가 우측으로 길다)
 
 
-def _subset_of(row):
+def _subset_of(row: pd.Series) -> str:
     """상품 하나를 TIGHT / IDX / OTHER 중 하나로."""
     tks = {row["udl1"], row["udl2"], row["udl3"]}
     if tks <= TIGHT:
@@ -90,7 +91,7 @@ def _subset_of(row):
     return "IDX" if tks <= IDX else "OTHER"
 
 
-def _level(path):
+def _level(path: str | Path) -> pd.DataFrame | None:
     """nb_training_level.csv 의 ALL · 통합학습 행에서 (R2, MAPE). 없으면 (nan, nan)."""
     if not Path(path).exists():
         return np.nan, np.nan
@@ -101,7 +102,7 @@ def _level(path):
     return float(r.R2.iloc[0]), float(r.MAPE.iloc[0])
 
 
-def px_effect():
+def px_effect() -> dict[str, tuple[int, float, float, float, float]]:
     """부분집합 -> (n, 평균|차이|, 편향). 공통난수로 MC 잡음이 상쇄된 가격계열 단독 효과.
 
     Task 1 이 같은 시드·같은 경로 수로 `mc_base`(구 가격계열)와 `mc_px`(신 가격계열)를
@@ -148,7 +149,7 @@ def px_effect():
     return out
 
 
-def _fixture():
+def _fixture() -> dict[str, Any] | None:
     """고정된 판정 근거. 없으면 None."""
     import json
 
@@ -157,7 +158,7 @@ def _fixture():
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 
-def _frozen_table():
+def _frozen_table() -> pd.DataFrame | None:
     """기준선 스냅샷이 사라진 뒤의 대조표 — generate/freeze_verdict.py 가 고정한 값에서 만든다.
 
     재계산이 아니라 **기록된 판정 근거**다. frozen 열로 그 사실을 표에 남긴다."""
@@ -202,7 +203,7 @@ def _frozen_table():
     return pd.DataFrame(rows)[COLS]
 
 
-def compare():
+def compare() -> pd.DataFrame:
     """세 부분집합의 MC 라벨 대조표. 열은 COLS 로 고정."""
     if not (BASE / "cache" / "mcvar" / OLD_LABEL).exists():
         return _frozen_table()  # 스냅샷이 삭제됐다 — 고정 근거로 판정한다
@@ -277,7 +278,7 @@ def compare():
 GATE = {"TIGHT": 5.0, "IDX": 10.0}  # px_mad 상한 (원). 계획서의 판정선을 그대로 쓴다.
 
 
-def _residual_note(r):
+def _residual_note(r: pd.Series) -> str:
     """라벨차와 잡음기대의 차이를 설명하거나 미설명분으로 밝힌다.
 
     EXP_MAD 의 두 입력은 40만 경로 **준참값 대비** 측정치라 기준 자체의 분산을 이미 품고 있다.
@@ -297,7 +298,7 @@ def _residual_note(r):
     )
 
 
-def verdict(T):
+def verdict(T: pd.DataFrame) -> bool | None:
     """부분집합별 (판정, 설명). True 통과 · None 미결론/기준없음 · False 미달.
 
     판정량은 px_mad — 공통난수로 MC 잡음이 상쇄된 가격계열 단독 효과다.
@@ -342,7 +343,7 @@ def verdict(T):
     return out
 
 
-def _all_row(path):
+def _all_row(path: str | Path) -> pd.Series | None:
     """nb_training_level.csv 의 ALL · 통합학습 행. 없으면 None."""
     if not Path(path).exists():
         return None
@@ -351,7 +352,7 @@ def _all_row(path):
     return r.iloc[0] if len(r) else None
 
 
-def model_verdict():
+def model_verdict() -> list[dict[str, Any]]:
     """지표 -> (판정, z, 설명). **2표본 검정**이다.
 
     구본 성능도 시드 5개의 추정값이므로 참값처럼 쓸 수 없다. 계획서는 구본 SE 만으로
@@ -425,7 +426,7 @@ def model_verdict():
     return out
 
 
-def main():
+def main() -> None:
     """재현 판정을 모아 CSV 로 쓰고 사람이 읽을 표를 찍는다.
 
     입력

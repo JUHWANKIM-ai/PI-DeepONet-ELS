@@ -15,7 +15,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "1_MC_pricer.ipynb"
 
 
-def _src(t):
+from typing import Any
+
+
+def _src(t: str) -> list[str]:
     """nbformat 의 source 는 줄끝 개행을 포함한 줄 목록이다 — 빼면 전부 이어붙는다.
 
     입력
@@ -26,7 +29,7 @@ def _src(t):
     return [l + "\n" for l in t.split("\n")[:-1]] + [t.split("\n")[-1]]
 
 
-def md(t):
+def md(t: str) -> dict[str, Any]:
     """마크다운 셀 하나를 만든다.
 
     입력
@@ -37,7 +40,7 @@ def md(t):
     return {"cell_type": "markdown", "metadata": {}, "source": _src(t.strip())}
 
 
-def code(t):
+def code(t: str) -> dict[str, Any]:
     """코드 셀 하나를 만든다 — 출력은 비워 둔다 (nbconvert 가 실행하며 채운다).
 
     입력

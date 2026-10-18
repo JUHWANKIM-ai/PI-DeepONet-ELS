@@ -13,6 +13,7 @@ module.build_source 와 **같은 스키마**를 만든다 (+ nstar 열).
 실행: python generate/build_12star.py
 """
 import sys, json, time, bisect
+from collections.abc import Sequence
 from pathlib import Path
 import numpy as np, pandas as pd
 
@@ -33,7 +34,7 @@ from module.schedule import load_schedules, NSTRK, SCHED_COLS
 from util import file_manager as fm
 
 
-def pad3(ts):
+def pad3(ts: Sequence[str]) -> list[str]:
     """기초자산 티커를 3슬롯으로 중복 패딩한다.
 
     worst-of 는 min 이므로 중복 슬롯은 값에 영향이 없다. 중복쌍의 상관은 1.0 이 되는데,
@@ -51,7 +52,7 @@ def pad3(ts):
     return list(ts)[:3]
 
 
-def mom6m(rets, dt, win=126):
+def mom6m(rets: Sequence[pd.Series | None], dt: pd.Timestamp, win: int = 126) -> float:
     """발행 전 win 거래일 누적 로그수익률의 평균 (6개월 모멘텀).
 
     `module.build_source._mom6m` 과 같은 정의다 — 1·2스타도 같은 스키마를 만들어야 해서
@@ -75,7 +76,7 @@ def mom6m(rets, dt, win=126):
     return float(np.mean(vals)) if vals else 0.0
 
 
-def main():
+def main() -> pd.DataFrame:
     """1·2스타 데이터셋을 만들어 data/els12_dataset.parquet 에 저장한다.
 
     `module.build_source` 와 **같은 스키마**에 nstar 열만 더한다. 노트북에서도 부를 수 있다.

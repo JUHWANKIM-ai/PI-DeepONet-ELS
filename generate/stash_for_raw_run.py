@@ -25,7 +25,7 @@ KINDS = ("cache", "models", "statistics", "predictions", "image", "datasets")
 DATASET_FILES = ("els3_dataset.parquet", "els12_dataset.parquet", "ml.csv", "deeponet.csv")
 
 
-def _move_dir_contents(src, dst):
+def _move_dir_contents(src: Path, dst: Path) -> int:
     """src 안의 항목을 dst 로 옮기고 개수를 센다. **src 디렉터리 자체는 남긴다**.
 
     디렉터리를 지우면 파이프라인이 "경로가 없다" 로 죽어, 재현이 아니라 설정 오류가 된다.
@@ -46,7 +46,7 @@ def _move_dir_contents(src, dst):
     return n
 
 
-def stash(dst):
+def stash(dst: str | Path) -> dict[str, int]:
     """산출물을 dst 로 옮기고 범주별 개수를 돌려준다.
 
     입력
