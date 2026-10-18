@@ -350,7 +350,7 @@ module/                  # 데이터 + 특성/MC 엔진 + 네트워크 + 학습 
 util/                    # file_manager(경로), utils(설정/시드), metric, plot, speed
 data/                    # cache/ 와 raw/ 만 추적 대상 입력(아래 참고)
 result/                  # predictions/, image/, statistics/, models/(폴드별 저장 가중치)
-paper/                   # 참고 논문 인용목록 (PDF 는 추적하지 않는다)
+paper/                   # 참고 논문 (추적하지 않는다 — 목록은 아래 참고문헌 절)
 ```
 
 ### 데이터 — 추적 대상 vs 재생성 대상
@@ -457,7 +457,8 @@ jupyter nbconvert --to notebook --execute --inplace 3_visualization.ipynb
 
 ## 참고문헌
 
-PDF 는 출판사 저작물이라 저장소에 올리지 않는다. 인용 정보는 `paper/Citation.txt` 에 있다.
+PDF 는 출판사 저작물이라 저장소에 올리지 않는다 (`paper/` 는 추적 대상이 아니다).
+아래 목록이 인용 정보 전부다.
 
 1. Lu et al. "Learning nonlinear operators via DeepONet based on the universal approximation theorem of operators." *Nature Machine Intelligence* 3.3 (2021): 218–229.
 2. Wang, Wang, Perdikaris. "Learning the solution operator of parametric PDEs with physics-informed DeepONets." *Science Advances* 7.40 (2021): eabi8605.
