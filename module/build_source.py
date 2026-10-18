@@ -27,7 +27,15 @@ TEN_LO, TEN_HI = 0.5, 5.0
 def encode_barrier(ki_yn, barr_pct):
     """낙인형: BARR_1/100. 노낙인: 1.0.
     1.0 은 '만기 미상환이면 항상 worst 수취' 를 뜻하고, 엔진이 B>=1.0 을 명시적으로 always-KI 로 처리한다.
-    노낙인인데 BARR_1 이 붙은 상품이 1건 있으나 KNCK_IN_YN 을 신뢰한다."""
+    노낙인인데 BARR_1 이 붙은 상품이 1건 있으나 KNCK_IN_YN 을 신뢰한다.
+
+    입력
+      ki_yn    : int — 낙인 여부 (1=낙인). 이 값이 BARR_1 보다 우선한다
+      barr_pct : float — raw BARR_1 (**퍼센트**). 낙인형에서만 쓰인다
+    출력
+      float — 낙인형이면 barr_pct/100, 노낙인이면 1.0.
+              낙인형인데 barr_pct 가 결측이면 np.nan → 호출부가 탈락시킨다
+    """
     if int(ki_yn) == 1:
         return float(barr_pct) / 100.0 if pd.notna(barr_pct) else np.nan
     return 1.0
@@ -40,7 +48,16 @@ def needs_linear_pmt(pmts, c, ten, nonmono):
     (2) 마지막 누적 지급률이 c*tenor 의 절반에도 못 미침 = 월지급형 등 '쿠폰 미기재'.
         이걸 그대로 쓰면 쿠폰이 통째로 빠져 mc 가 액면 대비 약 570원 낮아진다(실측).
     반대 방향(스케줄이 c*tenor 보다 많이 지급, 예: ANL_RTRN=0 인데 스케줄엔 지급률 있음)은
-    스케줄이 정답이므로 건드리지 않는다."""
+    스케줄이 정답이므로 건드리지 않는다.
+
+    입력
+      pmts     : list[float] — 유효 회차의 누적 지급률. 마지막 값만 본다
+      c        : float — 계약 연쿠폰 (소수). 0 이하면 판정하지 않는다
+      ten      : float — 만기 [년]. 0 이하면 판정하지 않는다
+      nonmono  : bool — 누적 지급률이 비단조인가 (`schedule.build_schedules` 의 pmt_nonmono)
+    출력
+      bool — True 면 선형 c·t 로 대체해야 한다
+    """
     if nonmono:
         return True
     if c <= 0 or ten <= 0:
@@ -49,7 +66,14 @@ def needs_linear_pmt(pmts, c, ten, nonmono):
 
 
 def structure_mask(ac, three_index):
-    """3-star ∧ KRW ∧ (OPT_TYPE, KNCK_IN_YN) ∈ STRUCTS ∧ 공정가/만기 범위."""
+    """유니버스 필터 — 3-star ∧ KRW ∧ 4구조 ∧ 공정가·만기 범위.
+
+    입력
+      ac          : DataFrame — raw AUTO_CALL (fair · tenor 열이 이미 계산돼 있어야 한다)
+      three_index : Index | 집합 — 기초자산이 정확히 3종인 ITEM_CD 목록
+    출력
+      Series(bool) — ac 와 같은 인덱스. 공정가는 [0.70, 1.05], 만기는 [0.5, 5.0] 으로 자른다
+    """
     struct = pd.Series(False, index=ac.index)
     for o, k in STRUCTS:
         struct |= ac["OPT_TYPE"].eq(o) & ac["KNCK_IN_YN"].eq(k)
@@ -63,7 +87,16 @@ def structure_mask(ac, three_index):
 
 
 def _mom6m(rets, dt, win=126):
-    """발행 전 win 거래일 누적 로그수익률의 3자산 평균. 자료 부족이면 0.0."""
+    """발행 전 win 거래일 누적 로그수익률의 3자산 평균 (6개월 모멘텀).
+
+    입력
+      rets : list[Series | None] — 자산별 일별 로그수익률
+      dt   : Timestamp — 발행일. **이 날짜 이전**만 본다
+      win  : int — 창 길이 [거래일]. 기본 126 ≈ 6개월
+    출력
+      float — 세 자산 누적수익률의 평균.
+              계열이 하나라도 없거나 표본이 40 미만이면 **0.0** (NaN 이 아니다 — 피처라서다)
+    """
     vals = []
     for r in rets:
         if r is None:
@@ -80,7 +113,15 @@ def load_inputs(verbose=False):
 
     반환 필드: mapping, RET(티커→로그수익률), KRW, SCHED, u3map, barr_pct, cand(후보 행).
     가격은 `module.mc.returns_by_ticker` 한 곳에서만 적재한다 (PX_SOURCE 기본값 underlying).
-    그 밖의 경로는 호출 시점의 fm.DATA / fm.RAW 를 본다 (테스트에서 monkeypatch 가능)."""
+    그 밖의 경로는 호출 시점의 fm.DATA / fm.RAW 를 본다 (테스트에서 monkeypatch 가능).
+
+    입력
+      verbose : bool — True 면 4구조 후보 수와 구조별 분포를 찍는다
+    출력
+      SimpleNamespace — mapping · RET(티커→로그수익률) · KRW(call·m3·y10) ·
+                        SCHED(스케줄 표) · u3map(ITEM_CD→UDLY_ID 목록) ·
+                        barr_pct(ITEM_CD→BARR_1 최소) · cand(필터 통과 후보 행)
+    """
     RAW = fm.RAW
     mapping = json.loads((RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
     RET = MCM.returns_by_ticker(mapping)  # 가격 적재는 module.mc 한 곳에서만
@@ -114,7 +155,20 @@ def eligibility(it, rw, inp):
     """상품 하나가 빌드 가능한지 판정. 반환 (ctx, drop_reason).
 
     통과하면 (SimpleNamespace(...), None), 탈락하면 (None, "사유 문자열").
-    사유 문자열이 그대로 drops 집계 키가 되므로 여기가 탈락 분류의 유일한 정의다."""
+    사유 문자열이 그대로 drops 집계 키가 되므로 여기가 탈락 분류의 유일한 정의다.
+
+    입력
+      it  : str — ITEM_CD
+      rw  : Series — 그 상품의 AUTO_CALL 행
+      inp : SimpleNamespace — `load_inputs` 의 출력
+    출력
+      (ctx, None) 또는 (None, reason)
+        ctx    : SimpleNamespace — ts · rets · dt · sigs · corr · srow · nobs_ ·
+                 strikes · B · c · ten · beta. `make_record` 가 이것만 읽는다
+        reason : str — "티커 매핑 실패" | "가격이력 없음" | "180일 변동성 부족" |
+                 "180일 상관 부족" | "스케줄: <사유>" | "리자드 FROM_PREV" |
+                 "배리어/쿠폰/만기 결측" | "KRW 커브 결측"
+    """
     ts = [inp.mapping.get(x) for x in inp.u3map.get(it, [])]
     if len(ts) != 3 or any(t is None for t in ts):
         return None, "티커 매핑 실패"
@@ -164,7 +218,20 @@ def eligibility(it, rw, inp):
 
 
 def make_record(it, rw, ctx):
-    """통과한 상품 하나 → els3_dataset 한 행. eligibility 가 돌려준 ctx 만 읽는다."""
+    """통과한 상품 하나 → els3_dataset 한 행. eligibility 가 돌려준 ctx 만 읽는다.
+
+    변동성·상관은 **정렬해서** 담는다 (자산 슬롯에 이름이 없으므로). 스케줄이 계약 쿠폰을
+    담지 못한 상품은 여기서 선형 c·t 로 덮어쓰고 `pmt_linear=1` 로 표시한다.
+
+    입력
+      it  : str — ITEM_CD
+      rw  : Series — 그 상품의 AUTO_CALL 행
+      ctx : SimpleNamespace — `eligibility` 의 출력
+    출력
+      dict — els3_dataset 한 행. 보조피처 + branch(sig/rho/sig_eff/u0~9/r/curve 3종) +
+             fair + 구조(opt_type·ki_yn) + 기초자산(udl1~3·udl_key) +
+             스케줄 48열 + pmt_linear. item · isu_ord 포함
+    """
     srow, nobs_, strikes = ctx.srow, ctx.nobs_, ctx.strikes
     B, c, ten, dt = ctx.B, ctx.c, ctx.ten, ctx.dt
     u = F.krw_curve_nodes(ctx.beta)
@@ -252,7 +319,15 @@ def make_record(it, rw, ctx):
 
 
 def _recent_mktvol(df):
-    """발행 전 90일 발행분의 평균 sig_mean (인과적). 선행 발행분이 없으면 자기 값."""
+    """발행 전 90일 발행분의 평균 sig_mean (인과적).
+
+    같은 발행일 상품은 **서로를 보지 않는다** (bisect_left 로 자기 날짜 앞까지만 자른다).
+
+    입력
+      df : DataFrame — isu_ord 오름차순이어야 한다. isu_ord · sig_mean 열을 본다
+    출력
+      ndarray(n,) float32 — 선행 90일 발행분이 없으면 그 앞 전체 평균, 그것도 없으면 자기 값
+    """
     o = df["isu_ord"].tolist()
     sm = df["sig_mean"].values
     rmv = np.zeros(len(df))
@@ -267,7 +342,17 @@ def build_source(save=True, verbose=True, strict=False):
     """후보를 돌며 eligibility → make_record 로 els3_dataset 을 조립한다.
 
     탈락 사유 집계는 반환 DataFrame 의 .attrs["drops"] 에 담는다 (종전에는 print 로만 나갔다).
-    strict=True 면 행 단위 예외를 삼키지 않고 그대로 올린다 — 디버깅용."""
+
+    입력
+      save    : bool — True 면 data/els3_dataset.parquet 로 저장한다
+      verbose : bool — 진행·구조별 분포·탈락 사유를 찍는다
+      strict  : bool — True 면 행 단위 예외를 삼키지 않고 그대로 올린다 (디버깅용).
+                False 면 "예외: <타입>" 으로 집계만 하고 그 행을 버린다
+    출력
+      DataFrame — 발행일 오름차순. recent_mktvol 과 mc_seed 가 붙는다.
+                  mc_seed 는 **상품 내용에서 유도**한 값이라 MC 를 돌리지 않아도 정해진다.
+                  .attrs["drops"] 에 탈락 사유별 건수
+    """
     inp = load_inputs(verbose=verbose)
     drops = {}
     rows = []

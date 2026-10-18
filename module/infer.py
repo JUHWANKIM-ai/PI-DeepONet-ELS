@@ -15,11 +15,28 @@ from model.stage2 import load_xgb_resid, load_don_resid, load_ml_resid
 
 
 def _mp(name, k):
+    """폴드별 가중치 경로 접두. `pipeline._mp` 와 같은 규약이지만 **디렉터리를 만들지 않는다**.
+
+    여기는 읽기 전용 경로라서다 — 없는 경로면 로더가 FileNotFoundError 를 올려야 한다.
+
+    입력
+      name : str — 모델 이름
+      k    : int — 폴드 번호
+    출력
+      str — "result/models/<name>_fold<k>" (확장자 없음)
+    """
     return str(fm.RESULT / "models" / f"{name}_fold{k}")
 
 
 def _load_xgb_anchor(D, path):
-    """benchmark._xgb_anchor 저장 .pkl → predict(idx). 입력 X=[곡선|vol·corr|계약]."""
+    """benchmark._xgb_anchor 가 저장한 .pkl 을 행 인덱스 예측기로 되살린다.
+
+    입력
+      D    : Dataset — D.CURVE · D.VC · D.CON 을 가로로 붙여 X 로 만든다
+      path : str — .pkl 경로
+    출력
+      callable(idx) -> ndarray[float32] — MC_hat 예측기
+    """
     m = joblib.load(path)["model"]
     X = np.concatenate([D.CURVE, D.VC, D.CON], axis=1)
     return lambda idx: m.predict(X[idx]).astype("float32")
@@ -43,6 +60,17 @@ _ROUTED = {"deeponet_hybrid_pi_lizard": 0}
 
 
 def _anchor_loader(D, atype, base):
+    """앵커 종류에 맞는 로더를 골라 예측기를 만든다 — 확장자도 종류가 정한다.
+
+    입력
+      D     : Dataset
+      atype : "curve"(.pt, DeepONet) | "pi"(.pt, 상태증강) | "xgb"(.pkl)
+      base  : str — 확장자 없는 경로 접두
+    출력
+      callable(idx) -> ndarray[float32] — MC_hat 예측기
+    예외
+      ValueError — 모르는 atype
+    """
     if atype == "curve":
         return load_curve_predictor(D, base + ".pt")
     if atype == "pi":
@@ -53,6 +81,18 @@ def _anchor_loader(D, atype, base):
 
 
 def _resid_loader(D, rtype, base):
+    """stage-2 종류에 맞는 로더를 골라 예측기를 만든다.
+
+    입력
+      D     : Dataset
+      rtype : "mltab"(.pkl, ml 전체특성 — 기본) | "tab"(.pkl, XGB on D.DON) |
+              "margin"(.pt, DeepONet stage-2)
+      base  : str — 확장자 없는 경로 접두
+    출력
+      callable(idx) -> ndarray — 잔차 예측기
+    예외
+      ValueError — 모르는 rtype
+    """
     if rtype == "mltab":
         return load_ml_resid(D, base + ".pkl")  # 기본 stage2: ml 전체특성 (cfg['margin'])
     if rtype == "tab":
@@ -66,7 +106,19 @@ def predict_all_from_weights(D, cfg):
     """저장 가중치로 전 모델의 공정가(FAIR) OOS 예측을 조립. pipeline 산출 DataFrame 과 동일 스키마.
     직접(단일 단계) 벤치마크: y = 예측(FAIR) (stage 컬럼 없음).
     2단계 하이브리드: y = MC_hat + recent_margin + resid, y_true = FAIR,
-                     resid_true = FAIR − MC_hat − recent_margin, mc_true = MC(이론가 참값)."""
+                     resid_true = FAIR − MC_hat − recent_margin, mc_true = MC(이론가 참값).
+
+    입력
+      D   : Dataset — MC 와 recent_margin 이 **둘 다** 있어야 한다. 두 열을 따로 검사한다
+      cfg : dict — config.yaml (현재는 호출 규약을 맞추는 자리다)
+    출력
+      dict[str -> DataFrame] — 모델 이름에서 OOS 예측 표로.
+        직접 4종(stage 열 없음) + 하이브리드 5종(8열) + 라우팅 1종.
+        라우팅 모델은 가중치가 없으면 **조용히 건너뛴다**
+    예외
+      ValueError — mc 또는 recent_margin 이 전부 비었을 때.
+        원천 전용 재현에서는 이 경로를 쓰지 않는다
+    """
     FAIR, MC, rm = D.FAIR, D.MC, D.rm
     # 공정가 2단계는 세 입력이 다 있어야 한다. **두 열을 따로 검사한다** —
     # module.data.fill_anchor 가 mc 를 정본 라벨로 채우므로 mc 가드만 두면 그 가드는

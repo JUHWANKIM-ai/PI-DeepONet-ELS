@@ -33,7 +33,19 @@ _ST = None
 
 
 def vc_block(s, rho, q=None):
-    """[sigma 오름차순 3 | 상관 오름차순 3 | sig_eff] (+ q 3개). sigma 정렬에 q 도 맞춰 따라간다."""
+    """시장상태 블록을 조립한다 — [sigma 오름차순 3 | 상관 오름차순 3 | sig_eff] (+ q 3개).
+
+    정렬하는 이유는 자산 슬롯에 이름이 없기 때문이다. 같은 바스켓을 어떤 순서로 적어도
+    같은 입력이 나와야 한다. q 는 **sigma 와 같은 순서**로 따라간다 — 따로 정렬하면
+    변동성과 배당이 다른 자산 것끼리 짝지어진다.
+
+    입력
+      s   : ndarray(n, 3) — 자산별 변동성
+      rho : ndarray(n, 3) — 쌍별 상관 (12, 13, 23). ±0.999 로 클립한다
+      q   : ndarray(n, 3) | None — 자산별 연속 배당수익률. 주면 출력이 10열, 없으면 7열
+    출력
+      ndarray(n, 7 또는 10) float32 — sig_eff 는 평균 σ × sqrt(1 + max(0, 1 − 평균 ρ))
+    """
     order = np.argsort(s, axis=1)
     ss = np.take_along_axis(s, order, 1)
     rr = np.sort(np.clip(rho, -0.999, 0.999), axis=1)
@@ -47,8 +59,17 @@ TAG = "" if DIV == "lseg" else "_" + DIV
 
 
 def label_path(name="mc_variants"):
-    """라벨 파일 경로. MCVAR_DIV 한 손잡이로 3스타(mc_variants)와 1·2스타(mc_variants12)를
-    **함께** 바꾼다 — 두 파일의 배당 소스가 어긋나면 합친 데이터가 조용히 섞인다."""
+    """라벨 파일 경로.
+
+    MCVAR_DIV 한 손잡이로 3스타(mc_variants)와 1·2스타(mc_variants12)를 **함께** 바꾼다 —
+    두 파일의 배당 소스가 어긋나면 합친 데이터가 조용히 섞인다.
+
+    입력
+      name : str — "mc_variants"(3스타) | "mc_variants12"(1·2스타)
+    출력
+      Path — data/cache/mcvar/<name><TAG>.parquet.
+             TAG 는 lseg(기본)에서 빈 문자열, 그 밖에는 "_<소스>"
+    """
     return fm.CACHE / "mcvar" / "{}{}.parquet".format(name, TAG)
 
 
@@ -56,7 +77,17 @@ def state():
     """지연 적재 — import 만으로 데이터셋을 읽지 않는다.
 
     라벨 파일은 MCVAR_DIV(배당 소스)로 고르고, MCVAR_FILE 로 직접 지정하면 그쪽이 이긴다
-    (둘 다 config.yaml 밖의 설정 통로라 상시 사용은 권장하지 않음)."""
+    (둘 다 config.yaml 밖의 설정 통로라 상시 사용은 권장하지 않음).
+
+    입력
+      없음 (config.yaml · 정본 D · 라벨 parquet · 원천 parquet 을 읽는다)
+    출력
+      dict — cfg · D0(정본 D) · V(라벨) · S(원천) · OK(비교 사용 행 마스크) ·
+             WF(OK 로 걸러낸 폴드) · RHO(상관 3열).
+             모듈 전역에 캐시되어 **같은 객체가 반복 반환된다**
+    예외
+      AssertionError — 라벨과 정본의 공정가 정렬이 어긋날 때
+    """
     global _ST
     if _ST is not None:
         return _ST
@@ -77,7 +108,18 @@ def state():
 
 
 def make_D(var):
-    """변형 var('A'|'B') 의 stage-1 번들. 정본 D 를 복사해 MC 입력만 갈아끼운다."""
+    """변형의 stage-1 번들을 만든다. 정본 D 를 **얕게 복사**해 MC 입력만 갈아끼운다.
+
+    얕은 복사이므로 CON·ml 같은 공통 배열은 정본과 같은 객체를 가리킨다 — 돌려받은 D 의
+    그 배열을 제자리에서 수정하면 정본도 바뀐다.
+
+    입력
+      var : "A" | "B" — A 는 VC 만 교체(7열), B 는 VC(10열, q 포함)와 CURVE 를 함께 교체
+    출력
+      SimpleNamespace — 정본 D 의 사본에 MC · VC · (B 면) CURVE · rm · WF · DON 을 갈아끼운 것.
+        rm 은 `OK` 가 False 인 행이 NaN 이다 (제외 행은 recent_margin 풀에도 넣지 않는다).
+        ⚠ 변형 B 의 VC 는 10열로, `module/data.py` 가 문서화한 7열과 다르다 (모듈 머리말 참고)
+    """
     st = state()
     D = copy.copy(st["D0"])
     V, RHO = st["V"], st["RHO"]
@@ -102,7 +144,22 @@ def make_D(var):
 
 
 def oos_sample(per_struct=500, seed=0):
-    """구조별 층화 OOS 표본 — 계약조건 민감도의 기준 표본. (D, src, fold, struct, pick)."""
+    """구조별 층화 OOS 표본을 뽑는다 — 계약조건 민감도의 기준 표본.
+
+    층화하는 이유는 구조별 표본 수가 10배 이상 차이 나기 때문이다. 단순 무작위로 뽑으면
+    리자드가 거의 안 들어온다.
+
+    입력
+      per_struct : int — 구조당 최대 표본 수. 그 구조의 OOS 행이 적으면 있는 만큼만 뽑는다
+      seed       : int — 추출 시드
+    출력
+      (D, src, fold, struct, pick)
+        D      : 변형 B 번들 (`make_D("B")`)
+        src    : DataFrame — 원천, 인덱스 재설정
+        fold   : ndarray(n,) int — 행별 OOS 폴드 번호. 학습·검증 행은 −1
+        struct : ndarray(n,) — "opt_type·낙인/노낙인" 구조 라벨
+        pick   : ndarray — 뽑힌 행 인덱스, 오름차순
+    """
     st = state()
     D = make_D("B")
     src = st["S"].reset_index()

@@ -31,6 +31,18 @@ _G = None
 
 
 def _grid(dev):
+    """순차 합성곱용 격자와 전이핵을 만든다 (장치별 1회 캐시).
+
+    표준정규 증분의 전이핵을 미리 행렬로 만들어 두면, 회차마다 `p @ K` 한 번으로
+    랜덤워크를 한 걸음 보낼 수 있다.
+
+    입력
+      dev : str — torch 장치 문자열. 캐시된 격자의 장치가 다르면 다시 만든다
+    출력
+      (x, K, dx) — x : Tensor(801,), [-20, 20] 균등격자
+                   K : Tensor(801, 801), 정규 전이핵 × dx
+                   dx: float, 격자 간격
+    """
     global _G
     if _G is None or _G[0].device.type != dev:
         G, R = 801, 20.0
@@ -42,9 +54,19 @@ def _grid(dev):
 
 
 def _clark_min(m, v, rho):
-    """Clark(1961) 근사로 min(Y_1,Y_2,Y_3) 의 평균·분산. m,v: (n,3), rho: (n,) 공통상관.
-    min = -max(-Y) 를 쓴다. 논문의 sigma_bar 는 worst-of 효과를 통째로 무시하므로,
-    같은 '스칼라 1개로 대체' 라는 틀 안에서 분포의 1·2차 적률만 맞춰 준다."""
+    """Clark(1961) 근사로 min(Y_1, Y_2, Y_3) 의 평균·분산을 낸다.
+
+    min = −max(−Y) 를 쓴다. 두 개를 합쳐 하나로 만들고, 그 결과와 세 번째를 다시 합친다
+    (2단계). 논문의 sigma_bar 는 worst-of 효과를 통째로 무시하므로, 같은 '스칼라 하나로
+    대체' 라는 틀 안에서 분포의 1·2차 적률만 맞춰 준다.
+
+    입력
+      m   : Tensor(n, 3) — 자산별 로그값의 평균
+      v   : Tensor(n, 3) — 자산별 분산
+      rho : Tensor(n,) — 공통 상관 (쌍별이 아니라 스칼라 하나)
+    출력
+      (Em, Vm) — 각각 Tensor(n,). min 의 평균과 분산 (분산은 1e-12 로 바닥을 둔다)
+    """
     nd = torch.special.ndtr
     phi = lambda x: torch.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
     mm, vv = -m, v
@@ -69,6 +91,16 @@ def _scalarize(V, nstar, dev):
     VC 는 sigma 를 정렬해 담으므로 2스타 패딩(A,B,B)은 중복값이 두 번 나타난다.
     중복값과 나머지를 갈라 **실제 자산 수만큼만** Clark 을 돌린다.
     1스타는 Clark 자체가 불필요하다 (worst-of = 그 자산).
+
+    입력
+      V     : Tensor(n, ≥7) — VC 블록. [:3] 정렬된 sigma, [3:6] 정렬된 쌍별 상관
+      nstar : array-like(n,) | None — 행별 기초자산 수. None 이면 전부 3자산으로 본다
+      dev   : str — torch 장치
+    출력
+      (sig, rho, ns) — sig : Tensor(n, 3), 자산 수에 맞게 재배치한 sigma
+                              (1스타는 같은 값 3개, 2스타는 앞 두 칸만 유효)
+                       rho : Tensor(n,), 공통 상관. 2스타는 중복쌍 1.0 을 뺀 **최솟값**
+                       ns  : Tensor(n,) int64, 자산 수
     """
     s = V[:, :3]
     r3 = V[:, 3:6]
@@ -96,6 +128,20 @@ def vbase_els(CON, VC, CURVE, nobs, dev=DEV, mode="mean", lizard=False, nstar=No
       "mean"  sigma_bar = 평균 변동성 (원문 그대로)
       "eff"   sig_eff  = 우리 파이프라인의 바스켓 실효변동성 (VC 의 7번째 열)
       "clark" 만기 log-worst-of 의 평균·분산을 Clark 근사로 맞춘 스칼라 (worst-of 효과 반영)
+
+    입력
+      CON    : ndarray(n, 51) — 계약 블록 (D.CON)
+      VC     : ndarray(n, 7 또는 10) — 시장상태 블록 (D.VC). 10열이면 뒤 3열을 배당 q 로 쓴다
+      CURVE  : ndarray(n, 10) — 제로커브 노드 (D.CURVE). MSAMP 만기에 대응한다
+      nobs   : array-like(n,) int — 상품별 관측 회차 수
+      dev    : str — torch 장치. 기본은 CUDA 가용 시 CUDA
+      mode   : "mean" | "eff" | "clark" — 위 설명 참고
+      lizard : bool — True 면 리자드 조항을 닫힌 형태로 반영한다.
+               기본 False (망이 보정할 몫으로 남긴다)
+      nstar  : array-like(n,) | None — 기초자산 수. "clark" 에서 패딩 중복을 풀 때 쓴다
+    출력
+      ndarray(n,) — 액면 1 단위 V_base. torch 로 계산하고 numpy 로 돌려준다.
+                    입력에 NaN 이 있는 행은 NaN 으로 나온다 (호출부가 0 으로 바꾼다)
     """
     T_ = lambda a, t=torch.float32: torch.as_tensor(np.ascontiguousarray(a), dtype=t, device=dev)
     C, V, U = T_(CON), T_(VC), T_(CURVE)
@@ -114,7 +160,14 @@ def vbase_els(CON, VC, CURVE, nobs, dev=DEV, mode="mean", lizard=False, nstar=No
     # --- 할인·드리프트: 부트스트랩 제로금리 곡선에서 읽는다 ---
     ms = T_(MSAMP)
 
-    def zrate(t):  # (n,NS) 선형보간 + 평탄외삽
+    def zrate(t):
+        """커브 노드에서 임의 만기의 제로금리를 읽는다 — 노드 사이 선형보간, 밖은 평탄 외삽.
+
+        입력
+          t : Tensor(n, k) — 만기 [년]
+        출력
+          Tensor(n, k) — 같은 모양의 제로금리 (소수)
+        """
         tt = t.clamp(min=1e-6)
         j = torch.searchsorted(ms, tt.contiguous()).clamp(1, len(ms) - 1)
         t0_, t1_ = ms[j - 1], ms[j]

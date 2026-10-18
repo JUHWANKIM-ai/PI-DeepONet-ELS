@@ -34,7 +34,19 @@ FACE = 10000
 
 
 def _tasks():
-    """parquet -> (df, 태스크 dict 리스트). 스케줄 배열은 실제 회차 수(nobs)만큼만 잘라 넘긴다."""
+    """parquet 을 읽어 샤드가 돌릴 태스크 목록을 만든다.
+
+    스케줄 배열은 실제 회차 수(nobs)만큼만 잘라 넘긴다 — 12칸 패딩을 그대로 주면
+    엔진이 없는 회차를 관측일로 센다.
+
+    입력
+      없음 (data/els3_dataset.parquet 을 읽는다)
+    출력
+      (df, tasks) — df    : DataFrame, 발행일 오름차순·인덱스 재설정
+                    tasks : list[dict] — i(행 번호) · item · iord · B · c · ten · sig_eff ·
+                            strikes · pmts · lz_barr · lz_pmt.
+                            **i 가 곧 공통난수 시드이자 결과 JSON 의 키다**
+    """
     df = pd.read_parquet(fm.source()).sort_values("isu_ord").reset_index(drop=True)
     tasks = []
     for i, r in df.iterrows():
@@ -58,6 +70,15 @@ def _tasks():
 
 
 def _clean(x):
+    """NaN 을 JSON 이 담을 수 있는 null 로 바꾼다.
+
+    `json.dumps` 는 NaN 을 비표준 리터럴 `NaN` 으로 쓰기 때문에, 다른 파서가 읽으면 깨진다.
+
+    입력
+      x : float — 엔진이 돌려준 값
+    출력
+      float | None — NaN 이면 None, 아니면 float
+    """
     return None if (isinstance(x, float) and np.isnan(x)) else float(x)
 
 
@@ -70,7 +91,17 @@ def recent_margin(df, window=RM_WINDOW, by=RM_BY):
 
     4구조를 섞어 평균내면 구조별 마진 차이(예: LIZARD-noKI -0.057 vs STEP-noKI -0.047)가
     서로 오염시켜 baseline 이 나빠진다(실측 R² 0.5354 -> 0.5119, 구조별로 계산하면 0.5351 복구).
-    반환: 입력 행 순서에 맞춘 float32 배열."""
+
+    같은 발행일 상품은 서로를 보지 않는다 (bisect_left 로 자기 날짜 앞까지만).
+
+    입력
+      df     : DataFrame — fair · mc · isu_ord 열 필요. by 의 열이 있으면 구조별로 쪼갠다
+      window : int — 창 길이 [일]
+      by     : tuple[str] — 구조 키. df 에 없으면 전체를 한 묶음으로 본다
+    출력
+      ndarray(n,) float32 — **입력 행 순서에 맞춘** 배열.
+        선행 발행분이 없으면 그 앞 전체 평균, 그것도 없으면 0.0
+    """
     rm = np.zeros(len(df), dtype="float64")
     mg_all = df["fair"].values - df["mc"].values
     pos_all = np.arange(len(df))
@@ -91,8 +122,22 @@ def recent_margin(df, window=RM_WINDOW, by=RM_BY):
 
 def combine(N=None, verbose=True, engine="cuda"):
     """캐시된 샤드 JSON(data/cache/mccal_shard_*.json)을 읽어 els3_dataset.parquet 에
-    mc·MC입력·recent_margin 을 붙여 저장(재시뮬 없이 수 초). N=None 이면 존재하는 샤드 수 자동감지.
-    노트북·CLI 공용. 반환: 저장된 df. (JSON 없으면 FileNotFoundError)"""
+    mc·MC입력·recent_margin 을 붙여 저장(재시뮬 없이 수 초). 노트북·CLI 공용.
+
+    입력
+      N       : int | None — 샤드 수. None 이면 존재하는 mccal_shard_*.json 수로 자동감지
+      verbose : bool — 요약 한 줄을 찍는다
+      engine  : str — mc_engine 열에 적을 엔진 이름 (기록용)
+    출력
+      DataFrame — mc · MC_COLS · mc_engine · mc_seed · fair_minus_mc · *_krw ·
+                  recent_margin 이 붙은 els3_dataset. **파일로도 저장된다**
+        mc_seed 는 `np.arange` 다 — 이 값들이 실제로 행 번호 시드로 매겨졌기 때문이다.
+        내용 기반 시드를 적으면 값이 갖지 않은 출처를 주장하게 된다
+    예외
+      FileNotFoundError — 샤드 JSON 이 없거나 0..N−1 중 빠진 것이 있을 때
+      ValueError — 샤드 행 수와 데이터셋 행 수가 다를 때. 샤드는 **행 번호로 꽂히므로**
+                   유니버스가 바뀐 뒤에는 결과가 다른 상품에 들어간다
+    """
     if N is None:
         N = len(list(fm.CACHE.glob("mccal_shard_*.json")))
     if N == 0:
@@ -153,7 +198,17 @@ def combine(N=None, verbose=True, engine="cuda"):
 def recompute_gpu(N=28, kmap=None, verbose=True):
     """torch 엔진(module.mc_engine)으로 전량 MC 재산출. 청크를 순차 처리하며 청크마다
     data/cache/mccal_shard_<k>.json 을 쓴다. 이미 있는 청크는 건너뛰므로 중단 후 재개 가능.
-    CLI(`python -m module.mc_shards gpu N`)와 노트북(1_MC_pricer)이 공유한다."""
+    CLI(`python -m module.mc_shards gpu N`)와 노트북(1_MC_pricer)이 공유한다.
+
+    입력
+      N       : int — 청크 수. 상품을 tasks[k::N] 로 나눈다
+      kmap    : dict | None — 캘리브레이션 매핑. None 이면 미보정(k=1, 정본)
+      verbose : bool — 청크별 진행을 찍는다
+    출력
+      int — 처리한 청크 수 (입력 N 을 그대로 돌려준다).
+            결과는 data/cache/mccal_shard_<k>.json 과
+            scratch/mc_progress/shard_<k>.json(heartbeat) 로 나간다
+    """
     mk = MC.load_market()
     _, tasks = _tasks()
     pdir = fm.SCRATCH / "mc_progress"
@@ -210,6 +265,18 @@ def recompute_gpu(N=28, kmap=None, verbose=True):
 
 
 def main():
+    """CLI 진입점 — argv 로 모드를 고른다.
+
+    입력 (sys.argv)
+      shard <k> <N>    : tasks[k::N] 을 **레거시 numpy 엔진**으로 처리해 샤드 JSON 을 쓴다
+                         (새 규칙 미지원이라 pmts·리자드를 넘기지 않는다)
+      gpu [N]          : torch 엔진으로 전량 재산출 (기본 28청크)
+      combine [N]      : 샤드를 합쳐 parquet 에 기록
+      monitor <N> [초] : heartbeat 를 합산해 진행률·ETA 를 한 줄로 갱신
+      test (기본)      : 앞 30개만 단일프로세스로 돌려 보정배수·mc 를 확인
+    출력
+      없음 (파일과 표준출력으로 나간다)
+    """
     mode = sys.argv[1] if len(sys.argv) > 1 else "test"
     kmap = MC.load_kmap()
 
@@ -224,6 +291,14 @@ def main():
         hb = pdir / f"shard_{k}.json"
 
         def _beat(done, finished=False):
+            """진행 heartbeat 를 파일에 쓴다 — monitor 모드가 이것을 합산한다.
+
+            입력
+              done     : int — 지금까지 처리한 건수
+              finished : bool — 이 샤드가 끝났는가
+            출력
+              없음 (scratch/mc_progress/shard_<k>.json 을 덮어쓴다)
+            """
             hb.write_text(
                 json.dumps({"done": done, "total": len(my), "t": time.time(), "finished": finished})
             )
