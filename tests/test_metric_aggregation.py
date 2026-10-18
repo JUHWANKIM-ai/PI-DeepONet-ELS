@@ -16,6 +16,7 @@
 import os
 import sys
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -59,15 +60,19 @@ def test_error_bars_describe_the_same_object_as_the_bars():
     assert (c.R2_se > 0).all()
 
 
-def test_three_star_only_wins_on_three_star_products():
-    """이 사실이 README 주장의 근거다 — 통합 학습의 이점은 3스타 정확도가 아니라 커버리지다.
+def test_unified_training_buys_coverage_not_three_star_accuracy():
+    """README 주장의 근거 — 통합 학습의 이점은 3스타 정확도가 아니라 **커버리지**다.
 
-     종전 README 는 "1·2스타를 섞어 배우면 3스타 가격도 더 잘 맞힌다" 고 적고 있었는데
-     어느 집계로 보든 3스타에서는 3스타 전용이 앞선다."""
+     **순서를 못박지 않는다.** 3스타에서 어느 쪽이 앞서는지는 라벨 잡음에 따라 뒤집힌다 —
+     직전 라벨에서는 3스타 전용이 0.9557 대 0.9460 으로 앞섰고, 유니버스를 59,037건으로
+     늘린 뒤에는 0.9540 대 0.9534 로 구별되지 않는다(0.09 결합 SE). 재현 가능한 사실은
+     "3스타에서는 둘이 비슷하고, 1·2스타에서는 통합이 압도한다" 이지 특정 순서가 아니다.
+     한때 나는 그 순서를 사실로 적었고, 라벨이 바뀌자 거짓이 됐다."""
     c = pd.read_csv(fm.stat("cat1_level")).set_index(["star", "model"])
-    assert c.loc[("3-star", "trained 3-star only"), "R2"] > \
-           c.loc[("3-star", "trained 1·2·3-star"), "R2"]
-    # 반대로 1·2스타에서는 통합이 압도한다 (커버리지)
+    u3, o3 = c.loc[("3-star", "trained 1·2·3-star")], c.loc[("3-star", "trained 3-star only")]
+    gap = abs(u3.R2 - o3.R2) / np.hypot(u3.R2_se, o3.R2_se)
+    assert gap < 3, "3스타에서 한쪽이 유의하게 앞선다 ({:.1f} SE) — 주장을 다시 써야 한다".format(gap)
     for star in ("1-star", "2-star"):
-        assert c.loc[(star, "trained 1·2·3-star"), "R2"] > \
-               c.loc[(star, "trained 3-star only"), "R2"]
+        u, o = c.loc[(star, "trained 1·2·3-star")], c.loc[(star, "trained 3-star only")]
+        assert u.R2 - o.R2 > 5 * np.hypot(u.R2_se, o.R2_se), \
+            "{}: 통합의 우위가 사라졌다".format(star)
