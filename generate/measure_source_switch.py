@@ -128,6 +128,19 @@ def measure(nprod=200):
         kw = dict(seed=int(r["mc_seed"]), c=float(r["coupon"]), pmts=p, lz_barr=lb, lz_pmt=lp)
 
         def px(sig, corr, n, **dkw):
+            """이 상품을 주어진 변동성·상관·배당으로 가격한다 (원 단위).
+
+            커브·계약·공통난수는 바깥에서 고정했으므로, 바뀌는 것은 인자로 준 것뿐이다 —
+            그래서 두 호출의 차이가 그 요인 단독 효과가 된다.
+
+            입력
+              sig  : list[float] 길이 3 — 연율 변동성
+              corr : ndarray(3,3) — 상관행렬
+              n    : int — 경로 수
+              dkw  : 배당 kwargs (divlog= 또는 qcont=). 안 주면 배당 0
+            출력
+              float — 액면 10,000 기준 가격 [원]
+            """
             return float(ME.mc_daily_t(sig, corr, dz, *base, n=n, **dkw, **kw)) * FACE
 
         rows.append(

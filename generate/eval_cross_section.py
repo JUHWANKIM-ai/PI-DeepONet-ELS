@@ -58,6 +58,16 @@ _c = {}
 
 
 def pred(pre, kind, s, k):
+    """(접두사, 시드, 폴드) 예측기를 캐시해 돌려준다.
+
+    입력
+      pre  : str — 실험 접두사
+      kind : "xgb"(.pkl) | 그 밖(.pt, DeepONet)
+      s    : int — 학습 시드
+      k    : int — 폴드 번호
+    출력
+      callable(CURVE, VC, CON) -> ndarray — 임의 입력 forward
+    """
     key = (pre, s, k)
     if key not in _c:
         if kind == "xgb":
@@ -127,6 +137,14 @@ def predictions(D):
 
 
 def groups(D, fold):
+    """평가 묶음 네 개를 만든다 — 스타별 셋 + 전체.
+
+    입력
+      D    : 번들 — D.nstar 를 본다
+      fold : ndarray(n,) int — 행별 OOS 폴드 번호. 음수는 학습·검증 행이라 제외한다
+    출력
+      list[(라벨, ndarray[int])] — (1, …) · (2, …) · (3, …) · ("ALL", 전체 OOS)
+    """
     oos = np.where(fold >= 0)[0]
     return [
         (1, oos[D.nstar[oos] == 1]),

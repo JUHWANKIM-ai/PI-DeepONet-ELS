@@ -426,6 +426,16 @@ def model_verdict():
 
 
 def main():
+    """재현 판정을 모아 CSV 로 쓰고 사람이 읽을 표를 찍는다.
+
+    입력
+      없음 (기준선 스냅샷 또는 고정된 픽스처 + 현재 라벨·성능표)
+    출력
+      없음 (result/statistics/raw_run_verification.csv 와 표준출력).
+            표준출력을 UTF-8 로 재설정한다 — 윈도우 기본 cp949 는 '—'·'±' 를 찍지 못해
+            CSV 를 쓴 **뒤에** UnicodeEncodeError 로 죽고, 그러면 인코딩 때문에
+            판정이 '실패' 로 끝난다
+    """
     # 윈도우 기본 콘솔은 cp949 라 — 나 ± 같은 글자를 찍지 못해 UnicodeEncodeError 로 죽는다.
     # CSV 를 먼저 쓰고 그 뒤에 죽으므로, 이걸 게이트로 걸면 인코딩 때문에 '실패' 로 끝난다.
     try:

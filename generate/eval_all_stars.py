@@ -79,6 +79,17 @@ SHORT = [
 
 
 def met(p, y):
+    """수준 지표 여섯 개를 한 번에 낸다 (`util.metric.metrics` 의 원 단위 판).
+
+    MAPE 의 분모를 클램프하지 않는다 — 이 저장소의 가격은 원 단위 수천이라 0 에 닿지 않는다.
+
+    입력
+      p : ndarray(n,) — 예측 [원]
+      y : ndarray(n,) — MC 참값 [원]
+    출력
+      dict — R2 · MAPE[%] · MAE · RMSE · MSE · bias.
+             막대 패널은 R2·MAPE 만 쓰고 나머지는 표로 낸다
+    """
     e = p - y
     return dict(
         R2=1 - (e**2).sum() / ((y - y.mean()) ** 2).sum(),
@@ -102,7 +113,18 @@ def main():
         fold[te] = k
     _dc = {}
 
-    def don(p, s, k):  # 1,500행 격자에서 매번 load 하면 느리다
+    def don(p, s, k):
+        """(접두사, 시드, 폴드) 예측기를 캐시해 돌려준다 — 1,500행 격자에서 매번 load 하면 느리다.
+
+        접두사가 "_xgb" 로 끝나면 XGB 앵커(.pkl), 아니면 DeepONet(.pt) 이다.
+
+        입력
+          p : str — 실험 접두사
+          s : int — 학습 시드
+          k : int — 폴드 번호
+        출력
+          callable(CURVE, VC, CON) -> ndarray — 임의 입력 forward (계약을 바꿔 넣을 수 있다)
+        """
         key = (p, s, k)
         if key not in _dc:
             if p.endswith("_xgb"):
@@ -211,6 +233,15 @@ def main():
                 continue
 
             def _slope(col):
+                """섭동 격자의 양 끝 수준을 이어 기울기를 낸다 (회귀가 아니라 끝점 차이).
+
+                배리어는 1.0 수준(노낙인)을 뺀다 — 구조가 달라져 같은 선상에 둘 수 없다.
+
+                입력
+                  col : Series — 이 요인·스타의 가격 열. z.level 로 묶어 평균한다
+                출력
+                  float — UNIT[f] 로 환산한 수준당 가격 변화 [원]
+                """
                 g = col.groupby(z.level).mean().sort_index()
                 gg = g[g.index < 1.0] if f == "barrier" else g
                 lo, hi = gg.index.min(), gg.index.max()

@@ -36,6 +36,19 @@ NOTES = (
 
 
 def build():
+    """판정 근거 세 묶음을 모아 픽스처용 dict 를 만든다.
+
+    입력
+      없음 (기준선 스냅샷과 `generate.verify_raw_run` 의 측정 함수를 읽는다)
+    출력
+      dict — built_at · px_effect(부분집합별 n·mad·bias·se·hi) ·
+             model_old(지표별 value·se + n) ·
+             label_summary(부분집합별 n_cmp·n_only_*·mc_corr·mc_mad·mc_mad_se·mc_bias) · notes.
+             전량 라벨은 담지 않는다 — 그건 데이터이고 푸시 금지 대상이다
+    예외
+      SystemExit — 기준선 스냅샷이 없을 때. 픽스처는 **그 시점의 기록**이라
+                   지금 자료로 재구성할 수 없다
+    """
     # 기준선 스냅샷이 없으면 만들 수 없다. 픽스처는 **그 시점의 기록**이고 지금 자료로 다시
     # 만들 수 있는 것이 아니다 — model_old 는 구본 성능이고 구본은 이미 지워졌다.
     # 승인 후 삭제가 정상 경로이므로, 불명확한 TypeError 대신 그 사실을 말한다.
@@ -86,6 +99,13 @@ def build():
 
 
 def main():
+    """근거를 만들어 tests/fixtures/raw_run_verdict.json 에 쓰고 요약을 찍는다.
+
+    입력
+      없음
+    출력
+      dict — `build` 의 결과를 그대로 돌려준다 (파일로도 남긴다)
+    """
     d = build()
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")

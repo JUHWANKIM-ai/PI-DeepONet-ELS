@@ -26,7 +26,16 @@ DATASET_FILES = ("els3_dataset.parquet", "els12_dataset.parquet", "ml.csv", "dee
 
 
 def _move_dir_contents(src, dst):
-    """src 안의 항목을 dst 로 옮기고 개수를 센다. src 자체는 남긴다."""
+    """src 안의 항목을 dst 로 옮기고 개수를 센다. **src 디렉터리 자체는 남긴다**.
+
+    디렉터리를 지우면 파이프라인이 "경로가 없다" 로 죽어, 재현이 아니라 설정 오류가 된다.
+
+    입력
+      src : Path — 비울 디렉터리. 없으면 0 을 돌려주고 끝낸다
+      dst : Path — 받을 디렉터리. 없으면 만든다
+    출력
+      int — 옮긴 항목 수 (파일과 디렉터리를 함께 센다)
+    """
     if not src.exists():
         return 0
     dst.mkdir(parents=True, exist_ok=True)
@@ -40,7 +49,14 @@ def _move_dir_contents(src, dst):
 def stash(dst):
     """산출물을 dst 로 옮기고 범주별 개수를 돌려준다.
 
-    dst 가 이미 있으면 FileExistsError — 기존 백업을 덮어쓰면 되돌림 수단을 잃는다."""
+    입력
+      dst : str | Path — 백업 디렉터리
+    출력
+      dict — KINDS 별 옮긴 개수 (cache · models · statistics · predictions · image · datasets)
+    예외
+      FileExistsError — dst 가 이미 있고 비어 있지 않을 때.
+                        기존 백업을 덮어쓰면 되돌림 수단을 잃는다
+    """
     dst = Path(dst)
     if dst.exists() and any(dst.iterdir()):
         raise FileExistsError(

@@ -15,14 +15,35 @@ OUT = ROOT / "2_model_training.ipynb"
 
 
 def _src(t):
+    """nbformat 의 source 는 줄끝 개행을 포함한 줄 목록이다 — 빼면 전부 이어붙는다.
+
+    입력
+      t : str — 셀 본문
+    출력
+      list[str] — 마지막 줄만 개행 없이
+    """
     return [l + "\n" for l in t.split("\n")[:-1]] + [t.split("\n")[-1]]
 
 
 def md(t):
+    """마크다운 셀 하나를 만든다.
+
+    입력
+      t : str — 마크다운 본문. 앞뒤 공백을 지운다
+    출력
+      dict — nbformat 마크다운 셀
+    """
     return {"cell_type": "markdown", "metadata": {}, "source": _src(t.strip())}
 
 
 def code(t):
+    """코드 셀 하나를 만든다 — 출력은 비워 둔다 (nbconvert 가 실행하며 채운다).
+
+    입력
+      t : str — 파이썬 본문. 앞뒤 **빈 줄만** 지운다 (들여쓰기를 건드리면 코드가 깨진다)
+    출력
+      dict — nbformat 코드 셀, execution_count=None · outputs=[]
+    """
     return {
         "cell_type": "code",
         "execution_count": None,

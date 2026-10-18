@@ -97,6 +97,21 @@ KBD = MK.calendar(RET)
 
 
 def price_row(i, r):
+    """상품 한 행을 **두 변형으로 함께** 가격한다 — 같은 공통난수를 써서 차이를 입력 탓으로 돌린다.
+
+    변형 A = NS 커브 · 단순 HV120 · 배당 없음, 변형 B = 부트스트랩 커브 · EWMA120(λ=0.99) ·
+    배당. 입력을 하나라도 못 만들면 가격을 시도하지 않고 `fail` 사유만 적어 돌려준다 —
+    그래야 탈락 행도 스키마를 지킨다.
+
+    입력
+      i : int — 행 번호. 결과 정렬·결합의 키다
+      r : Series — 데이터셋 한 행. mc_seed · isu_ord · udl1~3 · tenor · B · coupon ·
+          스케줄 48열을 본다
+    출력
+      dict — 성공: i · item · mc_A · mc_B · sA_1~3 · sB_1~3 · rho_12/13/23 · q_1~3 ·
+             n_div · bu0~9 · r_bt · r_ns
+             실패: i · item · fail("inputs" | "lseg div")
+    """
     dt = pd.Timestamp(date.fromordinal(int(r["isu_ord"])))
     ts = [r["udl1"], r["udl2"], r["udl3"]]
     rets = [RET[t] for t in ts]
@@ -134,6 +149,18 @@ def price_row(i, r):
 
 
 def run_shard(k, N, limit=None):
+    """이 샤드 몫(`[k::N]`)을 가격해 parquet 으로 쓴다. 중단 후 재개된다.
+
+    500건마다 `.part.parquet` 에 중간 저장하고, 다시 돌리면 그 파일에서 이어 간다.
+    완료 파일이 이미 있으면 아무것도 하지 않는다.
+
+    입력
+      k     : int — 샤드 번호
+      N     : int — 전체 샤드 수
+      limit : int | None — 앞 몇 건만 (시험용). 주면 중간 저장·재개를 하지 않는다
+    출력
+      없음 (shard_<k>of<N><TAG>.parquet 을 쓴다)
+    """
     df = MK.dataset()
     idx = np.arange(len(df))[k::N][:limit]
     outp, part = OUT / f"shard_{k}of{N}{TAG}.parquet", OUT / f"shard_{k}of{N}{TAG}.part.parquet"
@@ -177,6 +204,17 @@ def ensure_fail(R):
 
 
 def combine(N):
+    """샤드 N 개를 합쳐 정본 라벨 파일을 쓴다 — **행 정렬을 상품코드로 증명한다**.
+
+    샤드는 행 번호로 꽂히므로, 행 수와 `item` 순서가 둘 다 데이터셋과 맞아야 한다.
+
+    입력
+      N : int — 샤드 수
+    출력
+      DataFrame — 합친 라벨. `fail` 열을 보장하고 스탬프와 함께 파일로 저장한다
+    예외
+      AssertionError — 행 수 또는 상품코드 순서가 데이터셋과 다를 때
+    """
     R = (
         pd.concat([pd.read_parquet(OUT / f"shard_{k}of{N}{TAG}.parquet") for k in range(N)])
         .sort_values("i")
@@ -226,6 +264,19 @@ def dup_corr(C, ts):
 
 
 def price_row12(i, r):
+    """1·2스타 한 행을 **변형 B 만** 가격한다 (`module/star.py` 가 B 라벨만 쓴다).
+
+    중복 슬롯 쌍의 상관을 정확히 1.0 으로 되돌린다 — `corr_bd` 가 0.999… 로 자르는 것을
+    `dup_corr` 가 복원한다. 패딩 때문에 상관행렬이 특이해지지만 chol_psd 가 허용한다.
+
+    입력
+      i : int — 행 번호
+      r : Series — els12_dataset 한 행. nstar 와 중복 패딩된 udl1~3 을 본다
+    출력
+      dict — 성공: i · item · nstar · mc_B · sB_1~3 · rho_12/13/23 · q_1~3 ·
+             n_div · bu0~9 · r_bt
+             실패: i · item · nstar · fail("inputs" | "lseg div")
+    """
     dt = pd.Timestamp(date.fromordinal(int(r["isu_ord"])))
     ts = [r["udl1"], r["udl2"], r["udl3"]]
     rets = [RET.get(t) for t in ts]
@@ -263,6 +314,15 @@ def price_row12(i, r):
 
 
 def run12(limit=None):
+    """1·2스타 전건을 한 프로세스로 가격해 라벨 파일을 쓴다 (3스타와 달리 샤드로 나누지 않는다).
+
+    500건마다 중간 저장하고 재개한다.
+
+    입력
+      limit : int | None — 앞 몇 건만 (시험용). 주면 중간 저장·재개를 하지 않는다
+    출력
+      없음 (mc_variants12<TAG>.parquet 을 스탬프와 함께 쓴다)
+    """
     d = dataset12()
     idx = np.arange(len(d))[:limit]
     outp, part = OUT / OUT12_NAME, OUT / "star12{}.part.parquet".format(TAG)
@@ -352,6 +412,13 @@ if __name__ == "__main__":
 
 
 def _mark_path(path):
+    """산출물 경로에 대응하는 완료 표식 경로.
+
+    입력
+      path : str | Path — 산출물 경로
+    출력
+      Path — "<path>.stamp.json"
+    """
     return Path(str(path) + ".stamp.json")
 
 

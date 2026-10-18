@@ -34,7 +34,16 @@ from util import file_manager as fm
 
 
 def pad3(ts):
-    """기초자산 티커를 3슬롯으로 중복 패딩. 1개 -> AAA, 2개 -> ABB."""
+    """기초자산 티커를 3슬롯으로 중복 패딩한다.
+
+    worst-of 는 min 이므로 중복 슬롯은 값에 영향이 없다. 중복쌍의 상관은 1.0 이 되는데,
+    MC 엔진의 chol_psd 가 그 특이행렬을 허용한다.
+
+    입력
+      ts : 반복자[str] — 기초자산 티커 1~3개
+    출력
+      list[str] 길이 3 — 1개면 (A,A,A), 2개면 (A,B,B), 3개 이상이면 앞 3개
+    """
     if len(ts) == 1:
         return [ts[0]] * 3
     if len(ts) == 2:
@@ -43,6 +52,18 @@ def pad3(ts):
 
 
 def mom6m(rets, dt, win=126):
+    """발행 전 win 거래일 누적 로그수익률의 평균 (6개월 모멘텀).
+
+    `module.build_source._mom6m` 과 같은 정의다 — 1·2스타도 같은 스키마를 만들어야 해서
+    여기에 한 벌 더 있다.
+
+    입력
+      rets : list[Series | None] — 자산별 일별 로그수익률 (중복 패딩된 3개)
+      dt   : Timestamp — 발행일. **이 날짜 이전**만 본다
+      win  : int — 창 길이 [거래일]
+    출력
+      float — 계열이 없거나 표본이 40 미만이면 0.0
+    """
     vals = []
     for r in rets:
         if r is None:
@@ -55,7 +76,15 @@ def mom6m(rets, dt, win=126):
 
 
 def main():
-    """1·2스타 데이터셋을 만들어 data/els12_dataset.parquet 에 저장한다. 노트북에서도 부를 수 있다."""
+    """1·2스타 데이터셋을 만들어 data/els12_dataset.parquet 에 저장한다.
+
+    `module.build_source` 와 **같은 스키마**에 nstar 열만 더한다. 노트북에서도 부를 수 있다.
+
+    입력
+      없음 (원천 CSV 3종 + 티커맵 + 금리커브)
+    출력
+      DataFrame — 발행일 오름차순. 파일로도 저장된다
+    """
     CA, RAW = fm.CACHE, fm.RAW
     mapping = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
     RET = MCM.returns_by_ticker(mapping)  # 가격 적재는 module.mc 한 곳에서만

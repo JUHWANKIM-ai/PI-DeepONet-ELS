@@ -121,6 +121,14 @@ def components(B):
 
 
 def run(items=None, n=200):
+    """상품을 골라 요인분해를 돌리고 표를 만든다.
+
+    입력
+      items : 반복자[str] | None — 대상 상품코드. None 이면 전수에서 앞 n 건
+      n     : int — items 를 주지 않았을 때 처리할 건수
+    출력
+      DataFrame — 상품별 요인 기여 [원]. 호출부가 CSV 로 쓴다
+    """
     df = MK.dataset()
     ret = MK.returns()
     cal = MK.calendar(ret)
