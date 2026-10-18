@@ -26,6 +26,11 @@ from tools.verify_raw_run import (TIGHT, IDX, BASE, EXP_MAD, GATE,   # noqa: E40
 needs_baseline = pytest.mark.skipif(
     not (BASE / "cache" / "mcvar" / "mc_variants_lseg.parquet").exists(),
     reason="구본 스냅샷이 없다 (Task 8 승인 후 삭제됨)")
+# model_verdict 는 기준선이 삭제된 뒤에도 고정 픽스처로 동작한다 — 그 경로를 재는 테스트는
+# 기준선이 아니라 픽스처 유무로 건너뛰어야 한다. 아니면 판정 테스트가 통째로 휴면한다.
+needs_fixture = pytest.mark.skipif(
+    not (Path(__file__).resolve().parent / "fixtures" / "raw_run_verdict.json").exists(),
+    reason="판정 근거 픽스처가 없다")
 needs_models = pytest.mark.skipif(
     not any((fm.RESULT / "models").glob("*.pt")),
     reason="신본 가중치가 아직 없다 (노트북 2 미실행)")
@@ -203,3 +208,32 @@ def test_model_verdict_uses_a_two_sample_test():
     assert all(ok for ok, _, _ in V.values()), "모델 성능이 재현되지 않았다"
 
 
+
+
+@needs_fixture
+def test_model_verdict_states_the_population_mismatch():
+    """두 팔이 **다른 상품 집합**에서 측정됐다 — 완벽한 재현이라도 0 이 아니다.
+
+     구본 n=29,743, 신본 n=29,916 으로 173건이 다르고(^SX7E 신규 포함), 시드 SE 는 그 차이를
+     전혀 설명하지 못한다. 그러므로 |z| <= 2 는 재현 검정이 아니라 '서로 다른 두 양이
+     학습 잡음보다 덜 다르다' 는 진술이다. 그 사실이 출력에 있어야 한다."""
+    V = model_verdict()
+    for m, (ok, z, why) in V.items():
+        assert "n " in why or "모집단" in why, "모집단 불일치를 밝히지 않는다: {}".format(why)
+
+
+@needs_fixture
+def test_model_verdict_reports_an_80_percent_power_floor():
+    """2·SE 는 검정력 50% 짜리 바닥이다 — 낙관적인 수치를 적으면 '구별 불가' 를 과독하게 만든다."""
+    V = model_verdict()
+    _, _, why = V["R2"]
+    assert "80%" in why or "2.8" in why, "검정력 기준을 밝히지 않는다: {}".format(why)
+
+
+@needs_fixture
+def test_model_verdict_marks_a_frozen_arm():
+    """기준선이 사라지면 왼쪽 팔은 **측정이 아니라 기록**이다 — compare() 는 frozen 을 알리는데
+     model_verdict 는 조용히 픽스처로 바꿔치기하고 있었다."""
+    import tools.verify_raw_run as V
+    import inspect
+    assert "frozen" in inspect.getsource(V.model_verdict)

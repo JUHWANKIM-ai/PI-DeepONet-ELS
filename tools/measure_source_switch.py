@@ -33,12 +33,21 @@ from util import file_manager as fm      # noqa: E402
 
 FACE = 10000
 N_BASE, N_HIGH = 40_000, 100_000
+# **어떤 설정에서 잰 효과인지.** 정본 라벨은 10만 경로·연속 q 인데 이 측정의 기준선은
+# 4만 경로·이산배당이다. 즉 px_mad 는 "그 배당 처리·경로 수 조건에서의 가격계열 효과" 이고,
+# 정본 설정과의 상호작용은 측정되지 않았다. 판정에 쓸 때 이 사실을 함께 읽어야 한다.
+MEASURED_AT = {"npath": N_BASE, "div": "yf", "note": "정본은 100k·lseg — 상호작용 미측정"}
+
+# UDLY_ID 역매핑 (티커 -> ID). 운영 경로(module.mc.returns_by_ticker)와 같은 해석을 위해.
+_UDLY_OF = {}
 IU = np.triu_indices(3, 1)
 
 
 def ret_new(tk):
     """Underlying 가격 -> 로그수익률. module.mc.load_market 의 RET 과 같은 규약."""
-    s = UL.price(tk)
+    # **운영 경로와 같게 읽는다.** udly 를 안 넘기면 UDLY_ID 로만 해석되는 기초자산
+    # (^SX7E)이 빠져, 가격계열 교체를 판정하는 측정이 그 교체로 들어온 상품을 제외하게 된다.
+    s = UL.price(tk, udly=_UDLY_OF.get(tk))
     return None if s is None else np.log(s).diff()
 
 
@@ -52,6 +61,17 @@ def _inputs(rets, dt, cal):
     return float(np.mean(sig)), corr, rho, sig
 
 
+def _load_udly_map():
+    """티커 -> UDLY_ID. 한 티커에 여러 ID 가 붙으면 첫 것을 쓴다 (가격 파일은 같다)."""
+    import json
+    if _UDLY_OF:
+        return
+    m = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
+    for uid, tk in m.items():
+        if tk and tk not in _UDLY_OF:
+            _UDLY_OF[tk] = uid
+
+
 def measure(nprod=200):
     """요인별 영향 표. 지수전용과 개별회사포함을 절반씩 담는다.
 
@@ -59,6 +79,7 @@ def measure(nprod=200):
      한 번에 둘 다 매겨 요인을 분리하는 것이다. PX_SOURCE 기본값이 cache -> underlying 으로
      바뀐 뒤 MK.returns() 가 **신** 계열을 돌려주게 됐고, 그러면 mc_base == mc_px 가 되어
      측정이 통째로 공허해진다 (px_mad = 0.00). 실패 방향이 '통과' 라서 눈에 띄지 않는다."""
+    _load_udly_map()
     df = MK.dataset()
     prev = os.environ.get("PX_SOURCE")
     os.environ["PX_SOURCE"] = "cache"          # 구 계열 = 배당 역조정 px_* 캐시

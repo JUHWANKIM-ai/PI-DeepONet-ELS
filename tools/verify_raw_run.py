@@ -52,6 +52,9 @@ FACE = 10000                                     # mc_B 는 액면 1 기준 — 
 NOISE40, NOISE100 = 6.20, 3.62      # 40만 경로를 준참값으로 한 평균|차이| (원), Task 5 실측
 EXP_MAD = float(np.hypot(NOISE40, NOISE100))   # 독립 두 추정의 기대 평균|차이| = 7.18원
 IMPACT = "source_switch_impact.csv"            # Task 1 의 공통난수 측정 (구본 스냅샷)
+# 그 측정이 돌아간 설정. 정본 라벨(10만 경로·연속 q)과 다르므로 판정 출력에 함께 적는다 —
+# px_mad 는 "그 배당 처리·경로 수 조건에서의" 가격계열 효과이고 상호작용은 미측정이다.
+PX_MEASURED = "40k·이산배당 기준"
 METRICS = ("R2", "MAPE", "MAE")                # 모델 성능 재현을 재는 지표
 COLS = ["subset", "n", "n_cmp", "n_only_new", "n_only_old", "mc_corr", "mc_mad", "mc_mad_se",
         "mc_mad_exp", "mc_bias", "px_n", "px_mad", "px_se", "px_hi", "px_bias",
@@ -241,7 +244,8 @@ def verdict(T):
     for _, r in T.iterrows():
         note = _residual_note(r)
         if r.subset not in GATE:
-            out[r.subset] = (None, "기준 없음 — 가격계열 {:.2f}원 | {}".format(r.px_mad, note))
+            out[r.subset] = (None, "기준 없음 — 가격계열 {:.2f}원 ({}) | {}".format(
+                r.px_mad, PX_MEASURED, note))
             continue
         m_max = GATE[r.subset]
         if not np.isfinite(r.px_mad):
@@ -255,8 +259,8 @@ def verdict(T):
                 r.px_mad, m_max, hi)
         else:
             ok, how = False, "점추정 {:.2f} > {}원".format(r.px_mad, m_max)
-        out[r.subset] = (ok, "가격계열 {:.2f}+-{:.2f} (n={:.0f}) | {} | {}".format(
-            r.px_mad, r.px_se, r.px_n, how, note))
+        out[r.subset] = (ok, "가격계열 {:.2f}+-{:.2f} (n={:.0f}, {}) | {} | {}".format(
+            r.px_mad, r.px_se, r.px_n, PX_MEASURED, how, note))
     return out
 
 
@@ -284,17 +288,25 @@ def model_verdict():
      그 한계가 0.014 인데 실측 하락은 0.0064 로, **관측된 하락의 두 배**가 검출 한계다.
      그러니 "재현" 은 "학습 난수 변동과 구별되지 않는다" 로 읽어야 한다.
 
+     **두 팔은 다른 상품 집합에서 측정됐다.** 구본 n=29,743, 신본 n=29,916 으로 173건이 다르고
+     (^SX7E 신규분 포함), 시드 SE 는 그 차이를 전혀 설명하지 못한다. 그러므로 |z| <= 2 는
+     재현 검정이 아니라 "서로 다른 두 양이 학습 잡음보다 덜 다르다" 는 진술이다.
+
      한 가지 더: 시드 SE 는 **학습 난수**만 재고, 라벨 교체는 다섯 시드에 공통인 고정효과다.
      즉 이 검정은 검정 대상에 구조적으로 눈을 감는다. 그래서 하락 **방향**도 함께 보고한다 —
      10만 경로 라벨은 4만보다 덜 시끄러우므로 달성 가능한 R2 는 올라야 하는데 떨어졌다.
      구별 불가라도 열린 항목이다."""
     ro = _all_row(BASE / "statistics" / LEVEL)
+    frozen, n_old = False, None
     if ro is None:
         d = _fixture()
         if d is not None:
             mo = d["model_old"]
             ro = pd.Series({k: v for m in METRICS
                             for k, v in ((m, mo[m]["value"]), (m + "_se", mo[m]["se"]))})
+            frozen, n_old = True, mo.get("n")   # 왼쪽 팔은 측정이 아니라 **기록**이다
+    elif ro is not None:
+        n_old = int(ro["n"])
     rn = _all_row(fm.stat(LEVEL.replace(".csv", "")))
     BETTER_IS_UP = {"R2": True, "MAPE": False, "MAE": False}   # 라벨 잡음이 줄면 기대되는 방향
     out = {}
@@ -307,10 +319,17 @@ def model_verdict():
         z = d / se if se > 0 else np.nan
         worse = (d < 0) if BETTER_IS_UP[m] else (d > 0)
         note = " | 방향: 예상과 반대(라벨 잡음이 줄었는데 나빠졌다)" if worse else ""
+        # 검출한계는 **80% 검정력** 기준(2.8 SE)으로 적는다. 2 SE 는 검정력 50% 짜리 바닥이라
+        # '구별 불가' 를 과독하게 만든다 — 바닥을 적는 목적 자체가 그걸 막는 것이다.
+        pop = ""
+        if n_old is not None and int(rn["n"]) != n_old:
+            pop = " | 모집단 다름: n {:,} -> {:,} ({:+,}건)".format(
+                n_old, int(rn["n"]), int(rn["n"]) - n_old)
         out[m] = (bool(abs(z) <= 2.0), z,
-                  "{:.4f}+-{:.4f} -> {:.4f}+-{:.4f} | {:+.4f} = {:.2f} SE "
-                  "| 검출한계 {:.4f}{}".format(
-                      ro[m], ro[m + "_se"], rn[m], rn[m + "_se"], d, abs(z), 2 * se, note))
+                  "{}{:.4f}+-{:.4f} -> {:.4f}+-{:.4f} | {:+.4f} = {:.2f} SE "
+                  "| 검출한계 {:.4f} (80% 검정력){}{}".format(
+                      "[기록] " if frozen else "", ro[m], ro[m + "_se"], rn[m], rn[m + "_se"],
+                      d, abs(z), 2.8 * se, pop, note))
     return out
 
 
