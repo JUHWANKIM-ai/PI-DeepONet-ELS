@@ -37,14 +37,16 @@ def test_ensure_fail_keeps_existing_values():
     assert out["fail"].iloc[1] == "lseg div"
 
 
-def test_fix_is_resumable_after_an_interrupted_run():
-    """`fix()` 가 완료되기 전에 죽으면 다시 돌 수 있어야 한다 — 그 판단은 stale_px 열로 한다.
+def test_fix_writes_the_label_only_after_all_computation():
+    """반쪽 파일을 내보내지 않는다 — 쓰기가 **마지막**이어야 한다.
 
-     라벨 파일이 '있다' 는 것만으로 단계를 건너뛰면, fix() 가 안 끝난 채 영영 건너뛴다."""
+     종전에는 stale_px 를 넣고 바로 쓴 뒤 다음 줄에서 `R["fail"]` 로 죽었다. 그래서
+     stale_px 는 있고 fail 은 없는 파일이 디스크에 남았고, 그걸 '완료' 로 오판해
+     미완성 라벨이 하류로 흘러갈 뻔했다. 완료 표식을 무엇으로 고르든, 쓰기가 마지막이면 안전하다."""
     import inspect
-    import tools.build_nb_pricer as BNP
-    src = inspect.getsource(BNP)
-    assert "stale_px" in src, "노트북 1 이 fix() 완료 여부를 보지 않는다"
+    src = inspect.getsource(BMV.fix)
+    i_ok, i_write = src.index('ok = R["fail"].isna()'), src.rindex("write_labeled(")
+    assert i_write > i_ok, "fix() 가 계산을 끝내기 전에 라벨을 쓴다"
 
 
 @pytest.mark.skipif(not (fm.CACHE / "mcvar" / "mc_variants.parquet").exists(),
