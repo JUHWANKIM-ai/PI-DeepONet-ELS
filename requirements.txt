@@ -22,7 +22,8 @@ xgboost==3.2.0
 # --- Plotting ---
 matplotlib==3.9.2
 
-# --- Notebook execution (0_data / 1_run / 2_evaluate / 3_validate) ---
+# --- Notebook execution (0_data_preprocessing / 1_MC_pricer / 2_model_training / 3_visualization) ---
+# Also needed but arriving transitively: joblib (via scikit-learn), pytest (dev only).
 ipykernel==6.29.5
 nbconvert==7.17.1
 jupyter-core==5.8.1

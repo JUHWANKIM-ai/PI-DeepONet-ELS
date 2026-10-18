@@ -1,6 +1,8 @@
 <!-- map-metadata
-last-mapped: 0943f8f
+last-mapped: a2b557b
 generated: 2026-10-16
+updated: 2026-10-18 (by hand — the /map run predates the tools/->generate/ rename,
+                     the black+annotation pass, and the notebook consolidation)
 mode: full
 sections: structure, dependencies, conventions, impact
 -->
@@ -11,93 +13,141 @@ sections: structure, dependencies, conventions, impact
 
 ## Structure
 
-Python research repo (Python 3.11, conda env `abacus`) that trains a **DeepONet / PI-DeepONet surrogate pricer for Korean worst-of step-down autocall ELS**, reproducing a 40,000-path Monte-Carlo theoretical price ~10⁴–10⁵× faster. Dependencies are declared via `requirements.txt` only (no `pyproject.toml`/`setup.py`); all hyperparameters live in a single `config.yaml` and all paths in `util/file_manager.py`.
+Python research repo (Python 3.11, conda env `abacus`) that trains a **DeepONet surrogate pricer for
+Korean worst-of step-down autocall ELS**, reproducing a 100,000-path Monte-Carlo theoretical price
+~10⁴× faster. Dependencies are pinned in `requirements.txt`; `pyproject.toml` carries **formatter
+settings only** (black, 100 columns) — the project is still not installable, so the repo root is the
+import root. All hyperparameters live in a single `config.yaml` and all paths in
+`util/file_manager.py`.
 
 ```
 PI-DeepONet-ELS/
 ├── config.yaml                  # single source of truth for ALL hyperparameters (seed, data.walk_forward,
 │                                #   train, networks, physics, tabular, margin)
-├── requirements.txt             # only manifest: numpy/pandas/scipy/sklearn, torch 2.9.1, xgb/lgbm/catboost
-├── README.md                    # Korean; pipeline, reproduction commands, OOS result table
-├── 0_data.ipynb .. 4_MC_pricing.ipynb   # canonical pipeline notebooks (0→4, run top-to-bottom)
-├── 5_*.ipynb .. 20_*.ipynb      # ~20 numbered research/ablation notebooks (IV term structure, MC variants,
-│                                #   error analysis, contract sensitivity, stage-1 variants)
-├── EDA_raw_filter.ipynb         # raw filter funnel + fair-value-ratio / maturity EDA
-├── model/                       # model PLUGIN package — auto-discovered by registry
+├── pyproject.toml               # [tool.black] line-length = 100 — nothing else; NOT a package manifest
+├── requirements.txt             # pinned deps: numpy/pandas/scipy/sklearn, torch 2.9.1, xgb/lgbm
+├── README.md                    # Korean; pipeline, input schema of the headline model, reproduction, code map
+├── 0_data_preprocessing.ipynb   # raw -> data/els3_dataset.parquet + drop funnel / distributions
+├── 1_MC_pricer.ipynb            # MC labels (both variants), bitwise reproduction check, path noise
+├── 2_model_training.ipynb       # trains 7 arms x 5 seeds x 4 folds -> result/models/ (140 weights)
+├── 3_visualization.ipynb        # all 24 figures in 4 categories + 13 tables
+├── module/                      # data + MC engine + networks + train/infer  (27 files)
+│   ├── build_source.py, data.py, schedule.py, features.py, iv_term.py, contract.py
+│   ├── underlying.py, dividend.py, curve.py, market.py   # source-only input adapters
+│   ├── mc.py, mc_engine.py, mc_shards.py, mcvar.py, seeds.py, star.py, vbase.py
+│   ├── networks.py, train.py, tabular.py, pipeline.py, infer.py, anchors.py
+│   └── pi_collocation.py, pi_physics.py, pi_train.py     # physics-informed (PDE) loss + collocation
+├── model/                       # model PLUGIN package — auto-discovered by registry  (9 files)
 │   ├── registry.py              #   discover()/run_all(): any model/*.py exposing run(D, cfg) is picked up
 │   ├── _template.py             #   plugin contract reference (underscore files skipped)
-│   ├── benchmark.py             #   direct tabular benchmarks (ridge/gbm/xgb/lgbm/catboost)
+│   ├── benchmark.py             #   direct tabular benchmarks (ridge/gbm/lgbm/xgb)
 │   ├── deeponet.py, deeponet_ci.py, pi_deeponet.py, pi_route.py
-│   └── stage2.py                #   hybrid stage-2 residual model
-├── module/                      # data + MC engine + networks + train/infer (17 files)
-│   ├── build_source.py, data.py, features.py, schedule.py, iv_term.py
-│   ├── mc.py, mc_engine.py, mc_shards.py   # MC pricer; mc_shards is the only CLI (shard/combine/monitor)
-│   ├── networks.py, train.py, tabular.py, pipeline.py, infer.py
-│   └── pi_collocation.py, pi_physics.py, pi_train.py   # physics-informed (PDE) loss + collocation
+│   └── stage2.py                #   hybrid stage-2 residual models
 ├── util/                        # file_manager (central paths), utils (config/seed), metric, plot, seeds, speed
-├── tests/                       # 16 pytest files (test_*.py) + 3 manual verify_*.py scripts
-├── data/                        # cache/ (px_*.parquet, 28 mccal_shard_*.json, KRW curve, div_*) and raw/ (DART
-│                                #   CSVs) are the only tracked inputs; *.csv/*.parquet are derived
-├── result/                      # predictions/, image/, statistics/, models/ (per-fold weights)
-├── docs/                        # Korean design notes + architecture .drawio/.png  (git-ignored)
-├── paper/                       # reference PDFs  (git-ignored; see README references)
-├── scratch/                     # throwaway scripts/notebooks/logs (git-ignored)
-└── experiments/                 # empty (only stale __pycache__)
+├── generate/                    # GENERATORS — every tracked artifact is produced here  (15 files)
+│   ├── build_nb_{data,pricer,training,viz}.py   # the four notebooks are generated, never hand-edited
+│   ├── build_mc_variants.py, build_12star.py, build_decomp.py, mc_check_12star.py
+│   ├── eval_all_stars.py, eval_cross_section.py, measure_source_switch.py
+│   └── verify_raw_run.py, freeze_verdict.py, stash_for_raw_run.py
+├── tests/                       # 50 pytest files + 4 manual verify_*.py scripts
+│   └── fixtures/                #   raw_run_verdict.json — the reproduction verdict's evidence,
+│                                #   tracked on purpose so the baseline snapshot can be deleted
+├── data/                        # git-ignored. data/raw/ + data/share_underlyings_v2/ are the ONLY inputs;
+│                                #   cache/, *.parquet, *.csv are all derived and regenerated by notebook 0/1
+├── result/                      # git-ignored except the two figures README embeds
+├── docs/                        # Korean design notes + plans + architecture .drawio/.png  (git-ignored)
+├── paper/                       # reference PDFs  (git-ignored; citation list is in README)
+└── scratch/                     # throwaway scripts/notebooks/logs (git-ignored)
 ```
 
 **Key entry points**
 
-- **Pipeline (primary "application")**: notebooks executed in order via nbconvert — `0_data.ipynb` (raw+cache → `data/els3_dataset.parquet`) → `1_MC_recompute.ipynb` (→ `data/ml.csv`, `data/deeponet.csv`) → `2_run.ipynb` (registry auto-discovery → train all models → `result/predictions/` + `result/models/`) → `3_evaluate.ipynb` (load weights → OOS forward → stats/figures) → `4_MC_pricing.ipynb` (MC vs surrogate speed/accuracy). Execute with kernel `els-abacus`.
-- **CLI**: `python -m module.mc_shards {shard <i> <N> | gpu | combine 28 | monitor <N> | test}` — the only `__main__` in the codebase. `combine 28` restores the `mc` column from cached shards in seconds instead of ~14 h.
-- **Model plug-in seam**: drop a file into `model/` exposing `run(D, cfg) -> {name: DataFrame}`; `model/registry.py` auto-includes it in `2_run.ipynb` (see `model/_template.py`).
-- **Tests**: `pytest tests/` from the repo root (no `pytest.ini`/`conftest.py`). `tests/verify_*.py` are standalone verification scripts, deliberately not pytest-collected.
+- **Pipeline (primary "application")**: four notebooks executed in order via nbconvert —
+  `0_data_preprocessing` (raw → `els3_dataset.parquet`, `els12_dataset.parquet`, `ml.csv`,
+  `deeponet.csv`) → `1_MC_pricer` (→ `data/cache/mcvar/mc_variants*.parquet`, the MC labels) →
+  `2_model_training` (→ `result/models/` 140 weights + `nb_training_level.csv`) → `3_visualization`
+  (→ 24 figures + 13 tables). Execute with kernel `els-abacus`. Each notebook skips work whose
+  output already exists **and whose provenance stamp matches**; `REBUILD = True` / `RETRAIN=1` force it.
+- **Reproduction claim**: with only `data/raw/` and `data/share_underlyings_v2/` present, the four
+  notebooks rebuild everything (verified: 0 errors, bitwise label check 0.00e+00 KRW). Total ~200 min,
+  dominated by notebook 1.
+- **CLIs**: 15 modules have a `__main__` — `module/mc_shards.py`
+  (`shard | gpu | combine | monitor | test`) plus all 14 `generate/*.py`. The generators are what the
+  notebooks call, so running them directly is the way to rebuild one artifact without a notebook.
+- **Model plug-in seam**: drop a file into `model/` exposing `run(D, cfg) -> {name: DataFrame}`;
+  `model/registry.py` auto-includes it (see `model/_template.py`).
+- **Tests**: `pytest` from the repo root (no `pytest.ini`/`conftest.py`) — 262 passed, 29 skipped,
+  ~42 s. `tests/verify_*.py` are standalone scripts, deliberately not pytest-collected.
 
-**Code style**: `# -*- coding: utf-8 -*-` header on every module in `module/`/`model/`/`util/`; Korean docstrings describing each function's contract; relative imports inside packages (`from .tabular import fit_tab`) and absolute across packages (`from model.stage2 import ml_resid`); short private helpers prefixed `_`; type annotations essentially unused (`util/file_manager.py` is the exception); paths always resolved through `util.file_manager` rather than literals.
+**Code style**: `# -*- coding: utf-8 -*-` header on every module; **black at 100 columns**
+(`pyproject.toml`, also read by the `ms-python.black-formatter` editor extension); Korean docstrings
+on **every** function (356/356) and class (8/8), written as design memos with explicit `입력`/`출력`
+blocks; **complete type annotations** (849/849 parameters, 356/356 returns) deliberately *without*
+`from __future__ import annotations`, so a bad annotation fails at import rather than hiding in a
+string; relative imports inside packages (`from .tabular import fit_tab`) and absolute across them
+(`from model.stage2 import ml_resid`); short private helpers prefixed `_`; paths always resolved
+through `util.file_manager`.
 
 ## Dependencies
 
-**Language:** Python 3.11 only. Single manifest: `requirements.txt`. No `pyproject.toml`/`setup.py` — the three first-party packages (`model/`, `module/`, `util/`) are imported as top-level packages from the repo root, so **the repo root is the import root**. Runtime config is `config.yaml`, loaded through `util/utils.py:load_config()`.
+**Language:** Python 3.11 only. Deps pinned in `requirements.txt`; `pyproject.toml` configures black
+and nothing else. The four first-party packages (`module/`, `model/`, `util/`, `generate/`) are
+imported as top-level packages from the repo root, so **the repo root is the import root**. Runtime
+config is `config.yaml`, loaded through `util/utils.py:load_config()`.
 
-**Scope of this map:** first-party imports in `model/`, `module/`, `util/`, `tests/` and the 23 root-level notebooks. `scratch/` (166 `.py` files plus a forked copy of the project at `scratch/PI-DeepONet-corrected-PDE-only/`) is git-ignored throwaway work and is excluded — including it would roughly triple the fan-in on `util/file_manager.py` and `module/data.py` without changing the ranking. `experiments/` contains only stale `.pyc` files with no surviving source.
+**Scope of this map:** first-party imports in `module/`, `model/`, `util/`, `generate/`, `tests/` and
+the four root notebooks. `scratch/` is git-ignored throwaway work and is excluded — including it would
+roughly triple the fan-in on `util/file_manager.py` and `module/data.py` without changing the ranking.
 
-166 unique edges across 28 first-party modules; 24 modules have fan-in ≥ 2 (under the 30 threshold, so all are shown).
-
-### Dependency graph (fan-in ≥ 2)
+### Dependency graph (fan-in ≥ 5)
 
 ```mermaid
 graph LR
-  subgraph NB["root notebooks (0-20, EDA)"]
-    nb0["0_data"]; nb1["1_MC_recompute"]; nb2["2_run"]; nb3["3_evaluate"]
-    nb4["4_MC_pricing"]; nb5["5_segment"]; nb11["11_error_analysis"]
-    nbPLOT["12-20 + EDA_raw_filter (plot/path only)"]
+  subgraph NB["root notebooks (generated by generate/build_nb_*)"]
+    nb0["0_data_preprocessing"]; nb1["1_MC_pricer"]
+    nb2["2_model_training"]; nb3["3_visualization"]
   end
-  subgraph MODEL["model/ (plugin models, registry-discovered)"]
+  subgraph GEN["generate/ (generators + verification)"]
+    g_nb["build_nb_{data,pricer,training,viz}"]; g_mcv["build_mc_variants"]
+    g_12["build_12star"]; g_dec["build_decomp"]; g_mc12["mc_check_12star"]
+    g_eas["eval_all_stars"]; g_xs["eval_cross_section"]; g_mss["measure_source_switch"]
+    g_vrr["verify_raw_run"]; g_fv["freeze_verdict"]
+  end
+  subgraph MODEL["model/ (plugin arms, registry-discovered)"]
     m_reg["registry.py"]; m_don["deeponet.py"]; m_bench["benchmark.py"]
     m_s2["stage2.py"]; m_pir["pi_route.py"]; m_donci["deeponet_ci.py"]; m_pid["pi_deeponet.py"]
   end
-  subgraph MODULE["module/ (data, training, MC engine)"]
+  subgraph MODULE["module/ (data, MC engine, training)"]
     d["data.py"]; sch["schedule.py"]; bs["build_source.py"]; feat["features.py"]
-    pipe["pipeline.py"]; tr["train.py"]; net["networks.py"]; tab["tabular.py"]
-    inf["infer.py"]; mc["mc.py"]; mce["mc_engine.py"]; mcs["mc_shards.py"]
+    ul["underlying.py"]; dv["dividend.py"]; cv["curve.py"]; mk["market.py"]
+    mc["mc.py"]; mce["mc_engine.py"]; mcs["mc_shards.py"]; mcv["mcvar.py"]
+    st["star.py"]; vb["vbase.py"]; sd2["seeds.py"]; an["anchors.py"]; con["contract.py"]
+    net["networks.py"]; tr["train.py"]; tab["tabular.py"]; pipe["pipeline.py"]; inf["infer.py"]
     pit["pi_train.py"]; pic["pi_collocation.py"]; pip["pi_physics.py"]; ivt["iv_term.py"]
   end
   subgraph UTIL["util/ (cross-cutting)"]
     fm["file_manager.py"]; plot["plot.py"]; ut["utils.py"]; met["metric.py"]
     sd["seeds.py"]; sp["speed.py"]
   end
-  subgraph TESTS["tests/ (pytest + verify_* scripts)"]
-    t["16 test_* / 3 verify_* files"]
+  subgraph TESTS["tests/"]
+    t["50 test_* / 4 verify_* files"]
   end
 
-  nb0 --> bs & fm
-  nb1 --> d & mc & mce & mcs & fm & plot
-  nb2 --> m_reg & d & ut & fm
-  nb3 --> d & pipe & tr & fm & plot & sd & sp & ut & met
-  nb4 --> d & feat & mc & tr & fm & plot & ut
-  nb5 --> m_don & d & pipe & tr & fm & plot & sd & ut & met
-  nb11 --> d & inf & fm & plot & met & ut
-  nbPLOT --> fm & plot
-  nbPLOT --> mc & feat
+  nb0 --> bs & d & g_12 & fm & plot
+  nb1 --> g_mcv & g_mc12 & g_dec & mk & mce & fm & plot
+  nb2 --> st & tr & mcv & g_mcv & fm
+  nb3 --> g_eas & g_xs & st & mk & mce & fm & plot
+
+  g_nb -. "writes the .ipynb files" .-> nb0 & nb1 & nb2 & nb3
+  g_mcv --> mk & cv & dv & feat & mce & sd2 & fm
+  g_12 --> bs & feat & mc & sch & fm
+  g_dec --> mk & cv & dv & feat & mce & fm
+  g_mc12 --> mk & cv & dv & feat & mce & con & sd2 & fm
+  g_eas --> st & an & con & mk & vb & g_mc12 & fm & plot
+  g_xs --> st & an & con & fm
+  g_mss --> cv & dv & feat & mk & mce & fm
+  g_vrr --> fm
+  g_fv --> g_vrr & fm
 
   m_reg -. "pkgutil auto-discovery of model/*.py" .-> m_don & m_bench & m_pir & m_donci & m_pid
   m_don --> tr & pipe & m_s2
@@ -107,159 +157,311 @@ graph LR
   m_pir --> pit & pipe & m_s2 & fm
   m_s2 --> d & net & tab & tr
 
-  bs --> feat & sch & fm
-  d --> sch & fm
+  bs --> feat & sch & mc & sd2 & fm
+  d --> sch & g_mcv & fm
+  mk --> cv & dv & feat & mc & fm
+  mc --> feat & ul & fm
+  mce --> feat & mc
+  mcs --> mc & mce & sd2 & fm
+  mcv --> d & mcs & fm
+  st --> d & sch & mcv & vb & fm
+  an --> tab & tr & fm
+  con --> d & sch
+  vb --> feat
   tab --> d
   tr --> d & net
   pipe --> tab & m_s2 & fm
   inf --> tr & pit & tab & m_s2 & m_pir & fm
-  mc --> feat & fm
-  mce --> feat & mc
-  mcs --> mc & mce & fm
   pit --> d & net & pic & pip & tr
   pic --> pip
   sch --> fm
   ivt --> fm
+  dv --> fm
+  cv --> fm
+  ul --> fm
 
   sd --> fm & met
   sp --> d & tab & tr & m_s2
   ut --> fm
 
-  t --> d & sch & bs & pipe & inf & mc & mce & mcs & pit & pic & pip & net & tab & ivt
+  t --> d & sch & bs & pipe & inf & mc & mce & mcs & mcv & st & pit & pic & pip
+  t --> net & tab & ivt & ul & dv & cv & mk & sd2 & vb & con
   t --> m_reg & m_don & m_bench & m_donci
+  t --> g_mcv & g_eas & g_xs & g_vrr & g_mc12 & g_mss
   t --> fm & met & ut & plot
 ```
 
-**Cycle to note:** `module/pipeline.py` → `model/stage2.py` → `module/{data,networks,tabular,train}.py` is a package-level cycle between `module` and `model`, deepened by `module/infer.py` → `model/pi_route.py` → `module/pipeline.py` → `model/stage2.py`. `module/infer.py:100` defers `from model.pi_route import load_routed_predictor` into a function body, which is what keeps it importable. This is the structural weak point of the layering: `module/` is nominally the lower layer but reaches up into `model/`.
+**Two cycles to note.**
+
+1. `module/pipeline.py` → `model/stage2.py` → `module/{data,networks,tabular,train}.py` is a
+   package-level cycle between `module` and `model`, deepened by `module/infer.py` →
+   `model/pi_route.py` → `module/pipeline.py`. `module/infer.py` defers
+   `from model.pi_route import load_routed_predictor` into a function body, which is what keeps it
+   importable. `module/` is nominally the lower layer but reaches up into `model/`.
+2. `module/data.py:datasets_stale()` imports `generate.build_mc_variants` for the provenance-stamp
+   comparison, and `generate/build_mc_variants.py` imports most of `module/`. Same inversion, newer:
+   the stamp rule's canonical implementation sits in the generator layer. The import is inside the
+   function body, and the docstring says so. Moving `stamp_differs` down into `module/` would fix it.
 
 ### External dependencies
 
 | Package (pin) | Purpose | Used by |
 |---|---|---|
-| `numpy==2.3.0` | array math everywhere; MC path generation | 38 files — all of `module/`, `model/`, `util/`, `tests/`, every notebook. Beware the known `cumsum(out=…)` leak on this version |
-| `pandas==2.3.0` | dataset frames, parquet I/O, prediction tables | 27 files: most of `module/`, `model/{deeponet_ci,pi_route}.py`, `util/{metric,seeds,speed}.py`, most tests and notebooks |
-| `torch==2.9.1` | DeepONet/PI-DeepONet nets, autograd PDE residuals, GPU MC engine | `module/{networks,train,data,pi_train,pi_collocation,pi_physics,mc_engine}.py`, `model/{stage2,deeponet_ci}.py`, `util/utils.py`, 2 tests, notebooks 4/5 |
-| `scikit-learn==1.7.1` | ridge/HistGB baselines, preprocessing pipeline, R²/MAE metrics | `module/tabular.py`, `util/metric.py`, `util/plot.py`, 1 verify script, notebooks 3/5/13-18 |
-| `xgboost==3.2.0` | stage-1 XGB anchor and stage-2 residual (canonical margin model) | `model/benchmark.py`, `model/stage2.py`, `module/tabular.py`, `util/speed.py`, `5_segment.ipynb` |
+| `numpy==2.3.0` | array math everywhere; MC path generation | all of `module/`, `model/`, `util/`, `generate/`, `tests/`. Beware the known `cumsum(out=…)` leak on this version |
+| `pandas==2.3.0` | dataset frames, parquet I/O, result tables | most of `module/` and `generate/`, `model/{deeponet_ci,pi_route}.py`, `util/{metric,plot,seeds,speed}.py`, most tests |
+| `torch==2.9.1` | DeepONet nets, autograd PDE residuals, GPU MC engine | `module/{networks,train,data,pi_train,pi_collocation,pi_physics,mc_engine,vbase}.py`, `model/{stage2,deeponet_ci}.py`, `util/utils.py` |
+| `scikit-learn==1.7.1` | ridge/HistGB baselines, preprocessing pipeline, R²/MAE metrics | `module/tabular.py`, `util/metric.py`, `util/plot.py` |
+| `xgboost==3.2.0` | stage-1 XGB anchor and stage-2 residual | `model/{benchmark,stage2}.py`, `module/tabular.py`, `util/speed.py` |
 | `lightgbm==4.6.0` | GBM benchmark arm | `module/tabular.py` only |
-| `catboost==1.2.10` | GBM benchmark arm | `module/tabular.py` only (plus the stray `catboost_info/` dir at root) |
-| `matplotlib==3.9.2` | all figures; `util/plot.py` sets global academic/PPT rcParams on import | `util/plot.py`, 1 verify script, ~20 notebooks (all via `from util import plot as _plot`) |
-| `PyYAML==6.0.2` | reads `config.yaml` | `util/utils.py` only (single `yaml.safe_load`) |
-| `pyarrow==20.0.0` | parquet engine — never imported directly, used through `pandas.read_parquet`/`to_parquet` | `module/{build_source,data,iv_term,mc,mc_shards,pi_train}.py`, `util/file_manager.py`, 4 tests |
-| `ipykernel`, `nbconvert`, `jupyter-core` | notebook execution toolchain (kernel `els-abacus`) | not imported in source; used by the CLI pipeline that runs `0_data` → `4_MC_pricing` |
+| `scipy==1.16.0` | `brentq` (IRS bootstrap), `spearmanr`, `norm` | `module/curve.py`, `util/{metric,plot}.py` |
+| `matplotlib==3.9.2` | all figures; `util/plot.py` sets global academic/PPT rcParams on import | `util/plot.py`, `generate/{eval_all_stars,build_nb_viz}.py`, notebooks |
+| `PyYAML==6.0.2` | reads `config.yaml` | `util/utils.py`, `module/mcvar.py` |
+| `pyarrow==20.0.0` | parquet engine — used through pandas, and **directly** for the label provenance stamp | `generate/build_mc_variants.py` (schema metadata), everything else via pandas |
+| `ipykernel`, `nbconvert`, `jupyter-core` | notebook execution toolchain (kernel `els-abacus`) | not imported in source; used by the nbconvert pipeline |
 
 **Imported but missing from `requirements.txt`:**
 
 | Package | Purpose | Used by |
 |---|---|---|
-| `scipy` | `spearmanr`, `norm` for rank metrics and IV inversion | `util/metric.py`, `util/plot.py`, notebooks 5/5_segment |
-| `joblib` | pickling fitted sklearn/XGB models per walk-forward fold | `model/stage2.py`, `module/infer.py`, `module/tabular.py` (arrives transitively via scikit-learn) |
-| `pytest` | test runner | 9 `tests/test_*.py` files |
-| `yfinance` | dividend/price cross-check against cached `px_*` | `tests/verify_px_yfinance.py`, `19_yfinance_dividend_check.ipynb` |
-| `statsmodels` | OLS on causal increments | `13_causal_increments.ipynb` |
-| `numba` | JIT MC loop variant | `4_MC_pricing.ipynb` |
+| `joblib` | pickling fitted sklearn/XGB models per walk-forward fold | `model/stage2.py`, `module/{infer,tabular}.py` (arrives transitively via scikit-learn) |
+| `pytest` | test runner (dev only) | `tests/` |
+| `black` | formatter, configured in `pyproject.toml` (dev only) | — |
 
-`requirements.txt` also mislabels the notebook chain as "0_data / 1_run / 2_evaluate / 3_validate"; the actual entry points are `0_data` / `1_MC_recompute` / `2_run` / `3_evaluate` / `4_MC_pricing`.
+`catboost` was dropped: it is no longer imported anywhere and no longer appears in `config.yaml`'s
+`tabular` block (`xgb`/`lgbm`/`gbm`/`ridge` remain).
 
 ### Key interfaces (top 10 by fan-in)
 
-1. **`util/file_manager.py` (35)** — central path registry (`ELSDirectoryPath` class + module-level `ROOT`/`dataset()`/`prediction()` shims returning `pathlib.Path`); every data/result read or write goes through it, making it the single most load-bearing file in the repo.
-2. **`module/data.py` (17)** — dataset schema and loader: splits features into branch (basket vol/corr + yield curve) vs trunk (full STRK schedule, barriers, coupons, maturity), plus `zstats`/`znorm`/`to_tensor`/`time_weights` used by every trainer.
-3. **`util/plot.py` (15)** — figure library; importing it mutates global matplotlib rcParams to dpi-400 / transparent / 13.333×5.0 in PPT band, so it is an implicit side-effecting dependency of every notebook that saves a figure.
-4. **`module/pipeline.py` (10)** — walk-forward OOS assembly: `predict_hybrid`, `predict_direct_tab`, `hybrid_residual_target`; the contract every `model/*.py` plugin is built on, and the source of the `module` → `model` cycle.
-5. **`module/train.py` (10)** — stage-1 anchor training (`train_curve` for DeepONet-Curve) and the shared `_EarlyStop`/`_opt` primitives reused by `model/stage2.py` and `module/pi_train.py`.
-6. **`util/utils.py` (7)** — `load_config()` (cached `config.yaml`), seed fixing, device selection.
-7. **`module/mc.py` (7)** — legacy numpy MC pricer, explicitly retired for production but kept as the reference for reproducing the existing `mc` column and for engine cross-checks.
-8. **`util/metric.py` (6)** — R²/MAE/RMSE/Spearman plus `metrics_by` and `stage_r2` for per-stage hybrid reporting.
-9. **`module/mc_engine.py` (5)** — torch/CUDA MC engine; the canonical payoff-rule implementation (vectorized worst-of in log space, ~27 ms/product).
-10. **`module/features.py` (5)** — shared feature derivation (KRW Nelson-Siegel curve, 180-day historical vol/corr), kept identical between `build_source` and MC recompute for reproducibility.
+Fan-in counted over tracked `.py` in the four packages + `tests/` + the four notebooks.
 
-Just below the cut: **`model/stage2.py` (5)** — all stage-2 residual models (`ml_resid` default, `xgb_resid`, `don_resid`); **`module/networks.py` (5)** — `CurveOperatorV2` / `MarginOperator` / `PIStateDeepONet`; **`module/tabular.py` (5)** — the config-driven ridge/HistGB/LGBM/XGB/CatBoost regressor factory.
+1. **`util/file_manager.py` (69)** — central path registry (`ELSDirectoryPath` class + module-level
+   `ROOT`/`dataset()`/`prediction()` shims returning `pathlib.Path`); every data/result read or write
+   goes through it, making it the single most load-bearing file in the repo.
+2. **`module/data.py` (21)** — dataset schema and loader: splits features into branch (basket vol/corr
+   + yield curve) vs trunk (full STRK schedule, barriers, coupons, maturity), plus
+   `zstats`/`znorm`/`to_tensor`/`time_weights` used by every trainer. `module.data.load` defines the
+   canonical `D` bundle.
+3. **`module/schedule.py` (14)** — the fixed-width contract schedule (12 slots × strike/payout/lizard
+   barrier/lizard payout) shared by `build_source`, `data`, `contract`, `star` and both pricers.
+4. **`module/features.py` (13)** — shared feature derivation (NS curve, EWMA vol, business-day pairwise
+   correlation), kept identical between the dataset build and the MC pricer for reproducibility.
+5. **`module/dividend.py` (13)** — **the only branch point for dividend source** (`div_kwargs`): LSEG
+   continuous `q` (default) vs yfinance discrete `divlog`, plus the index→tracking-ETF proxy table.
+6. **`module/mc_engine.py` (12)** — torch/CUDA MC engine; the canonical payoff-rule implementation
+   (vectorized worst-of in log space, ~27 ms/product).
+7. **`module/market.py` (12)** — assembles one product's market state (`state_for` → engine kwargs
+   `dkw`). The single definition of "current methodology" inputs.
+8. **`module/mc.py` (11)** — legacy numpy MC pricer, retired for production but kept as the reference
+   for engine cross-checks; also hosts `returns_by_ticker`, **the only price-loading path**.
+9. **`generate/build_mc_variants.py` (11)** — MC label production *and* the provenance-stamp rules
+   (`stamp`, `stamp_differs`, `step_stale`) that every staleness decision in the repo routes through.
+10. **`module/train.py` (9)** / **`module/curve.py` (9)** — stage-1 anchor training
+    (`train_curve`, `train_curve_mono`) with the shared `_EarlyStop`/`_opt` primitives; and the
+    CD+IRS bootstrap zero curve.
 
-**`model/registry.py` (3)** deserves special mention despite low static fan-in: it uses `pkgutil.iter_modules` + `importlib` to auto-discover every `model/*.py` exposing `run(D, cfg)`, so the dotted edges in the graph are **dynamic, not greppable**.
+Just below the cut: **`module/pipeline.py` (8)** — the walk-forward OOS assembly every `model/*.py`
+plugin is built on; **`module/seeds.py` (7)** — content-derived common-random-number seeds;
+**`module/tabular.py` (6)** — the config-driven regressor factory; **`model/stage2.py` (5)**,
+**`module/underlying.py` (5)**, **`module/mc_shards.py` (5)**, **`module/networks.py` (5)**.
 
-Notebooks `5_MC_implied_vol`, `6_IV_vs_HV`, `7_methodology_bakeoff`, `8_bates_vs_historical`, `9_stage2_iv_ablation`, `10_iv_ablation_two_anchors` import no first-party module at all — they are self-contained analyses reading cached CSV/parquet directly, so they do not appear in the graph.
+**`model/registry.py` (3)** deserves special mention despite low static fan-in: it uses
+`pkgutil.iter_modules` + `importlib` to auto-discover every `model/*.py` exposing `run(D, cfg)`, so
+the dotted edges in the graph are **dynamic, not greppable**.
 
 ## Conventions
 
 ### Patterns
 
-- **Four-layer repo with notebooks as the only orchestration.** `util/` (paths, config, metrics, plots, seeds, speed) → `module/` (data schema, features, MC engines, networks, train, pipeline, infer) → `model/` (model plugins) → numbered root notebooks. `0_data` → `1_MC_recompute` → `2_run` → `3_evaluate` → `4_MC_pricing` is the canonical reproduction chain; notebooks `5_*`–`20_*` are one-question ablation notebooks that are kept, not deleted, with the accepted answer folded back into `config.yaml`/`module/` and the rejected one recorded as a comment.
-- **Plugin-registry contract for models.** A file in `model/` that exposes `run(D, cfg) -> dict[str, pandas.DataFrame]` is auto-discovered by `model/registry.py` (`pkgutil.iter_modules`, sorted by name; modules starting with `_` and `registry` skipped) and joins `2_run` with no pipeline edits; duplicate prediction names raise `ValueError`. `model/_template.py` is the executable spec of that contract.
-- **Two single sources of truth, no literals.** Every path flows through `util/file_manager.py`; every hyperparameter flows through `config.yaml` via `util.utils.load_config()` (cached). Feature lists are deliberately *not* in config — they live in `module/data.py` (noted in `config.yaml`'s header).
-- **A single `D` bundle plus fixed artifact schemas.** `module.data.load` returns a `SimpleNamespace` (`D.WF` walk-forward `(tr, va, te)` index folds, `D.MC`, `D.FAIR`, `D.rm`, `D.VC/CURVE/CON`, `D.DEV`), all arrays `float32`. Predictions land at `result/predictions/<name>.csv` with `ITEM_CD, isu_ord, y_true, y_pred` (+ `mc_true, mc_pred, resid_true, resid_pred` for 2-stage hybrids, which is exactly what `util.metric.stage_r2` probes), per-fold weights at `result/models/<name>_fold{k}.{pt|pkl}` via `module/pipeline.py::_mp`.
-- **Docstrings are design memos, not API blurbs.** Korean module/function docstrings state *why*, name the rejected alternative, and quote the measured delta — e.g. `module/data.py` ("`regime` 은 OOS 외삽 실패 → 상대신호만", "빼면 +0.004"), `module/mc_shards.py` ("무보정 k=1 정본"), `util/seeds.py` (seed sd ≈ 0.0137 ⇒ all metrics must be 5-seed mean ± sd).
-- **Expensive jobs are `python -m` CLI modules.** `module/mc_shards.py` parses `sys.argv` in `main()` with subcommands `shard | gpu | combine | monitor | test`, pins `OMP/OPENBLAS/MKL/NUMEXPR_NUM_THREADS=1` at import (Windows OOM avoidance), does `sys.path.insert(0, repo_root)` for direct execution, caches results as `data/cache/mccal_shard_<k>.json`, and writes progress heartbeats to `scratch/mc_progress/`.
-- **Flat module-level functions with `_`-prefixed private helpers** (`_anchor`, `_anchor_l1`, `_mp`, `_save`, `_tasks`, `_load_source`, `_sort_best_first`). Classes appear only for paths and `torch.nn` modules. Callback-returning factories are the reuse seam: `anchor_fn(D,cfg,tr,va,te,save_path=) -> predict(idx)` and `resid_fn(...) -> (resid_tr, resid_te)`.
+- **Five-layer repo with notebooks as the only orchestration.** `util/` (paths, config, metrics,
+  plots, seeds, speed) → `module/` (data schema, features, MC engines, networks, train, pipeline,
+  infer) → `model/` (model plugins) → `generate/` (generators that produce every tracked artifact) →
+  four root notebooks. `0_data_preprocessing` → `1_MC_pricer` → `2_model_training` →
+  `3_visualization` is the canonical reproduction chain.
+- **Notebooks are generated, not written.** `generate/build_nb_*.py` emits the four `.ipynb` files;
+  hand-editing a notebook is lost at the next generation. Consequence: notebook content is reviewable
+  as Python diffs, and a figure or table is fixed in its generator, never in the notebook.
+- **Plugin-registry contract for models.** A file in `model/` exposing
+  `run(D, cfg) -> dict[str, pandas.DataFrame]` is auto-discovered by `model/registry.py`
+  (`pkgutil.iter_modules`, sorted by name; modules starting with `_` and `registry` skipped);
+  duplicate prediction names raise `ValueError`. `model/_template.py` is the executable spec.
+- **Two single sources of truth, no literals.** Every path flows through `util/file_manager.py`; every
+  hyperparameter flows through `config.yaml` via `util.utils.load_config()` (cached). Feature lists are
+  deliberately *not* in config — they live in `module/data.py`.
+- **One branch point per external concern.** Price loading is `module.mc.returns_by_ticker` and
+  nothing else; dividend source is `module.dividend.div_kwargs` and nothing else; staleness is
+  `generate.build_mc_variants.stamp_differs` and nothing else. Each of the three was previously
+  duplicated 3–6 times, and each duplicate broke the source-only run in a different place. Tests pin
+  the single-point property (`tests/test_div_source_switch.py` sweeps the repo for re-duplication).
+- **A single `D` bundle plus fixed artifact schemas.** `module.data.load` returns a `SimpleNamespace`
+  (`D.WF` walk-forward `(tr, va, te)` folds, `D.MC`, `D.FAIR`, `D.rm`, `D.VC/CURVE/CON`, `D.DEV`), all
+  arrays `float32`. ⚠ `module.mcvar.make_D` and `module.star.make_all` return *different* namespaces
+  under the same name `D` (10-column `VC`, plus `nstar`/`nobs`, minus `R`/`TEN`/`ml`/`DON`) — a known
+  schema debt, documented in both modules' docstrings.
+- **Provenance stamps, not file existence.** Labels carry `{npath, div, px_source, n_rows, built_at}`
+  in parquet schema metadata; every "is this stale?" decision compares stamps and treats *unprovable*
+  as stale. This replaced four bespoke completion markers, two of which were wrong.
+- **Docstrings are design memos, not API blurbs.** Korean docstrings state *why*, name the rejected
+  alternative, quote the measured delta, and list `입력`/`출력` explicitly — including the conditions
+  under which `None` comes back, because "missing input ⇒ return `None`, caller drops the product" is
+  the repo-wide convention.
+- **Expensive jobs are `python -m` CLI modules.** `module/mc_shards.py` parses `sys.argv` in `main()`
+  with subcommands `shard | gpu | combine | monitor | test`, pins
+  `OMP/OPENBLAS/MKL/NUMEXPR_NUM_THREADS=1` at import (Windows OOM avoidance), and writes progress
+  heartbeats to `scratch/mc_progress/`. Every `generate/*.py` is likewise directly runnable.
+- **Flat module-level functions with `_`-prefixed private helpers.** Classes appear only for paths and
+  `torch.nn` modules. Callback-returning factories are the reuse seam:
+  `anchor_fn(D,cfg,tr,va,te,save_path=) -> predict(idx)` and `resid_fn(...) -> (resid_tr, resid_te)`.
+  The two predictor conventions are now distinguishable *by type*:
+  `Callable[[npt.ArrayLike], np.ndarray]` takes row indices, while
+  `Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]` takes `(CURVE, VC, CON)` arrays and can
+  therefore express "a contract that was changed".
 
 ### Configuration
 
-- **No linter, formatter, type-checker, or packaging config exists** — no `pyproject.toml`, `setup.cfg`, `.flake8`, `.pylintrc`, `ruff.toml`, `.editorconfig`, mypy config. The project is not installable; imports assume cwd = repo root, or an explicit `sys.path.insert` at the top of scripts/tests.
-- **No CI, no Makefile, no Dockerfile/compose, no `.env`, no `.github/`.** Automation is nbconvert, documented in `README.md`: `jupyter nbconvert --to notebook --execute --inplace N_*.ipynb` run in numeric order (the one heavy step, MC shard computation, is split out and normally restored from the 28 cached shards with `python -m module.mc_shards combine 28`).
-- **`requirements.txt` pins exact versions** (`numpy==2.3.0`, `torch==2.9.1`, `xgboost==3.2.0`, …) grouped by purpose with `# ---` banner comments and prose caveats (CUDA 12.8 build, CPU fallback). Target is Python 3.11 in conda env `abacus`. Notebook kernelspec on disk is plain `python3`, but execution requires kernel `els-abacus`.
-- **`config.yaml` is the one hyperparameter file**, organized into `data / train / networks / physics / tabular / margin` blocks with a Korean trailing comment on nearly every key documenting allowed values and the reason for the default (e.g. `feature_set: driver  # base|regime|driver (regime은 OOS 외삽 실패)`, `half_life: auto`, `loss: reg:pseudohubererror`).
-- **`.gitignore` encodes the "inputs vs derivatives" rule**: only `data/raw/` and `data/cache/` are inputs; `data/els3_dataset.parquet`, `data/ml.csv`, `data/deeponet.csv`, `result/`, `docs/`, `scratch/`, `catboost_info`, `__pycache__` and the vendored agent dirs are all ignored.
-- **De facto code style** (enforced by habit only): `# -*- coding: utf-8 -*-` as line 1 of every file in `module/`, `model/`, `util/` (35 of 52 `.py` files; most tests omit it), 4-space indent, double quotes, long lines accepted (130–168 chars — no 79/88 budget), imports ordered stdlib → third-party → local with `from . import features as F` inside a package and `from util import file_manager as fm` across packages. Type hints essentially unused (5 return annotations across 209 defs) — types are documented in docstrings instead.
+- **Formatter is configured; linter and type-checker are not.** `pyproject.toml` holds
+  `[tool.black] line-length = 100` and `target-version = ["py311"]` — chosen over black's default 88
+  because the repo's numeric tables and aligned Korean comments survive at 100. The same file is read
+  by the editor's `ms-python.black-formatter` extension, so CLI and editor agree. No `ruff`/`flake8`/
+  `mypy`/`setup.cfg`/`.editorconfig`; the project is not installable and imports assume cwd = repo
+  root (or an explicit `sys.path.insert` at the top of scripts/tests).
+- **No CI, no Makefile, no Dockerfile/compose, no `.env`, no `.github/`.** Automation is nbconvert,
+  documented in `README.md`: `jupyter nbconvert --to notebook --execute --inplace N_*.ipynb` in order.
+  Verification is manual but scripted: `pytest`, `black --check`, and
+  `python generate/verify_raw_run.py` for the reproduction verdict.
+- **`requirements.txt` pins exact versions** grouped by purpose with `# ---` banner comments and prose
+  caveats (CUDA 12.8 build, CPU fallback). Target is Python 3.11 in conda env `abacus`. Notebook
+  kernelspec on disk is plain `python3`, but execution requires kernel `els-abacus`.
+- **`config.yaml` is the one hyperparameter file**, organized into
+  `data / train / networks / physics / tabular / margin` blocks with a Korean trailing comment on
+  nearly every key documenting allowed values and the reason for the default.
+- **`.gitignore` encodes the "inputs vs derivatives" rule, and it is strict**: `data/`, `result/`,
+  `docs/`, `paper/`, `scratch/` are all ignored. Non-code tracked files are exactly two: the figures
+  README embeds (`result/image/headline_3star.png`, `headline_3star_terms.png`, opened by explicit
+  `!` rules) and `tests/fixtures/raw_run_verdict.json`. The fixture is tracked deliberately — it
+  freezes the reproduction verdict's evidence so the `scratch/raw_run_baseline/` snapshot could be
+  deleted without losing the basis for the claim.
+- **Environment overrides, used sparingly and documented at the definition site**: `PX_SOURCE`
+  (`underlying` default | `cache`), `MCVAR_DIV` (`lseg` default | `yf`), `MCVAR_FILE`, `RETRAIN`,
+  `REBUILD`. Each is a deliberate escape hatch for reproducing an older artifact, not a normal knob.
 
 ### Established Practices
 
-- **Korean prose, English figures.** All comments, docstrings, assertion messages and exception strings are Korean; English is reserved for identifiers, metric column names (`R2`, `MAPE%`, `Bias%`, `Spearman`) and every piece of text that reaches a figure — `util/plot.py` opens with "그래프 (전부 영문 텍스트)". Importing `util.plot` mutates global `rcParams` so any `savefig` is PPT-ready; each plot function takes `path=None`, saves, and returns `fig`.
-- **Fail fast with actionable Korean errors; catch almost nothing.** 14 `raise` sites (`ValueError`, `FileNotFoundError`, `KeyError`) with remediation baked into the message ("먼저 shard 로 MC 를 계산하세요", "0_data build_source 재실행 필요"); `assert` guards dataset schema in `module/data.py`. Only three `except` blocks exist repo-wide, each for one specific recoverable case (`np.linalg.LinAlgError` → PSD-repaired Cholesky in `module/features.py`, unreadable heartbeat JSON, per-row build failure).
-- **Tests are plain pytest functions that encode past bugs.** `tests/test_*.py`, module-level `def test_...` (no classes, no `conftest.py`), each file opening with `sys.path.insert(0, <repo root>)`. Assertions carry Korean explanations, and regression tests first prove the old failure before asserting the fix (`tests/test_znorm.py`: `assert abs(raw[9,0]) > 1e6, "재현 실패: 원래는 폭주해야 한다"`). `tests/verify_*.py` are deliberately *not* pytest-collected: manual scripts with `main()`, a CLI sample-size argument, and numeric pass thresholds as module constants.
-- **Leak-freedom is structural, not checked after the fact.** Expanding walk-forward folds with the test window always in the future, validation sampled only inside each fold's train block, as-of/causal features only (the `DRIVER` set exists because absolute-level `REG` features failed OOS), normalization statistics computed on train indices only (`zstats(a, tr)`) with clipping (`ZCLIP`) for constant train columns.
-- **Numbers never appear inline twice.** Magic constants are hoisted to module level and commented with their source (`NPATH`, `VOL_WIN=180`, `CORR_WIN=180`, `EWMA_SPAN=120`, `FACE=10000`, `LAM=1.5`, `SE=0.0015`, `SEEDS=(0,1,2,3,4)`, `DPI=400`). Reproducibility is routed through `util.utils.set_seed` plus `util/seeds.py`, which **refuses to report a model that lacks all five seed CSVs** rather than mixing single-seed numbers in.
-- **DRY across the pipeline/MC boundary is explicit.** `module/features.py` is shared by `0_data` and every MC-recompute notebook so curve/vol definitions stay identical to the original pricer; `module/mc_engine.py` is declared "페이오프 규칙의 정본 구현" and exposes `payoff_from_path_summary_t` purely so the physics loss can be tested against it; MC variants get their own caches while the canonical `mc` stays untouched.
-- **Commits: Conventional-Commit type in English, subject in Korean**, with a feature or notebook scope — `feat(mc):`, `refactor(notebook5):`, `fix(stage2):`, `chore(evaluate):`, `test(repro):`. Work happens on `feat/<topic>` branches off `main`.
+- **Korean prose, English figures.** All comments, docstrings, assertion messages and exception strings
+  are Korean; English is reserved for identifiers, metric column names (`R2`, `MAPE%`, `Bias%`,
+  `Spearman`) and every piece of text that reaches a figure — `util/plot.py` opens with
+  "그래프 (전부 영문 텍스트)". Importing `util.plot` mutates global `rcParams` so any `savefig` is
+  PPT-ready; each plot function takes `path=None`, saves, and returns `fig`.
+- **Complete annotations, deliberately eager.** Every parameter and return in the four packages is
+  annotated (849/356) and `from __future__ import annotations` is *not* used, so a typo in an
+  annotation raises at import instead of lurking in a string. `typing.get_type_hints()` over all 356
+  functions is the check.
+- **Fail fast with actionable Korean errors; catch almost nothing.** Raises carry remediation in the
+  message ("먼저 shard 로 MC 를 계산하세요", "0_data build_source 재실행 필요"); `assert` guards
+  dataset schema in `module/data.py`. The few `except` blocks each cover one specific recoverable case
+  (`np.linalg.LinAlgError` → PSD-repaired Cholesky, unreadable heartbeat JSON, per-row build failure).
+- **Tests are plain pytest functions that encode past bugs — one file per defect.** Module-level
+  `def test_...` (no classes, no `conftest.py`), each file opening with
+  `sys.path.insert(0, <repo root>)` and a docstring naming the failure it pins. Most of those failures
+  were *silent* (dividends silently zero, a half-written label file read as complete, two generators
+  writing the same filename), which is why they are tested rather than reviewed. Regression tests
+  first prove the old failure before asserting the fix. `tests/verify_*.py` are deliberately not
+  pytest-collected: manual scripts with `main()` and numeric thresholds as module constants.
+- **Leak-freedom is structural, not checked after the fact.** Expanding walk-forward folds with the
+  test window always in the future; validation sampled only inside each fold's train block; as-of
+  causal features only; normalization statistics computed on train indices only (`zstats(a, tr)`) with
+  clipping (`ZCLIP`) for constant train columns; PI collocation restricted to train contracts and
+  re-asserted every step (`PICollocationSampler.assert_train_only`).
+- **Common random numbers are content-derived.** `module/seeds.py` hashes `item` (sha1) instead of
+  using the row index, so the universe can grow without reshuffling every product's noise. The row-index
+  version broke cross-run label comparison for 98.2% of products; `seeds_stale` detects datasets built
+  under the old rule.
+- **Numbers never appear inline twice.** Magic constants are hoisted to module level and commented with
+  their source (`NPATH=100_000`, `VOL_WIN=180`, `EWMA_LAM=0.99`, `ADV_CORR_WIN=120`, `FACE=10000`,
+  `LAM=1.5`, `SEEDS=(0,1,2,3,4)`, `DPI=400`). Reporting is 5-seed mean ± SE; `util/seeds.py`
+  **refuses to report a model that lacks all five seed CSVs** rather than mixing single-seed numbers in.
+- **DRY across the pipeline/MC boundary is explicit.** `module/features.py` is shared by the dataset
+  build and every MC path so curve/vol definitions stay identical; `module/mc_engine.py` is declared
+  "페이오프 규칙의 정본 구현" and exposes `payoff_from_path_summary_t` purely so the physics loss can be
+  tested against it; MC variants get their own caches while the canonical labels stay untouched.
+- **Commits are the date.** `git log` subjects are `YYYY-MM-DD`, no Conventional-Commit prefix and no
+  co-author trailers. Work happens on `main`; the feature branches were deleted after merge.
 
 ## Impact Analysis
 
 Derived from the dependency graph above (fan-in counts in parentheses).
 
-### High-coupling zones (fan-in ≥ 3)
+### High-coupling zones (fan-in ≥ 5)
 
 Changing any of these ripples widely. Touch with a test run, not a spot check.
 
 | Module | Fan-in | Blast radius |
 |---|---|---|
-| `util/file_manager.py` | 35 | **Everything.** Every read/write in the repo. A path rename breaks all four notebook stages, all tests, all of `scratch/`. |
-| `module/data.py` | 17 | Dataset schema + `zstats/znorm/to_tensor`. Changing column order or the branch/trunk split silently invalidates **every saved weight** in `result/models/`. |
-| `util/plot.py` | 15 | Side-effecting: import mutates global rcParams. Every figure-producing notebook. |
-| `module/pipeline.py` | 10 | The plugin contract. Breaks every `model/*.py` arm at once; also the `module`→`model` cycle anchor. |
-| `module/train.py` | 10 | Stage-1 anchors + shared `_EarlyStop`/`_opt`. Breaks `model/stage2.py` and `module/pi_train.py` together. |
-| `util/utils.py` | 7 | `load_config()` + seeding + device. Breaks reproducibility of every run. |
-| `module/mc.py` | 7 | Reference MC pricer. Changing it invalidates the `mc` column reproduction and the engine cross-check. |
-| `util/metric.py` | 6 | All reported numbers, including `stage_r2`. |
-| `module/mc_engine.py` | 5 | Canonical payoff rule. Any change must be re-validated against `module/mc.py` via `tests/verify_engine_agreement.py`. |
-| `module/features.py` | 5 | **Shared deliberately** between `build_source` and MC recompute. A change here desynchronizes the dataset from the pricer — the one coupling the codebase wants. |
-| `model/stage2.py` | 5 | Every hybrid arm's residual stage; also inside the cycle. |
-| `module/networks.py` | 5 | All torch architectures; changes invalidate saved `.pt` weights. |
-| `module/tabular.py` | 5 | The regressor factory for all five tabular backends. |
-| `module/pi_train.py` | 4 | Physics-informed training; `model/{pi_deeponet,pi_route}.py` + `module/infer.py`. |
-| `module/schedule.py` | 4 | Contract schedule parsing; feeds `data.py` and `build_source.py`. |
-| `module/mc_shards.py` | 3 | The only CLI; the 28-shard cache contract. |
-| `model/registry.py` | 3 | Auto-discovery. A contract change silently drops model arms from `2_run` **without an error**. |
-| `model/deeponet.py` | 3 | The headline model arm. |
-| `module/pi_physics.py` | 3 | PDE residual definition. |
+| `util/file_manager.py` | 69 | **Everything.** Every read/write in the repo. A path rename breaks all four notebooks, all generators, all tests. |
+| `module/data.py` | 21 | Dataset schema + `zstats/znorm/to_tensor`. Changing column order or the branch/trunk split silently invalidates **every saved weight** in `result/models/`. |
+| `module/schedule.py` | 14 | The 12-slot contract representation. Changing padding or units desynchronizes the dataset, both pricers, and the perturbation grid at once. |
+| `module/features.py` | 13 | **Shared deliberately** between the dataset build and the pricer. A change here desynchronizes them — the one coupling the codebase wants. |
+| `module/dividend.py` | 13 | The only dividend branch. A change moves every label; the `^SX7E` proxy alone is worth ±76.5 KRW on 124 products (twice the headline MAE). |
+| `module/mc_engine.py` | 12 | Canonical payoff rule. Any change must be re-validated against `module/mc.py` via `tests/verify_engine_agreement.py`. |
+| `module/market.py` | 12 | The definition of "current methodology" inputs. Reading `divlog` out of its result instead of `dkw` silently drops dividends — that happened once. |
+| `module/mc.py` | 11 | Reference pricer **and** the only price-loading path (`returns_by_ticker`). |
+| `generate/build_mc_variants.py` | 11 | Label production + the stamp rules every staleness check calls. A wrong stamp makes notebooks skip real work and report success. |
+| `module/train.py` | 9 | Stage-1 anchors + shared `_EarlyStop`/`_opt`. Breaks `model/stage2.py` and `module/pi_train.py` together. |
+| `module/curve.py` | 9 | Discount/drift curve. Moves every price by a few KRW and both appear in the decomposition table. |
+| `module/pipeline.py` | 8 | The plugin contract. Breaks every `model/*.py` arm at once; also the `module`→`model` cycle anchor. |
+| `module/seeds.py` | 7 | Common random numbers. Changing the rule invalidates cross-run label comparison (and `seeds_stale` will force a full rebuild). |
+| `module/tabular.py` | 6 | The regressor factory for all four tabular backends. |
+| `util/plot.py` | 6 | Side-effecting: import mutates global rcParams. Every figure-producing module. |
+| `model/stage2.py` · `module/{underlying,mc_shards,networks}.py` | 5 | Residual stage (inside the cycle) · price adapter · shard cache contract · all torch architectures (changes invalidate saved `.pt`). |
 
 ### Critical paths
 
-1. **Data build** — `0_data.ipynb` → `module/build_source.py` → `module/features.py` + `module/schedule.py` → `util/file_manager.py`. `features.py` is also reached by `mc.py`/`mc_engine.py`, so a change here hits the dataset *and* the pricer simultaneously. This is intentional (reproducibility), and it means feature edits are never local.
-2. **Train** — `2_run.ipynb` → `model/registry.py` ⇢ *(dynamic)* `model/*.py` → `module/pipeline.py` → `model/stage2.py` → `module/{data,networks,tabular,train}.py` → `util/file_manager.py`. The dynamic hop is invisible to grep, and the `pipeline ↔ stage2` cycle means `module/` cannot be reasoned about without `model/`.
-3. **MC price** — `python -m module.mc_shards` → `module/mc_engine.py` → `module/mc.py` → `module/features.py` → `util/file_manager.py`, with results landing in `data/cache/mccal_shard_*.json`. The cache *is* the MC result; `combine 28` is the reproduction path.
+1. **Data build** — `0_data_preprocessing` → `module/build_source.py` → `module/{features,schedule,mc}.py`
+   → `module/underlying.py` → `util/file_manager.py`. `features.py` is also reached by the pricers, so
+   a change here hits the dataset *and* the price simultaneously. Intentional, and it means feature
+   edits are never local.
+2. **Label build** — `1_MC_pricer` → `generate/build_mc_variants.py` → `module/market.py` →
+   `module/{curve,dividend,features}.py` → `module/mc_engine.py`. ~160 min for 59,037 products at
+   100k paths; sharded with resume, and the output carries the provenance stamp everything downstream
+   trusts.
+3. **Train** — `2_model_training` → `module/star.py` → `module/mcvar.py` (labels) →
+   `module/train.py` → `module/networks.py`, with the plugin path
+   `model/registry.py` ⇢ *(dynamic)* `model/*.py` → `module/pipeline.py` → `model/stage2.py`. The
+   dynamic hop is invisible to grep, and the `pipeline ↔ stage2` cycle means `module/` cannot be
+   reasoned about without `model/`.
+4. **Report** — `3_visualization` → `generate/{eval_all_stars,eval_cross_section}.py` →
+   `module/anchors.py` (weight loaders) + `module/contract.py` (perturbation grid) →
+   `util/plot.py`. Every tracked figure and table is produced here.
 
 ### Safe zones
 
 Low blast radius — edit freely.
 
-- **Root notebooks** (fan-in 0 — nothing imports a notebook). `5_MC_implied_vol`, `6_IV_vs_HV`, `7_methodology_bakeoff`, `8_bates_vs_historical`, `9_stage2_iv_ablation`, `10_iv_ablation_two_anchors` are fully self-contained (no first-party imports at all).
+- **Root notebooks** (fan-in 0 — nothing imports a notebook), and they are regenerated anyway.
 - **`scratch/`** — git-ignored, imported by nothing tracked.
-- **Leaf modules** (fan-in 1): `util/speed.py` (only `3_evaluate`), `model/pi_route.py` (only `module/infer.py`, via a deferred import), `model/deeponet_ci.py` (only tests), `module/iv_term.py` (only tests).
-- **New model arms** — adding a `model/*.py` with `run(D, cfg)` touches nothing else by construction. This is the intended extension seam.
+- **Leaf modules** (fan-in ≤ 2): `util/speed.py`, `util/seeds.py`, `module/iv_term.py`,
+  `module/infer.py`, `module/pi_physics.py` (tests + `pi_train` only), `model/deeponet_ci.py`,
+  `model/pi_route.py` (only `module/infer.py`, via a deferred import).
+- **Verification generators** — `generate/{verify_raw_run,freeze_verdict,measure_source_switch}.py`
+  read artifacts and write reports; nothing in the pipeline depends on them.
+- **New model arms** — adding a `model/*.py` with `run(D, cfg)` touches nothing else by construction.
+  This is the intended extension seam.
 
 ### Known structural debt
 
-1. **`module` ↔ `model` import cycle** via `pipeline.py` → `stage2.py`, held together only by the deferred import at `module/infer.py:100`. The nominal lower layer reaches up into the upper one.
-2. **Dynamic model discovery is not greppable** — `model/registry.py` enrolls arms via `pkgutil`, so a dropped or renamed arm vanishes from `2_run` without raising.
-3. **`util/plot.py` mutates global state on import** — any module importing it inherits dpi-400/transparent rcParams whether it wants them or not.
-4. **`requirements.txt` is incomplete** (`scipy`, `joblib`, `pytest`, `yfinance`, `statsmodels`, `numba` missing) and its notebook-chain comment is stale.
-5. **`experiments/`** holds only orphan `.pyc` files with no surviving source.
+1. **`module` ↔ `model` import cycle** via `pipeline.py` → `stage2.py`, held together only by a
+   deferred import in `module/infer.py`. The nominal lower layer reaches up into the upper one.
+2. **`module` → `generate` inversion**: `module/data.py:datasets_stale()` imports
+   `generate.build_mc_variants` because the provenance-stamp rule lives in the generator layer.
+   Moving `stamp_differs` (and `STALE_KEYS`) into `module/` would resolve it.
+3. **Two different `D` types under one name** — `module.data.load` vs
+   `module.mcvar.make_D`/`module.star.make_all`. Same attribute names, different column counts
+   (`VC` 7 vs 10), different members. Both docstrings warn; a `variant=` argument on `data.load` would
+   merge them.
+4. **Dynamic model discovery is not greppable** — `model/registry.py` enrolls arms via `pkgutil`, so a
+   dropped or renamed arm vanishes without raising.
+5. **`util/plot.py` mutates global state on import** — any module importing it inherits
+   dpi-400/transparent rcParams whether it wants them or not.
+6. **`requirements.txt` omits dev/transitive deps** (`joblib`, `pytest`, `black`).
+7. **`module/mc_shards.py` keys shards by row position**, so a universe change silently misaligns
+   results. `combine` now refuses when the row count differs, but the key is still positional —
+   `item` would be the honest key.

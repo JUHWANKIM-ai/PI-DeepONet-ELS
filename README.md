@@ -340,18 +340,30 @@ price = f(Dx.CURVE[[i]], Dx.VC[[i]], Dx.CON[[i]])  # 액면 1 기준
 
 ```
 config.yaml              # 모든 하이퍼파라미터의 단일 출처
-0_data_preprocessing.ipynb  # raw + cache -> data/els3_dataset.parquet + 탈락 퍼널 · 분포 · 시계열
+pyproject.toml           # 포매터 설정만 (black, 100컬럼). 패키지로 설치하지는 않는다
+requirements.txt         # 의존성 핀 (Python 3.11, conda env `abacus`)
+
+0_data_preprocessing.ipynb  # raw -> data/els3_dataset.parquet + 탈락 퍼널 · 분포 · 시계열
 1_MC_pricer.ipynb           # 현행 방법론 프라이서: 시장입력 · 비트단위 재현검증 · 경로잡음
 2_model_training.ipynb      # 대리모형 학습(1·2·3스타 통합 / 3스타 전용) + OOS 수준 지표
 3_visualization.ipynb       # 그림 일체 4개 범주: 스타별 성능 · 계약조건 반응 · 프라이서 · 상품
 
-model/                   # 모델 플러그인(레지스트리 자동발견): benchmark, deeponet, _template
-module/                  # 데이터 + 특성/MC 엔진 + 네트워크 + 학습 + 추론
-util/                    # file_manager(경로), utils(설정/시드), metric, plot, speed
-data/                    # cache/ 와 raw/ 만 추적 대상 입력(아래 참고)
-result/                  # predictions/, image/, statistics/, models/(폴드별 저장 가중치)
-paper/                   # 참고 논문 (추적하지 않는다 — 목록은 아래 참고문헌 절)
+module/     27파일        # 데이터 + 특성/MC 엔진 + 네트워크 + 학습 + 추론
+model/       9파일        # 모델 플러그인(레지스트리 자동발견): benchmark, deeponet, _template
+util/        7파일        # file_manager(경로), utils(설정/시드), metric, plot, speed
+generate/   15파일        # 노트북·라벨·표·그림 생성기 + 재현 판정 도구
+tests/      50파일        # 262 passed · 29 skipped (`pytest`)
+
+data/                    # 원천 두 곳만 입력, 나머지는 산출물 (아래 참고) — git-ignore
+result/                  # predictions/, image/, statistics/, models/ — git-ignore
+                         #   (README 가 싣는 그림 2장만 예외로 추적)
+docs/                    # 설계 노트 · 계획서 — git-ignore
+paper/                   # 참고 논문 — git-ignore (목록은 아래 참고문헌 절)
+scratch/                 # 버리는 작업물 — git-ignore
 ```
+
+**데이터·가중치·중간결과는 추적하지 않는다** — 전부 노트북이 다시 만든다. 코드 외에 추적되는 것은
+README 가 싣는 그림 2장과, 재현 판정의 근거를 고정한 `tests/fixtures/raw_run_verdict.json` 뿐이다.
 
 ### 데이터 — 추적 대상 vs 재생성 대상
 
@@ -447,11 +459,58 @@ jupyter nbconvert --to notebook --execute --inplace 3_visualization.ipynb
 
 ---
 
+## 코드 규약
+
+네 패키지(`module` · `model` · `util` · `generate`, 함수 356개)에 예외 없이 적용된다.
+
+| 항목 | 규약 | 확인 방법 |
+|---|---|---|
+| 포매터 | **black, 100컬럼** (`pyproject.toml`) | `black --check module model util generate tests` |
+| 독스트링 | 함수 **356/356** · 클래스 8/8. 한국어 | — |
+| 타입 힌트 | 파라미터 **849/849** · 반환 **356/356** | `typing.get_type_hints()` 전수 통과 |
+| 테스트 | 50파일, **262 passed · 29 skipped** (약 42초) | `pytest` |
+| 그림 글자 | 전부 영어 | `util/plot.py` |
+
+독스트링은 API 설명이 아니라 **설계 메모**다. 무엇을 하는지 한 줄, 왜 그렇게 했는지와 기각한
+대안, 그리고 `입력`/`출력` 블록을 적는다. 반환이 `None` 일 수 있으면 그 조건을 쓴다 — 이 저장소의
+함수는 입력이 모자라면 예외 대신 `None` 을 돌려주고 호출부가 그 상품을 탈락시키는 규약이기 때문이다.
+
+```python
+def div_kwargs(
+    tks: Sequence[str], t0: pd.Timestamp, ten: float, src: str = DEFAULT_SRC
+) -> tuple[dict[str, Any], np.ndarray, int] | None:
+    """(엔진 kwargs, qcont(3), 이산 이벤트수). LSEG 수익률이 없으면 None.
+
+    종전에는 이 분기가 generate/build_mc_variants.py 에 두 벌 있었고 ...
+
+    입력
+      tks : list[str] 길이 3 — 기초자산 티커
+      src : "lseg" | "yf" — 배당 소스
+    출력
+      (dkw, qcont, nev) | None
+        dkw : dict — "lseg" 면 {"qcont": q}, "yf" 면 {"divlog": D}
+        LSEG 수익률을 못 구하면 **None** 하나만 돌려준다
+    예외
+      ValueError — src 가 SRCS 밖일 때
+    """
+```
+
+타입 힌트는 `from __future__ import annotations` **없이** 쓴다. 그걸 넣으면 주석이 문자열로 남아
+오타가 런타임까지 숨는데, 지금은 즉시 평가되므로 **import 가 곧 검사**다. 예측기 두 규약이
+타입으로 구분되는 것도 같은 이유다 — `Callable[[npt.ArrayLike], np.ndarray]`(행 인덱스)와
+`Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]`(임의 입력 forward)는 서로 섞이면 안 된다.
+
+테스트는 **과거에 실제로 터진 결함 하나당 한 파일**이다. 대부분 예외가 나지 않고 숫자만 조용히
+틀리던 것들이라(배당이 0 으로 들어간 가격, 반쯤 쓰인 라벨 파일을 완료로 읽기, 같은 파일명에
+그림 두 번 쓰기) 사람 눈으로는 다시 잡기 어렵다.
+
+---
+
 ## 설정 (`config.yaml`)
 
 `seed`, `device`; `data.walk_forward` 폴드 경계 `[0.6,0.7,0.8,0.9,1.0]`(test = 미래 40%, 확장 4폴드),
 `val_frac`, `time_decay`; `train`(연산자망 반복수 / lr / early stopping); `networks.P`(잠재차원);
-표형 벤치마크용 `tabular` 트리 하이퍼파라미터(`xgb`/`lgbm`/`cat`/`gbm`/`ridge`).
+표형 벤치마크용 `tabular` 트리 하이퍼파라미터(`xgb`/`lgbm`/`gbm`/`ridge`).
 
 ---
 
