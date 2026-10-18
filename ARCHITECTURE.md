@@ -40,7 +40,7 @@ PI-DeepONet-ELS/
 │                                #   CSVs) are the only tracked inputs; *.csv/*.parquet are derived
 ├── result/                      # predictions/, image/, statistics/, models/ (per-fold weights)
 ├── docs/                        # Korean design notes + architecture .drawio/.png  (git-ignored)
-├── paper/                       # reference PDFs [1]-[6] (DeepONet, PI-DeepONet, Bates, MFIV)
+├── paper/                       # citation list; the PDFs themselves are git-ignored
 ├── scratch/                     # throwaway scripts/notebooks/logs (git-ignored)
 └── experiments/                 # empty (only stale __pycache__)
 ```

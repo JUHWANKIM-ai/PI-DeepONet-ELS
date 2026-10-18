@@ -59,3 +59,5 @@ to_measure.json
 # 데이터는 추적하지 않는다 — 코드만 푸시한다 (원천 219M + 캐시 70M + LSEG 37M).
 # 노트북 0 이 원천에서 데이터셋을, generate/build_mc_variants.py 가 MC 라벨을 다시 만든다.
 data/
+# 참고 논문 PDF 는 추적하지 않는다 (47M, 출판사 저작물). 인용목록(Citation.txt)만 남긴다.
+paper/*.pdf
