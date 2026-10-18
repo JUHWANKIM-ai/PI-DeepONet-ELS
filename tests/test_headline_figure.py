@@ -124,17 +124,45 @@ def test_raw_slope_csv_holds_numbers_not_lists():
     assert pd.api.types.is_numeric_dtype(C[col]), "모형 열이 숫자가 아니다 (리스트 문자열)"
 
 
-def test_terms_figure_is_generated_by_a_callable(tmp_path, monkeypatch):
-    """계약변화별 가격반응 그림 — **함수를 실제로 부른다.**"""
-    import numpy as np
-    import pandas as pd
-    import tools.eval_all_stars as EAS
-    monkeypatch.setattr(fm, "image", lambda n: tmp_path / (n + ".png"))
-    lv = np.array([0.35, 0.40, 0.45, 0.50])
-    rows = []
-    for f in ("barrier", "coupon"):
-        for v in lv:
-            rows.append({"item": "A", "nstar": 3, "factor": f, "level": v,
-                         "mc": 9500 + 100 * v, EAS.HEADLINE[0]: 9500 + 95 * v})
-    EAS.terms_fig(pd.DataFrame(rows))
-    assert (tmp_path / (TERMS + ".png")).stat().st_size > 10_000
+def test_headline_terms_figure_uses_the_table_model():
+    """구간평균 그림도 **표와 같은 모형**이어야 한다.
+
+     종전에는 README 가 `Direct+f+m` 표 옆에 `Direct+m` 구간평균 그림을 실었다. 같은 문서에서
+     두 모형을 한 대상인 양 보여주면 안 된다.
+
+     참고: 구간평균은 **선형** 통계라 "시드 예측을 평균한 뒤 구간화" 와 "구간별로 평균한 뒤
+     시드 평균" 이 같은 값이다. R²·MAPE 때와 달리 집계 규약은 문제가 아니고, 모형만 문제였다."""
+    import inspect
+    import tools.build_nb_viz as BNV
+    src = inspect.getsource(BNV)
+    assert "nb_pred_ball_dm.npy" in src, "노트북 3 이 기준 모형 예측을 읽지 않는다"
+    assert "headline_3star_terms" in src, "기준 모형 구간평균 그림이 없다"
+
+
+def test_notebook2_saves_the_headline_prediction():
+    import inspect
+    import tools.build_nb_training as BNT
+    src = inspect.getsource(BNT)
+    assert "nb_pred_ball_dm.npy" in src, "노트북 2 가 기준 모형 예측을 저장하지 않는다"
+
+
+def test_only_one_generator_writes_each_figure():
+    """같은 파일명을 두 생성기가 쓰면 **나중 것이 덮어쓴다.**
+
+     실제로 그랬다: 노트북 3 의 cat1 절이 구간평균을 `headline_3star_terms.png` 로 저장한 뒤,
+     나중에 도는 eval_all_stars 가 같은 이름으로 선 그림을 덮어썼다. 파일은 생겼고 로그도
+     "saved" 라고 찍혀서 겉보기에는 성공이었다."""
+    import pathlib as _p
+    import re
+    root = _p.Path(__file__).resolve().parent.parent
+    # **실제 저장 호출만** 센다 — 이름이 문자열로 등장하는 것(경로 참조·주석)은 쓰기가 아니다.
+    # 저장 호출만: savefig(fm.image("x")) 또는 save(fig, "x"). display(Image(fm.image("x")))
+    # 같은 **읽기**는 제외한다.
+    pat = re.compile(r'(?:savefig\(fm\.image\(|save\(fig,\s*)"([a-z0-9_]+)"')
+    writers = {}
+    for f in sorted(root.glob("tools/*.py")):
+        txt = f.read_text(encoding="utf-8", errors="replace")
+        for name in set(pat.findall(txt)):
+            writers.setdefault(name, set()).add(f.name)
+    dup = {n: sorted(w) for n, w in writers.items() if len(w) > 1}
+    assert not dup, "한 그림을 여러 생성기가 쓴다: {}".format(dup)

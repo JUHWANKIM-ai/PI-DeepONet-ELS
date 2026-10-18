@@ -79,6 +79,10 @@ oos = np.concatenate([te for _, _, te in D.WF])
 P_all = np.load(fm.CACHE / "nb_pred_ball_d.npy")
 P_3 = np.load(fm.CACHE / "nb_pred_ball3_d.npy")
 pred, pred3 = np.nanmean(P_all, 0), np.nanmean(P_3, 0)
+# 기준 모형(Direct+f+m). README 가 싣는 구간평균 그림이 이 모형이어야 한다 — 수준 표와 같은 모형.
+# 구간평균은 선형 통계라 시드 평균 순서가 결과를 바꾸지 않는다 (R²·MAPE 와 다른 점).
+_PDM = fm.CACHE / "nb_pred_ball_dm.npy"
+pred_dm = np.nanmean(np.load(_PDM), 0) if _PDM.exists() else None
 mc, fairk = D.MC * FACE, D.FAIR * FACE
 err = pred - mc
 nobs = np.asarray(D.nobs).astype(int)
@@ -294,6 +298,33 @@ for s, m in STARS:
                  fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, .06, 1, .92])
     save(fig, "cat1_{}star_terms_binned".format(s))
+
+    # README 용: 같은 구간평균을 **기준 모형(Direct+f+m)** 으로만 그린다.
+    # 위 그림은 학습 풀 비교(1·2·3 vs 3스타만)가 목적이라 모형이 다르다.
+    if s == 3 and pred_dm is not None:
+        fig, ax = plt.subplots(nr, nc, figsize=(4.4 * nc, 3.3 * nr))
+        axes = np.atleast_1d(ax).ravel()
+        for a, (lab, i) in zip(axes, T.items()):
+            xv = TERMS[lab]; xs = xv[i]
+            qq = np.unique(np.quantile(xs, np.linspace(0, 1, 11)))
+            b = np.clip(np.digitize(xs, qq[1:-1]), 0, len(qq) - 2)
+            cx = np.array([xs[b == j].mean() for j in range(len(qq) - 1)])
+            for nm, yv, c, ls in [("MC (truth)", mc, C_MC, "-"),
+                                  ("DeepONet (Direct+f+m)", pred_dm, "#f0c05a", "--")]:
+                cy = np.array([yv[i][b == j].mean() for j in range(len(qq) - 1)])
+                a.plot(cx, cy, ls, marker="o", color=c, ms=4,
+                       lw=2.5 if ls == "-" else 2.2, label=nm)
+            a.set_xlabel(lab); a.set_ylabel("mean price [KRW]")
+            a.set_title("{}  (n={:,}, {} bins)".format(lab, len(i), len(qq) - 1),
+                        fontweight="bold", fontsize=10.5)
+        for a in axes[len(T):]:
+            a.axis("off")
+        h, l = axes[0].get_legend_handles_labels()
+        fig.legend(h, l, loc="lower center", ncol=2, frameon=False, bbox_to_anchor=(.5, -.02))
+        fig.suptitle("3-star - price by contract term, decile bins (no linearity assumed)",
+                     fontsize=13, fontweight="bold")
+        fig.tight_layout(rect=[0, .06, 1, .92])
+        save(fig, "headline_3star_terms")
 
 # 스타 구분 없는 전수(ALL)도 같은 정의로 기록한다 — 그림은 스타별로만 내고 수치는 표에 담는다
 for lab, i in terms_for(oos).items():

@@ -303,8 +303,10 @@ def metrics(pred, idx):
 
 P_all, fold = predict("ball_d")
 P_3, _ = predict("ball3_d")
+P_dm, _ = predict("ball_dm", feat=True)                 # 기준 모형 (Direct+f+m)
 np.save(fm.CACHE / "nb_pred_ball_d.npy", P_all)        # 3장 시각화가 되읽는다
 np.save(fm.CACHE / "nb_pred_ball3_d.npy", P_3)
+np.save(fm.CACHE / "nb_pred_ball_dm.npy", P_dm)
 
 rows = []
 for gl, gm in [("1star", D.nstar == 1), ("2star", D.nstar == 2),

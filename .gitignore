@@ -48,7 +48,7 @@ result/*
 !result/image/
 result/image/*
 !result/image/headline_3star.png
-!result/image/cat1_3star_terms_binned.png
+!result/image/headline_3star_terms.png
 scratch/
 skills-lock.json
 survivors.json
