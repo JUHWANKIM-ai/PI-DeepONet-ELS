@@ -28,7 +28,14 @@ iT = CONTRACT.index("TENOR")
 
 
 def set_coupon(CON, c):
-    """연쿠폰을 c 로. 누적지급률을 같은 비율로 재조정해 스케줄 모양을 유지한다."""
+    """연쿠폰을 c 로. 누적지급률을 같은 비율로 재조정해 스케줄 모양을 유지한다.
+
+    입력
+      CON : ndarray(n, 51) — 계약 블록. 원본은 바꾸지 않는다
+      c   : float — 목표 연쿠폰 (소수)
+    출력
+      ndarray(n, 51) — 사본. 기존 쿠폰이 0 이면 지급률도 0 으로 둔다 (비율을 알 수 없다)
+    """
     X = CON.copy()
     old = X[:, iC]
     X[:, iP] = X[:, iP] * np.where(old > 1e-9, c / np.maximum(old, 1e-9), 0.0)[:, None]
@@ -37,7 +44,14 @@ def set_coupon(CON, c):
 
 
 def set_barrier(CON, b):
-    """KI 배리어를 b 로. b >= 1.0 은 노낙인이므로 리자드도 중립으로 되돌린다(구조 일관성)."""
+    """KI 배리어를 b 로. b >= 1.0 은 노낙인이므로 리자드도 중립으로 되돌린다 (구조 일관성).
+
+    입력
+      CON : ndarray(n, 51) — 계약 블록
+      b   : float — 목표 배리어 (소수, 스팟=1.0 기준)
+    출력
+      ndarray(n, 51) — 사본. b >= 1.0 이면 lz_barr 를 1.2, lz_pmt 를 0 으로 덮어쓴다
+    """
     X = CON.copy()
     X[:, iB] = b
     if b >= 1.0:
@@ -47,14 +61,32 @@ def set_barrier(CON, b):
 
 
 def shift_strikes(CON, d):
-    """행사가 스케줄 전체를 d 만큼 평행이동."""
+    """행사가 스케줄 12칸 전체를 d 만큼 평행이동한다.
+
+    입력
+      CON : ndarray(n, 51) — 계약 블록
+      d   : float — 이동폭 (소수). 음수면 행사가가 낮아진다
+    출력
+      ndarray(n, 51) — 사본. 스텝다운 폭(첫−마지막 간격)은 바뀌지 않는다
+    """
     X = CON.copy()
     X[:, iS] = X[:, iS] + d
     return X
 
 
 def set_spread(CON, sp, nobs):
-    """첫 행사가 고정, 첫−마지막 간격을 sp 로. 원래 평평한 스케줄은 선형 스텝다운으로 새로 만든다."""
+    """첫 행사가를 고정하고 첫−마지막 간격을 sp 로 맞춘다.
+
+    원래 평평한(간격 0) 스케줄은 비례 조정이 불가능하므로 회차 수에 맞춰 **선형 스텝다운을
+    새로 만들고** 남는 칸은 마지막값으로 채운다.
+
+    입력
+      CON  : ndarray(n, 51) — 계약 블록
+      sp   : float — 목표 스텝다운 폭 (소수)
+      nobs : array-like(n,) int — 상품별 회차 수. 평평한 스케줄을 새로 만들 때만 쓴다
+    출력
+      ndarray(n, 51) — 사본
+    """
     X = CON.copy()
     Sx = X[:, iS].copy()
     first = Sx[:, 0]
@@ -73,7 +105,15 @@ def set_spread(CON, sp, nobs):
 
 
 def shift_lizard(CON, d, has_lz):
-    """리자드 배리어를 d 만큼 평행이동 (리자드가 켜진 회차만)."""
+    """리자드 배리어를 d 만큼 평행이동한다 (리자드가 켜진 회차만).
+
+    입력
+      CON    : ndarray(n, 51) — 계약 블록
+      d      : float — 이동폭 (소수)
+      has_lz : ndarray(n,) bool — 리자드 상품인가. False 행은 손대지 않는다
+    출력
+      ndarray(n, 51) — 사본. 중립값(1.2)인 회차는 그대로 둔다 — 그 회차엔 조항이 없다
+    """
     X = CON.copy()
     lb = X[:, iLB]
     on = (lb < LZ_BARR_NEUTRAL) & has_lz[:, None]
@@ -82,7 +122,15 @@ def shift_lizard(CON, d, has_lz):
 
 
 def scale_lizard_pmt(CON, r, has_lz):
-    """리자드 지급률을 r 배."""
+    """리자드 지급률을 r 배로 한다.
+
+    입력
+      CON    : ndarray(n, 51) — 계약 블록
+      r      : float — 배수
+      has_lz : ndarray(n,) bool — 리자드 상품인가. False 행은 손대지 않는다
+    출력
+      ndarray(n, 51) — 사본. 중립값 0 은 몇 배를 해도 0 이라 자연히 보존된다
+    """
     X = CON.copy()
     X[:, iLP] = np.where(has_lz[:, None], X[:, iLP] * r, X[:, iLP])
     return X
@@ -99,7 +147,20 @@ GRID = {
 
 
 def apply_factor(CON, factor, lv, nobs, has_lz):
-    """GRID 의 요인 이름 하나와 수준 하나로 계약을 변형한다."""
+    """GRID 의 요인 이름 하나와 수준 하나로 계약을 변형한다 — 위 여섯 함수의 단일 입구.
+
+    입력
+      CON    : ndarray(n, 51) — 계약 블록
+      factor : str — GRID 의 키 ("barrier" | "coupon" | "strike_shift" | "spread" |
+               "lz_shift" | "lz_pmt_scale")
+      lv     : float — 그 요인의 수준
+      nobs   : array-like(n,) — "spread" 에만 쓰인다
+      has_lz : ndarray(n,) bool — 리자드 두 요인에만 쓰인다
+    출력
+      ndarray(n, 51) — 변형된 사본
+    예외
+      ValueError — 모르는 factor
+    """
     if factor == "barrier":
         return set_barrier(CON, lv)
     if factor == "coupon":
@@ -116,7 +177,20 @@ def apply_factor(CON, factor, lv, nobs, has_lz):
 
 
 def in_domain(src, st, factor, lv, struct):
-    """그 구조의 표본에서 해당 수준 근처(±허용)에 실제 상품이 몇 % 인가 — 외삽 표시용."""
+    """그 구조의 표본에서 해당 수준 근처(±허용)에 실제 상품이 몇 % 인가 — 외삽 표시용.
+
+    0 에 가까우면 그 수준은 **학습 분포 밖**이고, 거기서 나온 기울기는 외삽이다.
+
+    입력
+      src    : DataFrame — 원천. B · coupon · Kfirst · stepdown 열을 본다
+      st     : array-like(n,) — 행별 구조 라벨
+      factor : str — "barrier" | "coupon" | "strike_shift" | "spread".
+               리자드 두 요인은 지원하지 않는다
+      lv     : float — 수준. "strike_shift" 는 이동폭이므로 그 구조의 Kfirst 중위수에 더해 쓴다
+      struct : 비교할 구조 라벨
+    출력
+      float — 0~100 [%]. 지원하지 않는 factor 면 np.nan
+    """
     m = st == struct
     if factor == "barrier":
         x, tol = src.B.values[m], 0.02

@@ -55,11 +55,27 @@ _HIST = {}
 
 
 def _safe(t):
+    """티커를 파일명에 쓸 수 있는 형태로 바꾼다.
+
+    입력
+      t : str — 티커 (예: "069500.KS", "^GSPC")
+    출력
+      str — "." 과 "^" 를 "_" 로 바꾼 문자열. 캐시 파일 div_<이것>.parquet 의 이름이 된다
+    """
     return t.replace(".", "_").replace("^", "_")
 
 
 def div_hist(tk):
-    """티커(또는 프록시 ETF)의 배당·종가 이력. 캐시 파일을 지연 적재한다."""
+    """티커(또는 프록시 ETF)의 배당·종가 이력. 캐시 파일을 지연 적재한다.
+
+    입력
+      tk : str — 기초자산 티커. PROXY 에 있으면 그 ETF 로 치환해 읽는다
+    출력
+      DataFrame — Close · Dividends 열, DatetimeIndex. 모듈 전역에 캐시된다
+    예외
+      FileNotFoundError — data/cache/div_*.parquet 이 없을 때.
+                          원천 전용 트리에는 이 캐시가 없다 — `div_kwargs` 의 "lseg" 경로를 쓴다
+    """
     s = PROXY.get(tk, tk)
     if s not in _HIST:
         _HIST[s] = pd.read_parquet(fm.CACHE / "div_{}.parquet".format(_safe(s)))
@@ -67,7 +83,17 @@ def div_hist(tk):
 
 
 def div_events(tk, t0):
-    """발행일 t0 이전 최근 분배일 d_k 로 끝나는 창 (d_k−320일, d_k] 의 (배당락일, δ=배당/전일종가)."""
+    """발행일 t0 이전 최근 분배일 d_k 로 끝나는 창의 배당락 이벤트를 뽑는다.
+
+    창은 (d_k − WINDOW_DAYS, d_k] 다 — 분기배당 4회를 담되 같은 분기를 두 번 세지 않는 폭이다.
+
+    입력
+      tk : str — 티커 (PROXY 치환은 `div_hist` 가 한다)
+      t0 : Timestamp — 발행일. **이 날짜 이전**만 본다 (인과성)
+    출력
+      list[(Timestamp, float)] — (배당락일, δ = 배당금 / 직전 종가).
+                                 배당 이력이 없으면 빈 리스트
+    """
     h = div_hist(tk)
     close, dv = h["Close"], h["Dividends"]
     ev = dv[(dv > 0) & (dv.index < t0)]
@@ -83,12 +109,21 @@ def div_events(tk, t0):
 
 
 def build_div(tks, t0, ten, skip=ZERO_DIV):
-    """(divlog[N,3], qcont[3], 이벤트수, 이벤트목록).
+    """최근 1년 배당이 만기까지 매년 같은 기념일에 되풀이된다고 보고 이산배당 행렬을 만든다.
 
-    divlog 는 배당락일에 log(1−δ) 를 넣은 일별 드리프트 보정.
-    qcont 는 같은 총량을 연속 배당수익률로 환산한 것 (비교용).
-    skip: 배당을 0 으로 둘 티커 집합. 기본값 ZERO_DIV 는 총수익지수를 거른다 —
-          배당 이력 파일 자체가 없으므로 넘기지 않으면 FileNotFoundError 가 난다."""
+    입력
+      tks  : list[str] 길이 3 — 기초자산 티커
+      t0   : Timestamp — 발행일
+      ten  : float — 만기 [년]. 일수는 round(ten × 365)
+      skip : 집합 — 배당을 0 으로 둘 티커. 기본 ZERO_DIV(총수익지수)는 배당 이력 파일 자체가
+             없으므로, 넘기지 않으면 FileNotFoundError 가 난다
+    출력
+      (divlog, qc, nev, evl)
+        divlog : ndarray(N, 3) float32 — 배당락일에 log(1−δ) 를 넣은 일별 드리프트 보정
+        qc     : ndarray(3,) float32 — 같은 총량의 연속 배당수익률 (연간 총 로그하락)
+        nev    : int — 주입된 이산 이벤트 수
+        evl    : list[(자산i, 티커, 경과일, 월, 로그하락)] — 감사용 목록
+    """
     N = int(round(ten * 365))
     divlog = np.zeros((N, 3), np.float32)
     qc = np.zeros(3, np.float32)
@@ -121,6 +156,16 @@ _LS_Y = {}
 
 
 def _lseg_master():
+    """share_underlyings_v2 의 master.csv 를 지연 적재한다.
+
+    `module.underlying.master` 와 같은 파일을 읽지만 캐시는 따로 둔다 — 두 모듈이
+    서로를 import 하지 않게 하려는 의도적 중복이다.
+
+    입력
+      없음
+    출력
+      DataFrame — 티커·파일 매핑. 모듈 전역에 캐시된다
+    """
     global _LS_MASTER
     if _LS_MASTER is None:
         _LS_MASTER = pd.read_csv(fm.DATA / SU_DIR / "master.csv", encoding="utf-8-sig")
@@ -128,7 +173,14 @@ def _lseg_master():
 
 
 def lseg_yield(tk):
-    """티커 -> LSEG 일별 배당수익률(소수). 본체에 없으면 관련 ETF. 없으면 None."""
+    """티커 -> LSEG 일별 배당수익률. 본체(`가격티커`)를 먼저 보고 없으면 관련 ETF 를 본다.
+
+    입력
+      tk : str — 티커
+    출력
+      Series | None — 일별 배당수익률(**소수**, 원천의 퍼센트를 /100), DatetimeIndex 오름차순.
+                      매핑이 없거나 유효 관측이 없으면 None. 티커별로 캐시된다
+    """
     if tk in _LS_Y:
         return _LS_Y[tk]
     M = _lseg_master()
@@ -149,7 +201,18 @@ def lseg_yield(tk):
 def qcont_lseg(tks, t0, skip=ZERO_DIV):
     """발행일 t0 이전 최신 LSEG 배당수익률 3개 (연속 q). 하나라도 없으면 None.
 
-    인과성: t0 **이전** 값만 본다. 프록시 규칙은 yfinance 쪽(PROXY)과 같은 매핑을 쓴다."""
+    인과성: t0 **이전** 값만 본다. 프록시 규칙은 yfinance 쪽(PROXY)과 같은 매핑을 쓴다.
+
+    입력
+      tks  : list[str] 길이 3 — 기초자산 티커
+      t0   : Timestamp — 발행일
+      skip : 집합 — q=0 으로 둘 티커. 기본 ZERO_DIV
+    출력
+      ndarray(3,) float32 | None — 연속 배당수익률.
+        세 자산 중 **하나라도** 수익률 계열이 없거나 t0 이전 관측이 없으면 None →
+        호출부가 그 상품을 "lseg div" 로 탈락시킨다.
+        프록시로 먼저 찾고, 없으면 티커 본체로 한 번 더 찾는다
+    """
     q = []
     for t in tks:
         if t in skip:
@@ -180,7 +243,23 @@ def div_kwargs(tks, t0, ten, src=DEFAULT_SRC):
       "yf"    {"divlog": D}  이산 배당락 드리프트 보정
 
     종전에는 이 분기가 generate/build_mc_variants.py 에 두 벌 있었고 generate/mc_check_12star.py 는
-    분기 없이 build_div 를 직접 불러, 원천 전용 트리에서 div_* 캐시를 찾다 죽었다."""
+    분기 없이 build_div 를 직접 불러, 원천 전용 트리에서 div_* 캐시를 찾다 죽었다.
+
+    입력
+      tks : list[str] 길이 3 — 기초자산 티커
+      t0  : Timestamp — 발행일
+      ten : float — 만기 [년]. "yf" 경로에서만 쓰인다
+      src : "lseg" | "yf" — 배당 소스. 기본 DEFAULT_SRC("lseg")
+    출력
+      (dkw, qcont, nev) | None
+        dkw   : dict — 엔진에 그대로 풀어 넘길 kwargs. "lseg" 면 {"qcont": q},
+                "yf" 면 {"divlog": D}
+        qcont : ndarray(3,) float32 — 두 경로 모두 연속 환산값을 함께 준다 (비교·기록용)
+        nev   : int — 이산 이벤트 수. "lseg" 는 항상 0
+        LSEG 수익률을 못 구하면 **None** 하나만 돌려준다
+    예외
+      ValueError — src 가 SRCS 밖일 때
+    """
     if src not in SRCS:
         raise ValueError("배당 소스는 {} 중 하나여야 한다: {!r}".format(SRCS, src))
     if src == "lseg":

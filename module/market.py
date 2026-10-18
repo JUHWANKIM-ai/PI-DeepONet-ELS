@@ -27,7 +27,14 @@ _D = None
 
 
 def dataset():
-    """els3_dataset (발행일 정렬). 캐시된다."""
+    """els3_dataset 을 발행일 순으로 읽어 돌려준다. 첫 호출에서만 읽고 전역에 캐시한다.
+
+    입력
+      없음
+    출력
+      DataFrame — 3스타 상품 전수. isu_ord 오름차순, 인덱스 재설정.
+                  **같은 객체를 매번 돌려준다** — 호출부가 수정하면 다른 호출부가 본다
+    """
     global _D
     if _D is None:
         _D = (
@@ -39,20 +46,45 @@ def dataset():
 
 
 def returns():
-    """티커 -> 로그수익률 Series. module.mc.load_market 의 RET 과 같다."""
+    """티커 -> 로그수익률 Series. `module.mc.load_market` 의 RET 과 같은 객체다.
+
+    입력
+      없음
+    출력
+      dict[str -> Series] — 티커에서 일별 로그수익률로.
+                            가격 적재 경로가 하나여야 하므로 mc 쪽을 그대로 쓴다
+    """
     from .mc import load_market
 
     return load_market()["RET"]
 
 
 def calendar(ret=None):
-    """KRX 거래일 달력 (^KS200 수익률 인덱스)."""
+    """KRX 거래일 달력 (^KS200 수익률의 인덱스).
+
+    입력
+      ret : dict | None — `returns()` 의 결과. None 이면 여기서 부른다
+            (반복 호출에서는 미리 받아 넘기는 게 싸다)
+    출력
+      DatetimeIndex — NaN 을 뺀 ^KS200 거래일. `features.corr_bd` 의 창 기준이 된다
+    """
     r = (ret or returns())["^KS200"]
     return r.dropna().index
 
 
 def ns_zero(dt, krw_file="krw_curve_fred.parquet"):
-    """FRED 3노드에 Nelson-Siegel 을 맞춘 제로커브 콜러블 (변형 A 비교용). 결측이면 None."""
+    """FRED 3노드에 Nelson-Siegel 을 맞춘 제로커브 콜러블 (변형 A 비교용).
+
+    정본(변형 B)은 `curve.zero_from_date` 의 CD+IRS 부트스트랩이다. 이쪽 NS 는 1~3년을
+    ~80bp 과대평가한다 — 비교 대상으로만 쓴다.
+
+    입력
+      dt       : Timestamp — 발행일. asof 로 그 시점 값을 집는다
+      krw_file : str — data/raw/rates/ 안의 파일명
+    출력
+      callable(times) -> ndarray | None — 제로금리 콜러블 (소수).
+                                          세 노드 중 하나라도 결측이면 None
+    """
     K = pd.read_parquet(fm.rate(krw_file))
     krow = K.asof(dt).values
     if np.isnan(krow).any():
@@ -63,6 +95,13 @@ def ns_zero(dt, krw_file="krw_curve_fred.parquet"):
     b, *_ = np.linalg.lstsq(A, krow, rcond=None)
 
     def dz(times, b=b):
+        """만기 → NS 제로금리. b 를 기본인수로 묶어 적합 결과를 고정한다.
+
+        입력
+          times : scalar | array-like — 만기 [년]
+        출력
+          ndarray — 같은 길이의 제로금리 (소수)
+        """
         t = np.maximum(np.atleast_1d(times), 1e-6)
         xx = t / NS_LAM
         ee = np.exp(-xx)
@@ -72,7 +111,14 @@ def ns_zero(dt, krw_file="krw_curve_fred.parquet"):
 
 
 def schedule(row):
-    """계약 스케줄 (행사가, 누적지급률, 리자드배리어, 리자드지급률) — 유효 회차만."""
+    """계약 스케줄을 유효 회차 길이로 잘라 네 리스트로 돌려준다.
+
+    입력
+      row : Series — 상품 한 행. nobs 와 strk_/pmt_/lz_barr_/lz_pmt_ 열을 본다
+    출력
+      (strk, pmt, lz_barr, lz_pmt) — 각각 길이 nobs 의 list[float].
+                                     12칸 패딩을 잘라낸 것이므로 엔진에 그대로 넘긴다
+    """
     k = int(row["nobs"])
     return (
         [float(row[f"strk_{j}"]) for j in range(k)],
@@ -92,10 +138,20 @@ def state_for(row, ret=None, cal=None, div="lseg"):
       이산배당을 만들 수 없다. 그래서 기본값이 연속 q 다.
       LSEG 에는 배당락일·금액이 없어 이산배당을 만들 수 없다. 자세한 이유는 module/dividend.py 참고.
 
-    반환: dt, tks, sig(3), corr(3x3), dz(콜러블), dkw, divlog(Nx3 또는 None), qcont(3), ndiv, div.
-
     **dkw 를 쓸 것.** mc_engine 에 그대로 풀어 넘길 배당 kwargs 다. divlog 를 직접 꺼내면
-    lseg(기본값)에서 None 이 넘어가 배당이 조용히 사라진다 — build_nb_viz 가 실제로 그랬다."""
+    lseg(기본값)에서 None 이 넘어가 배당이 조용히 사라진다 — build_nb_viz 가 실제로 그랬다.
+
+    입력
+      row : Series — 상품 한 행. isu_ord · udl1~3 · tenor 를 본다
+      ret : dict | None — `returns()`. None 이면 여기서 부른다
+      cal : DatetimeIndex | None — KRX 달력. None 이면 여기서 만든다
+      div : "lseg" | "yf" — 위 설명 참고
+    출력
+      dict | None — dt · tks · sig(3) · corr(3,3) · dz(콜러블) · dkw ·
+                    divlog(N,3 또는 None) · qcont(3) · ndiv · div.
+        네 입력(수익률 계열 · 변동성 · 상관 · 커브 · 배당) 중 **하나라도** 못 만들면 None →
+        호출부가 그 상품을 탈락시킨다
+    """
     ret = ret if ret is not None else returns()
     cal = cal if cal is not None else calendar(ret)
     dt = pd.Timestamp.fromordinal(int(row["isu_ord"]))

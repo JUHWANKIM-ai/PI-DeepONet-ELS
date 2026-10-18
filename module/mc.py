@@ -40,6 +40,14 @@ MC_COLS = [
 
 
 def _safe(t):
+    """티커를 `cache` 공급원의 가격 캐시 파일명으로 바꾼다.
+
+    입력
+      t : str — 티커 (예: "^GSPC", "069500.KS")
+    출력
+      str — "px_<치환된 티커>.parquet". `module.dividend._safe` 와 치환 규칙은 같지만
+            접두·확장자가 붙는다는 점이 다르다
+    """
     return "px_" + t.replace("^", "_").replace(".", "_") + ".parquet"
 
 
@@ -54,7 +62,18 @@ def returns_by_ticker(mapping):
       cache       data/cache/px_*.parquet            배당 역조정(총수익) — 종전 라벨 재현용
 
     종전에는 같은 로직이 load_market · build_source.load_inputs · build_12star.main
-    세 곳에 복사돼 있었고, 원천 전용 실행에서 한 곳씩 차례로 터졌다."""
+    세 곳에 복사돼 있었고, 원천 전용 실행에서 한 곳씩 차례로 터졌다.
+
+    입력
+      mapping : dict[str -> str] — UDLY_ID 에서 티커로 (data/raw/udly_ticker_map.json).
+                값이 빈 항목과 이미 담은 티커는 건너뛴다
+    출력
+      dict[str -> Series] — 티커에서 일별 로그수익률로.
+        **못 찾은 티커는 키 자체가 없다** — 예외를 올리지 않으므로, 상품 탈락은
+        호출부(`state_for` 등)가 판단한다
+    예외
+      ValueError — 환경변수 PX_SOURCE 가 PX_SOURCES 밖일 때
+    """
     src = os.environ.get("PX_SOURCE", "underlying")
     if src not in PX_SOURCES:
         raise ValueError(
@@ -88,7 +107,15 @@ def load_market():
       underlying  share_underlyings_v2 의 Close_Adj  액면분할만 조정 — **기본값**
       cache       data/cache/px_*.parquet   배당 역조정(총수익) — 종전 라벨 재현용
     원천 전용 재현이 기본 경로다. 저장된 mc_A/mc_B 를 비트 단위로 재현하려면
-    scratch 백업을 되돌리고 PX_SOURCE=cache 로 돌려야 한다."""
+    scratch 백업을 되돌리고 PX_SOURCE=cache 로 돌려야 한다.
+
+    입력
+      없음 (원천과 캐시를 읽는다)
+    출력
+      dict — mapping(UDLY_ID→티커) · RET(티커→로그수익률) · KRW(call·m3·y10 패널) ·
+             u3map(ITEM_CD→UDLY_ID 목록) · strk_by(ITEM_CD→행사가 목록, 소수).
+             u3map·strk_by 는 없으면 원천 CSV 에서 만들어 캐시에 써 둔다
+    """
     CA, RAW = fm.CACHE, fm.RAW
     mapping = json.loads((fm.RAW / "udly_ticker_map.json").read_text(encoding="utf-8"))
     RET = returns_by_ticker(mapping)
@@ -118,7 +145,14 @@ def load_market():
 
 
 def load_kmap(path=None):
-    """캘리브레이션 매핑 로딩. 파일 없으면 None(미보정)."""
+    """캘리브레이션 매핑을 읽는다.
+
+    입력
+      path : str | Path | None — None 이면 data/cache/calib_kmap.json
+    출력
+      dict | None — {"x": [...], "y": [...]} 꺾은선 knot.
+                    파일이 없으면 None = **미보정**(k=1). 정본 라벨이 이 상태다
+    """
     p = fm.CACHE / "calib_kmap.json" if path is None else path
     if not p.exists():
         return None
@@ -126,15 +160,45 @@ def load_kmap(path=None):
 
 
 def calib_k(sig_eff, kmap):
-    """관측 입력(sig_eff) → vol 프리미엄 배수 k. 연속 piecewise-linear 보간(knot 밖은 끝값으로 클램프).
-    kmap=None 이면 1.0(미보정). (버킷 계단 버전은 불연속으로 DeepONet 앵커 학습을 해쳐 연속형으로 대체.)"""
+    """관측 입력(sig_eff) → vol 프리미엄 배수 k. 연속 꺾은선 보간.
+
+    버킷 계단 버전은 불연속 때문에 DeepONet 앵커 학습을 해쳐 연속형으로 대체했다.
+
+    입력
+      sig_eff : float — 관측 유효 변동성
+      kmap    : dict | None — `load_kmap` 의 출력
+    출력
+      float — σ 에 곱할 배수. knot 밖은 끝값으로 클램프된다.
+              kmap 이 None 이면 **1.0**(미보정)
+    """
     if kmap is None:
         return 1.0
     return float(np.interp(float(sig_eff), kmap["x"], kmap["y"]))
 
 
 def mc_daily(sigs, corr, beta, B, strikes, c, ten, n=NPATH, seed=0, chunk=PCHUNK):
-    """미래에셋 방식 일별 MC. 비연속-out cumsum 누수 회피 위해 연속 exp(cumsum) 사용."""
+    """미래에셋 방식 일별 MC — **레거시 규칙**(선형 쿠폰 · 리자드 없음).
+
+    비연속 out= 인자에 cumsum 을 쓰면 abacus numpy 2.3.0 에서 메모리가 누수되므로
+    연속 배열에 exp(cumsum) 을 쓴다.
+
+    ⚠ 페이오프 규칙의 정본은 `module/mc_engine.py`(torch) 다. 새 규칙을 여기에 넣지 말 것 —
+    이 함수는 기존 데이터셋 mc 재현과 엔진 대조에만 쓴다.
+
+    입력
+      sigs    : list[float] 길이 3 — 연율 변동성 (보정배수가 이미 곱해진 값)
+      corr    : ndarray(3,3) — 상관행렬. 비PSD 는 `chol_psd` 가 보정한다
+      beta    : ndarray(3,) — NS beta. 드리프트·할인을 여기서 유도한다
+      B       : float — KI 배리어 (일별 판정)
+      strikes : list[float] — 회차별 행사가. 길이가 회차 수다
+      c       : float — 연쿠폰 (소수). 지급은 1 + c·t 로 **선형**이다
+      ten     : float — 만기 [년]
+      n       : int — 경로 수. 기본 NPATH(100,000)
+      seed    : int — 공통난수 시드
+      chunk   : int — 한 번에 생성할 경로 수 (메모리 상한)
+    출력
+      float — 액면 1 기준 현재가치 (경로 평균)
+    """
     nobs = len(strikes)
     N = int(round(ten * 365))
     dt = 1 / 365
@@ -176,8 +240,25 @@ def mc_daily(sigs, corr, beta, B, strikes, c, ten, n=NPATH, seed=0, chunk=PCHUNK
 
 
 def prepare_one(mk, kmap, item, iord, ten, sig_eff, strikes=None):
-    """상품 -> 엔진 공통 입력. numpy(price_one)와 torch(mc_engine.price_one_t)가 공유한다.
-    sigs 는 캘리브레이션 배수 k 가 곱해진 값, audit 은 미보정 관측값(데이터셋 mc_vol*/mc_rho* 용)."""
+    """상품 하나를 엔진 공통 입력으로 바꾼다. numpy·torch 두 엔진이 공유한다.
+
+    세 자산의 수익률 계열이 모두 있으면 자산별 변동성·상관을 쓰고, 아니면 **단일자산 근사**로
+    폴백한다 (sig_eff 를 세 자산에 복제하고 상관을 단위행렬로). 폴백이면 audit 이 전부 NaN 이라
+    데이터셋에서 구분된다.
+
+    입력
+      mk      : dict — `load_market` 의 출력
+      kmap    : dict | None — 캘리브레이션 매핑
+      item    : str — ITEM_CD
+      iord    : int — 발행일 ordinal
+      ten     : float — 만기 [년]
+      sig_eff : float — 관측 유효 변동성. 보정배수 계산과 폴백에 쓰인다
+      strikes : list | None — 주면 그것을, None 이면 mk["strk_by"] 의 값을 쓴다
+    출력
+      dict | None — beta · strikes · sigs(보정 적용) · corr · rkrw · k ·
+                    audit(미보정 vol1~3, rho12/13/23 — 데이터셋 mc_vol*/mc_rho* 용).
+                    NS beta 가 없거나 행사가가 비면 None
+    """
     dt = pd.Timestamp(date.fromordinal(int(iord)))
     beta = F.krw_beta(mk["KRW"].asof(dt).values)
     strikes = list(strikes) if strikes is not None else mk["strk_by"].get(item)
@@ -213,8 +294,19 @@ def prepare_one(mk, kmap, item, iord, ten, sig_eff, strikes=None):
 
 
 def price_one(mk, kmap, item, iord, B, c, ten, sig_eff, n=NPATH, seed=0, strikes=None):
-    """상품 하나 (레거시 numpy 엔진): (mc, vol1..3, rho12/13/23, r_krw, k) 9개.
-    vol1..3 은 관측(미보정) 역사변동성이며 MC 내부에서는 k·σ 를 사용(k=적용배수)."""
+    """상품 하나를 레거시 numpy 엔진으로 가격한다.
+
+    입력
+      mk, kmap, item, iord, ten, sig_eff, strikes : `prepare_one` 과 같다
+      B       : float — KI 배리어
+      c       : float — 연쿠폰
+      n       : int — 경로 수
+      seed    : int — 공통난수 시드
+    출력
+      tuple 길이 9 — MC_COLS 순서: (mc, vol1, vol2, vol3, rho12, rho13, rho23, r_krw, k).
+        vol1~3 은 **관측(미보정)** 역사변동성이고, MC 내부에서는 k·σ 를 쓴다.
+        입력을 못 만들면 전부 np.nan 인 같은 길이의 tuple
+    """
     P = prepare_one(mk, kmap, item, iord, ten, sig_eff, strikes=strikes)
     if P is None:
         return (np.nan,) * len(MC_COLS)

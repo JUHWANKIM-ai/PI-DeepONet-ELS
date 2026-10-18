@@ -23,7 +23,25 @@ def payoff_from_path_summary_t(
     """경로요약 -> 할인 페이오프. mc_daily_t 가 쓰는 페이오프 블록을 그대로 함수로 분리한 것.
 
     PI 물리항(module.pi_physics)이 '실측 MC 규약'과 일치하는지 테스트에서 직접 대조하려고 노출한다.
-    정규 상환이 리자드보다 우선. 만기 미상환 시 노낙인(B>=1)은 항상 worst, 낙인은 배리어 터치 여부."""
+    정규 상환이 리자드보다 우선. 만기 미상환 시 노낙인(B>=1)은 항상 worst, 낙인은 배리어 터치 여부.
+
+    입력 (전부 log 공간. m=경로 수, nobs=관측 회차)
+      wobs      : Tensor(m, nobs) — 각 관측일의 log worst-of
+      wrun      : Tensor(m, nobs) | None — 발행 이후 러닝 최저. 리자드가 없으면 None
+      wmin      : Tensor(m,) — 전 구간 최저 (낙인 판정용)
+      wT        : Tensor(m,) — 만기 log worst-of
+      logK      : Tensor(nobs,) — 회차별 log 행사가
+      rate      : Tensor(nobs,) — 회차별 정규 지급률
+      lz_on     : Tensor(nobs,) bool — 그 회차에 리자드 조항이 있는가
+      loglzb    : Tensor(nobs,) — log 리자드 배리어 (조항 없는 회차는 log 1 = 0)
+      lzp       : Tensor(nobs,) — 리자드 지급률
+      always_ki : bool — B >= 1.0 (노낙인). True 면 만기에 항상 worst 를 받는다
+      logB      : float — log KI 배리어
+      DF        : Tensor(N,) — 일별 할인계수
+      obs_day   : Tensor(nobs,) long — 회차별 경과일 (1-기반)
+    출력
+      Tensor(m,) — 경로별 할인 페이오프
+    """
     f32 = wobs.dtype
     hit = wobs >= logK
     has_lz = bool(lz_on.any())
@@ -39,7 +57,15 @@ def payoff_from_path_summary_t(
 
 
 def _zero(beta, times):
-    """beta 는 NS 계수 벡터이거나 '만기배열 → 무위험금리' 콜러블(부트스트랩 커브)."""
+    """무위험금리를 두 표현 중 무엇이 와도 같은 방식으로 읽는다.
+
+    입력
+      beta  : ndarray(3,) | callable — NS 계수 벡터, 또는 '만기배열 → 금리' 콜러블
+              (`curve.curve_dz` 의 부트스트랩 커브)
+      times : ndarray — 만기 [년]
+    출력
+      ndarray — 같은 길이의 연속복리 제로금리 (소수)
+    """
     return np.asarray(beta(times), float) if callable(beta) else F.zero_curve(beta, times)
 
 
@@ -58,6 +84,30 @@ def _setup(
     divlog=None,
     disc_beta=None,
 ):
+    """경로 생성에 필요한 상수를 미리 전부 numpy 로 만들어 둔다 (장치 전송 전 단계).
+
+    드리프트·할인·배당·상관·리자드 마스크를 여기서 한 번에 조립하므로, 배당 소스나 커브를
+    바꾸는 변형은 전부 이 함수의 인자로 들어온다.
+
+    입력
+      sigs       : list[float] 길이 3 — 연율 변동성
+      corr       : ndarray(3,3) — 상관행렬
+      beta       : ndarray(3,) | callable — **드리프트**에 쓸 커브
+      B          : float — KI 배리어
+      strikes    : list[float] — 회차별 행사가. 길이가 회차 수가 된다
+      ten        : float — 만기 [년]
+      c          : float — 연쿠폰. pmts 가 None 일 때만 쓰인다
+      pmts       : list[float] | None — 회차별 지급률. None 이면 c·경과연수로 만든다
+      lz_barr    : list[float] | None — 회차별 리자드 배리어. NaN 이면 그 회차엔 조항이 없다
+      lz_pmt     : list[float] | None — 회차별 리자드 지급률. NaN 은 0 으로 바꾼다
+      qcont      : array-like(3,) | None — 연속 배당수익률. 매일 −q·dt 를 드리프트에서 뺀다
+      divlog     : ndarray(N,3) | None — 이산배당 로그하락. 드리프트에 더한다
+      disc_beta  : ndarray | callable | None — **할인만** 다른 커브 (요인분해용).
+                   None 이면 beta 로 할인한다
+    출력
+      dict — N · nobs · obs_day · DF · L(촐레스키) · sig · drift(N,3) · sq · logB ·
+             logK · rate · lzp · lz_on · loglzb. 전부 float32 numpy 다
+    """
     nobs = len(strikes)
     N = int(round(ten * 365))
     dt = 1 / 365
@@ -127,8 +177,17 @@ def mc_daily_t(
     """일별 MC (torch). pmts=None 이면 (1 + c*경과연수), 주어지면 (1 + pmts[j]).
     lz_barr[j] 가 유한하면 정규 조건 실패 경로에 대해 발행 이후 최저 worst >= 배리어일 때 리자드 상환.
 
-    beta: NS 계수 또는 콜러블(부트스트랩 제로커브). qcont/divlog: 연속/이산 배당 드리프트 보정.
-    disc_beta: 할인만 다른 커브. 기본값은 전부 None 이라 종전 동작과 완전히 같다."""
+    입력
+      sigs, corr, beta, B, strikes, ten, c, pmts, lz_barr, lz_pmt, qcont, divlog, disc_beta
+                 : `_setup` 과 같다. 기본값은 전부 None 이라 종전 동작과 완전히 같다
+      n          : int — 경로 수. 기본 NPATH(100,000)
+      seed       : int — 공통난수 시드. 같은 시드·같은 장치면 비트 단위로 재현된다
+      dev        : str | None — torch 장치. None 이면 CUDA 가용 시 CUDA
+      path_chunk : int — 한 번에 생성할 경로 수 (메모리 상한)
+      tblock     : int — 시간축 블록 길이. carry 로 블록 간 누적을 이어 간다
+    출력
+      float — 액면 1 기준 현재가치. 누적은 float64 로 받아 경로 수가 많아도 정밀도가 유지된다
+    """
     P = _setup(
         sigs,
         corr,
@@ -217,7 +276,22 @@ def price_one_t(
     lz_pmt=None,
     dev=None,
 ):
-    """price_one 과 같은 9개 튜플 (mc, vol1..3, rho12/13/23, r_krw, k)."""
+    """상품 하나를 torch 엔진(정본)으로 가격한다. 반환 형태는 `mc.price_one` 과 같다.
+
+    입력
+      mk, kmap, item, iord, ten, sig_eff, strikes : `mc.prepare_one` 과 같다
+      B       : float — KI 배리어
+      c       : float — 연쿠폰
+      n       : int — 경로 수
+      seed    : int — 공통난수 시드
+      pmts    : list | None — 회차별 지급률
+      lz_barr : list | None — 리자드 배리어
+      lz_pmt  : list | None — 리자드 지급률
+      dev     : str | None — torch 장치
+    출력
+      tuple 길이 9 — MC_COLS 순서: (mc, vol1, vol2, vol3, rho12, rho13, rho23, r_krw, k).
+        입력을 못 만들면 전부 np.nan
+    """
     P = prepare_one(mk, kmap, item, iord, ten, sig_eff, strikes=strikes)
     if P is None:
         return (np.nan,) * len(MC_COLS)

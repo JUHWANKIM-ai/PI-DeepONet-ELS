@@ -26,7 +26,14 @@ _PX = {}
 
 
 def master():
-    """master.csv (159행). 캐시된다."""
+    """master.csv (159행) 를 읽어 돌려준다. 첫 호출에서만 읽고 모듈 전역에 캐시한다.
+
+    입력
+      없음
+    출력
+      DataFrame — UDLY_ID · 가격티커(yfinance) · ETF티커(yfinance) · 파일 · ETF_파일 열.
+                  **같은 객체를 매번 돌려준다** — 호출부가 수정하면 다른 호출부가 본다
+    """
     global _MASTER
     if _MASTER is None:
         _MASTER = pd.read_csv(fm.DATA / SU_DIR / "master.csv", encoding="utf-8-sig")
@@ -34,7 +41,14 @@ def master():
 
 
 def _read_px(fn):
-    """share_underlyings_v2 의 CSV 하나 -> Close_Adj Series. 비어 있으면 None."""
+    """share_underlyings_v2 의 CSV 하나를 Close_Adj 계열로 읽는다.
+
+    입력
+      fn : str — SU_DIR 안의 파일명 (master.csv 의 `파일` 또는 `ETF_파일` 값)
+    출력
+      Series | None — DatetimeIndex 오름차순, 중복 날짜 제거, NaN 제거.
+                      유효 관측이 하나도 없으면 None
+    """
     d = pd.read_csv(fm.DATA / SU_DIR / fn)
     d["Date"] = pd.to_datetime(d.Date)
     s = d.set_index("Date")["Close_Adj"].dropna()
@@ -51,7 +65,17 @@ def price(tk, udly=None):
     (^SX7E = EURO STOXX Banks 는 `가격티커(yfinance)` 가 비어 있다) master.csv 의 키는
     UDLY_ID 다. 티커로만 찾으면 그런 자산을 참조하는 상품이 조용히 사라진다 — ^SX7E 는
     DART 공시 219건이 참조하는데 데이터셋에 0건 들어왔다.
-    티커로 찾히면 그 결과가 이긴다 — UDLY_ID 는 **대체 경로**지 우선 경로가 아니다."""
+    티커로 찾히면 그 결과가 이긴다 — UDLY_ID 는 **대체 경로**지 우선 경로가 아니다.
+
+    입력
+      tk   : str — 가격 티커. 본체(`가격티커`) 를 먼저 보고 없으면 ETF 티커를 본다
+      udly : str | None — 티커로 못 찾을 때 쓸 UDLY_ID
+    출력
+      Series | None — 일별 종가(Close_Adj), DatetimeIndex 오름차순.
+                      매핑이 없으면 None → 호출부가 그 상품을 탈락시킨다
+                      (캐시 키는 (tk, udly) 쌍이다 — udly 를 주고 부른 결과와
+                       주지 않고 부른 결과가 별도로 캐시된다)
+    """
     key = (tk, udly)
     if key in _PX:
         return _PX[key]
@@ -72,7 +96,17 @@ def price(tk, udly=None):
 
 
 def prices(tks):
-    """티커 목록 -> {티커: Series}. 매핑된 것만 담는다."""
+    """티커 목록 -> {티커: Series}. 매핑된 것만 담는다.
+
+    **UDLY_ID 대체 경로를 쓰지 않는다** — `price(t)` 를 udly 없이 부르므로, 가격 티커가 빈
+    기초자산(^SX7E 등)은 여기서 조용히 빠진다. 그 자산이 필요한 호출부는
+    `price(tk, udly=...)` 를 직접 쓴다 (`module.mc.returns_by_ticker` 가 그렇게 한다).
+
+    입력
+      tks : 반복자[str] — 티커 목록
+    출력
+      dict[str -> Series] — 찾힌 것만. 못 찾은 티커는 키 자체가 없다
+    """
     got = {}
     for t in tks:
         s = price(t)

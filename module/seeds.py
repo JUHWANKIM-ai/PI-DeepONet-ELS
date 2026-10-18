@@ -27,9 +27,17 @@ SEED_MAX = 2**31 - 1  # mc_seed 는 int32 로 저장된다
 
 
 def mc_seed_for(items):
-    """상품코드 목록 -> 공통난수 시드 배열 (int32, 0 이상 SEED_MAX 미만).
+    """상품코드 목록 -> 공통난수 시드 배열.
 
-    위치와 무관하고, 프로세스·플랫폼·파이썬 버전에 걸쳐 같은 값을 준다."""
+    위치와 무관하고, 프로세스·플랫폼·파이썬 버전에 걸쳐 같은 값을 준다.
+
+    입력
+      items : 길이 n 의 반복자 — 상품 식별자(`item`). str() 로 바꿔 해시하므로
+              숫자·문자가 섞여 있어도 된다
+    출력
+      ndarray(n,) int32 — sha1(item) 앞 8자리를 SEED_MAX 로 나눈 나머지.
+                          0 이상 SEED_MAX 미만
+    """
     return np.array(
         [int(hashlib.sha1(str(it).encode("utf-8")).hexdigest()[:8], 16) % SEED_MAX for it in items],
         dtype="int32",
@@ -44,7 +52,13 @@ def seeds_stale(df):
     노트북 0 이 재빌드를 건너뛰었다.
 
     유니버스가 늘어난 경우(새 상품)는 이것으로 잡히지 않는다. 그건 빌드해 봐야 알 수 있고,
-    환경변수 REBUILD=1 로 강제한다."""
+    환경변수 REBUILD=1 로 강제한다.
+
+    입력
+      df : DataFrame — `item` 과 `mc_seed` 열을 본다
+    출력
+      bool — True 면 낡음(재생성 필요). 두 열 중 하나라도 없으면 **증명할 수 없으므로 True**
+    """
     import numpy as _np
 
     if "mc_seed" not in df.columns or "item" not in df.columns:

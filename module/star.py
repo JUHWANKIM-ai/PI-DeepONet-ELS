@@ -35,6 +35,12 @@ def _con12(d):
 
     리자드가 없는 상품은 원천에 lz_barr/lz_pmt 가 비어 있다. 3스타 deeponet.csv 와 같은 규약으로
     **중립값**(배리어 1.2 = 절대 발동 안 함, 지급률 0)으로 채운다.
+
+    입력
+      d : DataFrame — els12_dataset. 열 이름이 3스타와 다른 셋(BARR_1/100 · ANL_RTRN/100 ·
+          TENOR)은 여기서 B · coupon · tenor 로 매핑한다
+    출력
+      ndarray(n, 51) float32 — CONTRACT 순서의 계약 블록
     """
     ren = {"BARR_1/100": "B", "ANL_RTRN/100": "coupon", "TENOR": "tenor"}
     X = d[[ren.get(c, c) for c in CONTRACT]].copy()
@@ -48,6 +54,19 @@ def _con12(d):
 
 
 def make_all(var="B"):
+    """1·2·3스타를 합쳐 stage-1 학습용 묶음을 만든다 — 같은 입력 규약 · 같은 walk-forward.
+
+    1·2스타는 슬롯 중복 패딩으로 3자산 규약에 맞춘다 (1스타 A,A,A / 2스타 A,B,B).
+    합친 뒤 발행일(isu_ord)로 **안정 정렬**하고 폴드를 다시 끊으므로, 스타가 시간축에
+    섞여 들어간다. 라벨이나 변동성·곡선이 결측인 행은 미리 떨어뜨린다.
+
+    입력
+      var : str — MC 변형 태그. "B"(현행 방법론) 또는 "A". 1·2스타 라벨도 같은 변형을 읽는다
+    출력
+      SimpleNamespace — CURVE(n,10) · VC(n,10) · CON(n,51) · MC(n,) · FAIR(n,) · ORD(n,) ·
+                        ITEM(n,) · nstar(n,) · nobs(n,) · n · WF · DEV
+                        ⚠ `module.data.load` 의 D 와 **다른 타입**이다 (모듈 머리말 참고)
+    """
     D3 = MV.make_D(var)
     ok3 = MV.state()["OK"]
     d12 = (
@@ -106,6 +125,18 @@ def make_all(var="B"):
 
 
 def vbase_all(D, cache=True):
+    """합친 묶음 전체의 V_base 프록시를 계산한다 (느려서 캐시한다).
+
+    캐시 파일명에 배당 소스 태그가 들어간다 — 한 파일을 쓰면 길이가 같다는 이유로 다른
+    소스의 프록시를 조용히 집어온다.
+
+    입력
+      D     : SimpleNamespace — `make_all` 의 출력
+      cache : bool — True 면 길이가 맞는 캐시를 재사용하고, 계산 후 저장한다
+    출력
+      ndarray(n,) float32 — Clark 근사 V_base. NaN 은 0.0 으로 바꾼다
+                            (잔차 학습의 오프셋이므로 NaN 이 섞이면 그 행이 죽는다)
+    """
     if cache and CACHE_VB.exists():
         vb = np.load(CACHE_VB)
         if len(vb) == D.n:

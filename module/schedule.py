@@ -23,13 +23,32 @@ SCHED_COLS = (
 
 
 def _pad_ffill(vals, k=NSTRK):
-    """길이 k 로 고정: 짧으면 마지막값 forward-fill."""
+    """길이 k 로 고정: 짧으면 마지막값 forward-fill, 길면 앞에서 k 개만 쓴다.
+
+    만기 조건이 반복되는 것과 같은 의미다 — 행사가·지급률은 이 방식이 맞다.
+
+    입력
+      vals : 반복자 — 회차 순서의 값
+      k    : int — 고정 길이. 기본 NSTRK(12)
+    출력
+      list 길이 k
+    """
     v = list(vals[:k])
     return v + [v[-1]] * (k - len(v))
 
 
 def _pad_nan(pairs, k=NSTRK):
-    """(회차 인덱스, 값) 목록을 길이 k 배열의 해당 위치에만 채우고 나머지는 NaN."""
+    """(회차 인덱스, 값) 목록을 길이 k 배열의 해당 위치에만 채우고 나머지는 NaN 으로 둔다.
+
+    리자드는 '그 회차에만 붙는 조항' 이므로 forward-fill 하면 안 된다 — 그래서 이 함수가
+    `_pad_ffill` 과 따로 있다.
+
+    입력
+      pairs : 반복자[(int, float)] — (회차 인덱스, 값). 0 ≤ i < k 밖은 버린다
+      k     : int — 고정 길이
+    출력
+      list 길이 k — 지정되지 않은 자리는 np.nan
+    """
     out = [np.nan] * k
     for i, v in pairs:
         if 0 <= i < k:
@@ -39,7 +58,23 @@ def _pad_nan(pairs, k=NSTRK):
 
 def build_schedules(sc):
     """raw SCHD_INFO DataFrame -> ITEM_CD 인덱스 고정폭 스케줄 테이블.
-    컬럼: nobs, SCHED_COLS(48), lz_from_prev, sched_ok, sched_drop."""
+
+    단위 변환은 여기서 한다: STRK_1 · LZRD_BARR 는 raw 가 퍼센트라 /100, PMT_1 · LZRD_PMT 는
+    이미 소수라 그대로 쓴다.
+
+    입력
+      sc : DataFrame — raw LAKE_V2_DART_SCHD_INFO. SCHD_TYPE==1 행만 쓰고
+           ITEM_CD · SEQ 로 정렬한다
+    출력
+      DataFrame — index=ITEM_CD, 열:
+        nobs         회차 수
+        SCHED_COLS   strk_0..11 · pmt_0..11 · lz_barr_0..11 · lz_pmt_0..11 (48열)
+        lz_from_prev LZRD_TERM 에 FROM_PREV 가 있는가
+        pmt_nonmono  누적 지급률이 회차를 거슬러 줄어드는가 (raw 오류 표식, 0.67%)
+        sched_ok     쓸 수 있는가
+        sched_drop   못 쓰는 사유 ("nobs<2" | "nobs>12" | "strk_na" | "pmt_na" | "")
+      탈락 행도 **빠지지 않고 남는다** — 48열이 NaN 이고 sched_ok=False 다
+    """
     s1 = sc[sc["SCHD_TYPE"] == 1].sort_values(["ITEM_CD", "SEQ"])
     rows = []
     for it, g in s1.groupby("ITEM_CD", sort=True):
@@ -100,6 +135,12 @@ def build_schedules(sc):
 
 
 def load_schedules():
-    """raw CSV 를 읽어 build_schedules 적용."""
+    """raw CSV 를 읽어 build_schedules 를 적용한다.
+
+    입력
+      없음 (data/raw/LAKE_V2_DART_SCHD_INFO.csv 를 읽는다)
+    출력
+      DataFrame — `build_schedules` 와 같은 구조
+    """
     sc = pd.read_csv(fm.RAW / "LAKE_V2_DART_SCHD_INFO.csv", low_memory=False)
     return build_schedules(sc)
