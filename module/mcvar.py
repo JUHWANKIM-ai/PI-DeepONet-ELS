@@ -14,7 +14,7 @@
  정본 D 와 변형 D 가 같은 이름의 다른 타입이라는 뜻이다. data.load 에 variant 인자를 넣어
  한 종류로 합치는 것이 옳지만 기존 호출부 영향이 커서 별도 과제로 남겼다.
 
- 라벨 원천은 `data/cache/mcvar/mc_variants.parquet` 이고 `tools/build_mc_variants.py` 가 만든다.
+ 라벨 원천은 `data/cache/mcvar/mc_variants.parquet` 이고 `generate/build_mc_variants.py` 가 만든다.
  종전에는 scratch/stage1_mc_variants.py 에만 있어 추적 파이프라인에서 쓸 수 없었다.
 """
 import copy

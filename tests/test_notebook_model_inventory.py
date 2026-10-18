@@ -22,14 +22,14 @@ SEEDS, FOLDS = 5, 4
 
 def consumed():
     """두 평가 도구가 불러오는 접두사 집합."""
-    import tools.eval_all_stars as EAS
-    import tools.eval_cross_section as ECS
+    import generate.eval_all_stars as EAS
+    import generate.eval_cross_section as ECS
     return {m[1] for m in EAS.M} | {m[1] for m in ECS.M}
 
 
 def test_notebook2_trains_every_variant_the_evals_consume():
     import inspect
-    import tools.build_nb_training as BNT
+    import generate.build_nb_training as BNT
     src = inspect.getsource(BNT)
     missing = [t for t in sorted(consumed()) if '"{}"'.format(t) not in src]
     assert missing == [], "노트북 2 가 학습하지 않는데 노트북 3 이 읽는다: {}".format(missing)

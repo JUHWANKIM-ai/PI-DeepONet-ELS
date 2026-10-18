@@ -11,7 +11,7 @@
  옮긴 디렉터리가 **유일한 되돌림 수단**이다. 검증이 끝나고 사람이 승인하기 전에는 지우지 않는다.
  그래서 목적지가 이미 있으면 덮어쓰지 않고 거부한다.
 
- 실행: python tools/stash_for_raw_run.py scratch/raw_run_baseline
+ 실행: python generate/stash_for_raw_run.py scratch/raw_run_baseline
 """
 import shutil
 import sys

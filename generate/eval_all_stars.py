@@ -5,10 +5,10 @@
    ball_fm   Residual 타깃, 1·2·3스타로 학습
    ball3_fm  Residual 타깃, 3스타만으로 학습 (같은 폴드·같은 시험집합)
    ball_dm   Direct 타깃,   1·2·3스타로 학습
- 기울기 참값은 tools/mc_check_12star.py 가 만든 스타별 MC 섭동 격자를 쓴다.
+ 기울기 참값은 generate/mc_check_12star.py 가 만든 스타별 MC 섭동 격자를 쓴다.
 
  산출: result/statistics/allstar_level.csv · allstar_slope.csv · result/image/allstar.png
- 실행: python tools/eval_all_stars.py
+ 실행: python generate/eval_all_stars.py
 """
 import sys, time
 from datetime import date
@@ -22,7 +22,7 @@ from module import contract as CS
 from module import anchors as AN
 from module import market as MK
 from module.vbase import vbase_els
-from tools.mc_check_12star import con_of
+from generate.mc_check_12star import con_of
 from module.data import CONTRACT
 from module.schedule import LZ_BARR_NEUTRAL
 from util import file_manager as fm, plot as _plot

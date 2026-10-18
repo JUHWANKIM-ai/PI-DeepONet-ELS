@@ -18,7 +18,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util import file_manager as fm                     # noqa: E402
-from tools.stash_for_raw_run import stash, KINDS        # noqa: E402
+from generate.stash_for_raw_run import stash, KINDS        # noqa: E402
 
 
 @pytest.fixture

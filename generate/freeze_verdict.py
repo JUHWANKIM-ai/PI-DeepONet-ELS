@@ -11,7 +11,7 @@
 
  전량 라벨은 담지 않는다 — 그건 데이터이고, 푸시 금지 대상이다.
 
- 실행: python tools/freeze_verdict.py
+ 실행: python generate/freeze_verdict.py
 """
 import json
 import sys
@@ -24,7 +24,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from util import file_manager as fm              # noqa: E402
-import tools.verify_raw_run as V                  # noqa: E402
+import generate.verify_raw_run as V                  # noqa: E402
 
 OUT = ROOT / "tests" / "fixtures" / "raw_run_verdict.json"
 NOTES = (

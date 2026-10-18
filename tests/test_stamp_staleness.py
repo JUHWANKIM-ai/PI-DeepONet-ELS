@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util import file_manager as fm                  # noqa: E402
 import module.data as DA                              # noqa: E402
-import tools.build_mc_variants as BMV                 # noqa: E402
+import generate.build_mc_variants as BMV                 # noqa: E402
 
 
 def test_dataset_stamp_round_trips(tmp_path, monkeypatch):
@@ -56,14 +56,14 @@ def test_build_datasets_records_the_stamp_it_filled_from(tmp_path, monkeypatch):
 def test_notebook2_keys_retrain_on_the_label_stamp():
     """노트북 2 가 스탬프로 재학습을 판단해야 한다 — 파일 존재만 보면 낡은 가중치를 쓴다."""
     import inspect
-    import tools.build_nb_training as BNT
+    import generate.build_nb_training as BNT
     src = inspect.getsource(BNT)
     assert "read_stamp" in src or "weights_stale" in src, "노트북 2 가 스탬프를 보지 않는다"
 
 
 def test_notebook1_refreshes_datasets_on_stamp_change():
     import inspect
-    import tools.build_nb_pricer as BNP
+    import generate.build_nb_pricer as BNP
     src = inspect.getsource(BNP)
     assert "datasets_stale" in src, "노트북 1 이 '전부 NaN' 만 보고 있다"
     assert 'MC.isna().all()' not in src

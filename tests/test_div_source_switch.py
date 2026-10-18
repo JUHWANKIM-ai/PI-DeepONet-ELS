@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """배당 소스 분기는 한 함수에서만 일어나야 한다.
 
- `if DIV == "lseg": qcont ... else: build_div ...` 가 tools/build_mc_variants.py 에 두 번,
- 그리고 tools/mc_check_12star.py 는 그 분기 없이 `DV.build_div` 를 직접 불렀다.
+ `if DIV == "lseg": qcont ... else: build_div ...` 가 generate/build_mc_variants.py 에 두 번,
+ 그리고 generate/mc_check_12star.py 는 그 분기 없이 `DV.build_div` 를 직접 불렀다.
  그래서 원천 전용 실행에서 노트북 1 의 세 번째 단계가 `data/cache/div_SPY.parquet` 을 찾다 죽었다
  — 가격 적재가 세 곳에 복사돼 있던 것과 같은 결함이다.
 
@@ -67,8 +67,8 @@ def test_missing_lseg_yield_returns_none():
 
 # 배당을 엔진에 넘기는 모든 모듈. measure_source_switch 만 예외다 —
 # 그 도구의 목적이 이산/연속을 **한 번에 둘 다** 계산해 배당 요인만 분리하는 것이라서다.
-CALLERS = ("module.market", "tools.build_mc_variants", "tools.mc_check_12star",
-           "tools.build_decomp", "tools.build_nb_pricer")
+CALLERS = ("module.market", "generate.build_mc_variants", "generate.mc_check_12star",
+           "generate.build_decomp", "generate.build_nb_pricer")
 
 
 def test_every_caller_uses_the_shared_branch():
@@ -103,7 +103,7 @@ def test_no_caller_reads_divlog_out_of_state_for():
     import re
     root = Path(__file__).resolve().parent.parent
     bad = []
-    pats = ["tools/*.py", "module/*.py", "tests/*.py", "scripts/*.py"]
+    pats = ["generate/*.py", "module/*.py", "tests/*.py", "scripts/*.py"]
     files = [f for pat in pats for f in root.glob(pat)]
     for f in files:
         txt = f.read_text(encoding="utf-8", errors="replace")
@@ -117,5 +117,5 @@ def test_no_caller_reads_divlog_out_of_state_for():
 
 def test_mc_check_12star_honors_the_default_source():
     """섭동 격자도 같은 기본값(lseg)을 써야 라벨과 참값의 배당 가정이 일치한다."""
-    import tools.mc_check_12star as MC12
+    import generate.mc_check_12star as MC12
     assert MC12.DIV == DV.DEFAULT_SRC == "lseg"

@@ -5,7 +5,7 @@
  `underlying` `data/share_underlyings_v2` 의 Close_Adj (액면분할만 조정)
 
  **기본값은 `underlying` 이다.** 캐시는 입력이 아니라 산출물이므로, 캐시를 격리한 뒤에도
- 아무것도 막히지 않아야 한다. `cache` 는 구 계열과의 대조(tools/measure_source_switch.py)에서만 쓴다.
+ 아무것도 막히지 않아야 한다. `cache` 는 구 계열과의 대조(generate/measure_source_switch.py)에서만 쓴다.
 
  두 계열은 개별주식에서 실제로 다르다(삼성전자 2015-01-02: 20,419 vs 26,600).
  지수는 거의 같다(^KS200 수익률 상관 0.99994).
@@ -86,7 +86,7 @@ def test_returns_by_ticker_is_the_single_source_of_truth(monkeypatch):
     """가격 적재는 한 함수에서만 일어나야 한다.
 
      같은 로직이 module.mc.load_market · module.build_source.load_inputs ·
-     tools.build_12star.main 세 곳에 복사돼 있었고, 원천 전용 실행에서 한 곳씩 차례로 터졌다."""
+     generate.build_12star.main 세 곳에 복사돼 있었고, 원천 전용 실행에서 한 곳씩 차례로 터졌다."""
     monkeypatch.setenv("PX_SOURCE", "underlying")
     mapping = {"A": "^KS200", "B": "005930.KS", "C": None, "D": "__NO_SUCH__"}
     got = MC.returns_by_ticker(mapping)
@@ -96,7 +96,7 @@ def test_returns_by_ticker_is_the_single_source_of_truth(monkeypatch):
 
 
 def test_build_12star_uses_the_shared_loader():
-    import tools.build_12star as B12
+    import generate.build_12star as B12
     import inspect
     src = inspect.getsource(B12.main)
     assert "returns_by_ticker" in src, "build_12star 가 가격 적재를 또 복사했다"

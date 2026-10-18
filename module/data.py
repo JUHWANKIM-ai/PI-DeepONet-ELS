@@ -147,7 +147,7 @@ def datasets_stale():
      종전 조건은 "MC 가 전부 NaN" 이었다. 그러면 라벨이 **바뀐** 경우는 걸리지 않고
      낡은 라벨이 조용히 배포된다 — 이 브랜치가 다른 곳에서 고치고 있는 바로 그 결함이다."""
     from . import mcvar  # noqa: F401  (경로 해석용 늦은 import)
-    import tools.build_mc_variants as BMV
+    import generate.build_mc_variants as BMV
     want = BMV.read_stamp(_label_path())
     if want is None:
         return False          # 라벨 자체가 없다 — 채울 것이 없으므로 판단 보류
@@ -192,7 +192,7 @@ def build_datasets():
         if src_col not in df.columns:
             df[src_col] = np.nan
     if fill_anchor(df):      # 라벨 파일이 있으면 MC 열을 채운다 (없으면 NaN 으로 남는다)
-        import tools.build_mc_variants as _BMV
+        import generate.build_mc_variants as _BMV
         record_dataset_stamp(_BMV.read_stamp(_label_path()))   # 어떤 라벨로 채웠는지 남긴다
 
     def write(name, new_cols):

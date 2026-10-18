@@ -47,7 +47,7 @@ def test_star_level_matches_the_seven_model_table():
 def test_generator_averages_metrics_not_predictions():
     """시드 예측 평균(앙상블)으로 되돌아가면 두 표가 다시 갈린다."""
     import inspect
-    import tools.build_nb_viz as BNV
+    import generate.build_nb_viz as BNV
     src = inspect.getsource(BNV)
     assert "mets_seed(" in src, "단일 모형 평균 집계를 쓰지 않는다"
     assert "r = mets(idx, p)" not in src, "cat1 이 앙상블 예측으로 지표를 낸다"

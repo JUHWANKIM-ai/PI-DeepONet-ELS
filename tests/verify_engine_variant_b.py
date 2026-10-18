@@ -5,7 +5,7 @@
                + CD 91일·IRS par 부트스트랩 제로커브 + **연속 배당수익률 q** + 일별 GBM.
 
  기준은 저장된 `data/cache/mcvar/mc_variants.parquet` 의 `mc_B` 열이다
- (경로 수는 `tools.build_mc_variants.NPATH`, 공통난수 seed = mc_seed).
+ (경로 수는 `generate.build_mc_variants.NPATH`, 공통난수 seed = mc_seed).
  같은 입력·같은 시드로 다시 매기면 비트 단위로 같아야 한다.
 
  **경로 수와 배당 소스를 상수로 적지 않는다.** 라벨을 만든 모듈에서 가져온다 —
@@ -33,7 +33,7 @@ NPROD = int(sys.argv[1]) if len(sys.argv) > 1 else 24
 
 def main():
     from module import market as MK, mc_engine as ME
-    from tools import build_mc_variants as BMV      # 라벨의 경로 수·배당 소스의 출처
+    from generate import build_mc_variants as BMV      # 라벨의 경로 수·배당 소스의 출처
     from module.schedule import LZ_BARR_NEUTRAL
     from util import file_manager as fm
 

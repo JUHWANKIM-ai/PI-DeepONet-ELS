@@ -12,7 +12,7 @@
 ## 무엇을 예측하는가
 
 타깃은 공시 공정가치가 아니라 **MC 이론가**다. 정본 라벨은 `mc_B`
-(`tools/build_mc_variants.py`)이고, 엔진은 `module/mc_engine.py` 의 일별 GBM +
+(`generate/build_mc_variants.py`)이고, 엔진은 `module/mc_engine.py` 의 일별 GBM +
 촐레스키 기하 worst-of 이며 **무보정(k = 1)** 이다 — 변동성 프리미엄 보정을 탐색했으나
 근거·통용성이 약해 기각했다.
 
@@ -405,7 +405,7 @@ jupyter nbconvert --to notebook --execute --inplace 3_visualization.ipynb
 
 ## 코드 맵
 
-노트북은 **손으로 고치지 않는다.** `tools/build_nb_*.py` 가 생성하고, 노트북을 직접 편집하면
+노트북은 **손으로 고치지 않는다.** `generate/build_nb_*.py` 가 생성하고, 노트북을 직접 편집하면
 다음 생성 때 덮어쓰인다.
 
 ### `module/` — 파이프라인 본체
@@ -429,7 +429,7 @@ jupyter nbconvert --to notebook --execute --inplace 3_visualization.ipynb
 | `vbase.py` | 준해석적 베이스 프록시 `V_base` (닫힌식) |
 | `contract.py` | 계약 섭동 격자 (`GRID` · `apply_factor`) |
 
-### `tools/` — 생성기와 검증 도구
+### `generate/` — 생성기와 검증 도구
 
 | 파일 | 역할 |
 |---|---|

@@ -77,7 +77,7 @@ def test_every_assignment_site_uses_the_shared_helper():
     # 공정가 시대 샤드에서 오므로, 내용 기반 시드를 적으면 값이 갖지 않은 출처를 주장하게 된다.
     # 거기서는 실제로 쓰인 시드를 그대로 기록하는 것이 맞다 (tests/test_mc_shards_alignment.py).
     for name in ("module.build_source",
-                 "tools.build_mc_variants", "tools.mc_check_12star"):
+                 "generate.build_mc_variants", "generate.mc_check_12star"):
         src = inspect.getsource(importlib.import_module(name))
         assert "mc_seed_for" in src, "{} 가 공용 헬퍼를 쓰지 않는다".format(name)
         assert 'mc_seed"] = np.arange' not in src, "{} 에 행 번호 시드가 남아 있다".format(name)
@@ -100,7 +100,7 @@ def test_seeds_stale_detects_a_changed_seed_definition():
 
 def test_notebook0_keys_rebuild_on_seed_staleness():
     import inspect
-    import tools.build_nb_data as BND
+    import generate.build_nb_data as BND
     src = inspect.getsource(BND)
     assert "seeds_stale" in src, "노트북 0 이 저장본의 시드를 검사하지 않는다"
     assert "REBUILD = False" not in src, "REBUILD 가 상수로 고정돼 있다"

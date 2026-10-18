@@ -172,7 +172,7 @@ def div_kwargs(tks, t0, ten, src=DEFAULT_SRC):
        "lseg"  {"qcont": q}   연속 배당수익률 (이산 이벤트 없음 -> nev=0)
        "yf"    {"divlog": D}  이산 배당락 드리프트 보정
 
-     종전에는 이 분기가 tools/build_mc_variants.py 에 두 벌 있었고 tools/mc_check_12star.py 는
+     종전에는 이 분기가 generate/build_mc_variants.py 에 두 벌 있었고 generate/mc_check_12star.py 는
      분기 없이 build_div 를 직접 불러, 원천 전용 트리에서 div_* 캐시를 찾다 죽었다."""
     if src not in SRCS:
         raise ValueError("배당 소스는 {} 중 하나여야 한다: {!r}".format(SRCS, src))

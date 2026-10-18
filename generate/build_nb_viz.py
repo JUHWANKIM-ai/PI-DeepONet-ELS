@@ -9,7 +9,7 @@
  그림 글자는 전부 영문. 성능 막대는 R² 와 MAPE 두 패널만 쓰고 MAE·편향은 표로 낸다.
  계약조건 기울기는 수준 지표와 항상 함께 보고한다.
 
- 실행: python tools/build_nb_viz.py
+ 실행: python generate/build_nb_viz.py
 """
 import json
 from pathlib import Path
@@ -853,7 +853,7 @@ cells.append(md("""
 
 cells.append(code("""
 from IPython.display import Image, display
-from tools import eval_all_stars, eval_cross_section
+from generate import eval_all_stars, eval_cross_section
 
 if Path(fm.stat("mc_check_allstar")).exists():
     eval_all_stars.main()

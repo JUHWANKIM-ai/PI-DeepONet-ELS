@@ -25,7 +25,7 @@ KEYS = {"built_at", "px_effect", "model_old", "label_summary", "notes"}
 
 
 def test_fixture_exists_and_is_small():
-    assert FIX.exists(), "판정 근거 픽스처가 없다 — tools/freeze_verdict.py 로 만든다"
+    assert FIX.exists(), "판정 근거 픽스처가 없다 — generate/freeze_verdict.py 로 만든다"
     assert FIX.stat().st_size < 200_000, "픽스처가 너무 크다 — 데이터를 담고 있다"
 
 
@@ -41,7 +41,7 @@ def test_fixture_shape():
 
 def test_fixture_matches_the_live_baseline_while_it_exists():
     """스냅샷이 아직 있는 동안에는 픽스처가 그것과 일치해야 한다 — 베껴 쓴 값이 아님을 보인다."""
-    from tools.verify_raw_run import BASE, px_effect
+    from generate.verify_raw_run import BASE, px_effect
     if not (BASE / "statistics" / "source_switch_impact.csv").exists():
         pytest.skip("기준선 스냅샷이 이미 삭제됐다 — 픽스처가 유일한 근거다")
     d = json.loads(FIX.read_text(encoding="utf-8"))
@@ -55,7 +55,7 @@ def test_fixture_matches_the_live_baseline_while_it_exists():
 
 def test_verdict_is_computable_without_the_baseline(monkeypatch, tmp_path):
     """스냅샷을 지운 뒤에도 판정이 돌아야 한다 — 결론만 남고 근거가 사라지면 감사 불가능하다."""
-    import tools.verify_raw_run as V
+    import generate.verify_raw_run as V
     monkeypatch.setattr(V, "BASE", tmp_path / "gone")      # 삭제된 상태를 흉내낸다
     T = V.compare()
     assert list(T.subset) == ["TIGHT", "IDX", "OTHER"]

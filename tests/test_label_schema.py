@@ -18,7 +18,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util import file_manager as fm                  # noqa: E402
-import tools.build_mc_variants as BMV                # noqa: E402
+import generate.build_mc_variants as BMV                # noqa: E402
 
 DONE_COLS = {"fail", "px_lag_days", "stale_px"}
 

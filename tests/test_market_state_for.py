@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """state_for 의 특성화 테스트 — 현행 방법론의 '발행일 시장상태' 조립 규약을 못박는다.
 
- 모든 MC 가격이 이 함수를 통과하는데(module/mc.py · tools/build_mc_variants · tools/build_decomp ·
- tools/mc_check_12star) 줄 커버리지가 5% 였다 (CRAP 135.5).
+ 모든 MC 가격이 이 함수를 통과하는데(module/mc.py · generate/build_mc_variants · generate/build_decomp ·
+ generate/mc_check_12star) 줄 커버리지가 5% 였다 (CRAP 135.5).
 
  여기서 고정하는 것:
    1. 성공 상태의 키 집합과 모양 — sig(3) · corr(3x3) · dz(콜러블) · divlog(N x 3)

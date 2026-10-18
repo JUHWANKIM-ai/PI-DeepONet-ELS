@@ -67,12 +67,12 @@ def test_discrete_dividend_is_still_reachable(row, mkt):
 
 
 def test_npath_is_methodology_target():
-    import tools.build_mc_variants as BMV
+    import generate.build_mc_variants as BMV
     assert BMV.NPATH == 100_000
 
 
 def test_default_label_file_has_no_suffix():
     """기본값이 접미사 없는 이름이어야 노트북·module.mcvar 가 그대로 읽는다."""
-    import tools.build_mc_variants as BMV
+    import generate.build_mc_variants as BMV
     assert BMV.OUT_NAME == "mc_variants.parquet"
     assert BMV.OUT12_NAME == "mc_variants12.parquet"

@@ -25,7 +25,7 @@ def test_main_survives_a_cp949_console():
     """윈도우 기본 콘솔에서도 돌아야 한다 — 출력이 게이트의 종료코드를 좌우한다."""
     env = dict(os.environ, PYTHONIOENCODING="cp949")
     env.pop("PYTHONUTF8", None)
-    r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "verify_raw_run.py")],
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "generate", "verify_raw_run.py")],
                        capture_output=True, cwd=ROOT, env=env)
     assert r.returncode == 0, r.stderr.decode("cp949", "replace")[-400:]
 
@@ -33,7 +33,7 @@ def test_main_survives_a_cp949_console():
 def test_three_states_get_three_distinct_marks():
     """통과 · 미결론 · 기준없음 이 서로 다른 말로 찍혀야 한다."""
     import inspect
-    import tools.verify_raw_run as V
+    import generate.verify_raw_run as V
     src = inspect.getsource(V.main)
     assert "미결론" in src, "미결론을 기준없음과 같은 말로 찍고 있다"
     assert src.count('"기준없음"') <= 1
@@ -42,5 +42,5 @@ def test_three_states_get_three_distinct_marks():
 def test_frozen_rows_do_not_print_a_sentinel_n():
     """고정 근거 행의 n = -1 은 사람이 읽는 표에 들어가면 안 된다."""
     import inspect
-    import tools.verify_raw_run as V
+    import generate.verify_raw_run as V
     assert "n=-1" not in inspect.getsource(V._frozen_table).replace(" ", "")

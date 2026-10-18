@@ -17,7 +17,7 @@
  자료는 1·2·3스타 통합(stage1_all_stars)이고 모형도 전부 통합 학습본이라 스타별로 나눠 낸다.
 
  산출: result/statistics/xsec_slope.csv · xsec_resid.csv  (nstar 열 포함, ALL 행 포함)
- 실행: python tools/slope_cross_section.py
+ 실행: python generate/slope_cross_section.py
 """
 import sys, time
 from pathlib import Path

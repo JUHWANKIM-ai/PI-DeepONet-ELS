@@ -26,7 +26,7 @@ MODELS = ("Direct+f+m (1·2·3)", "XGBoost (1·2·3)")
 
 def test_generator_declares_the_two_models_and_two_panels():
     import inspect
-    import tools.eval_all_stars as EAS
+    import generate.eval_all_stars as EAS
     src = inspect.getsource(EAS)
     assert "headline_3star" in src, "헤드라인 그림 생성기가 없다"
     assert "HEADLINE" in src
@@ -56,7 +56,7 @@ def test_allstar_panels_use_r2_and_mape_not_mae():
      직관적이긴 하지만, 성능 히스토그램은 R²·MAPE 로 통일하고 MAE·RMSE 등은 표로만 낸다
      (`allstar_level.csv` 에 여섯 지표가 모두 있다). 기울기 패널은 비율이라 그대로 둔다."""
     import inspect
-    import tools.eval_all_stars as EAS
+    import generate.eval_all_stars as EAS
     src = inspect.getsource(EAS)
     assert EAS.STAR_PANELS == ("R2", "MAPE")
     assert "OOS MAE [KRW]" not in src, "스타별 패널에 MAE 막대가 남아 있다"
@@ -71,7 +71,7 @@ def test_main_can_actually_call_headline_fig(tmp_path, monkeypatch):
      NameError 로 죽었고, 그래서 노트북 3 이 완주하지 못했다. 그림이 디스크에 있던 것은
      사람이 손으로 함수를 불렀기 때문이다."""
     import inspect
-    import tools.eval_all_stars as EAS
+    import generate.eval_all_stars as EAS
 
     # (1) main() 안에서 headline_fig 에 넘기는 이름이 실제로 묶이는가
     src = inspect.getsource(EAS.main)
@@ -133,7 +133,7 @@ def test_headline_terms_figure_uses_the_table_model():
      참고: 구간평균은 **선형** 통계라 "시드 예측을 평균한 뒤 구간화" 와 "구간별로 평균한 뒤
      시드 평균" 이 같은 값이다. R²·MAPE 때와 달리 집계 규약은 문제가 아니고, 모형만 문제였다."""
     import inspect
-    import tools.build_nb_viz as BNV
+    import generate.build_nb_viz as BNV
     src = inspect.getsource(BNV)
     assert "nb_pred_ball_dm.npy" in src, "노트북 3 이 기준 모형 예측을 읽지 않는다"
     assert "headline_3star_terms" in src, "기준 모형 구간평균 그림이 없다"
@@ -141,7 +141,7 @@ def test_headline_terms_figure_uses_the_table_model():
 
 def test_notebook2_saves_the_headline_prediction():
     import inspect
-    import tools.build_nb_training as BNT
+    import generate.build_nb_training as BNT
     src = inspect.getsource(BNT)
     assert "nb_pred_ball_dm.npy" in src, "노트북 2 가 기준 모형 예측을 저장하지 않는다"
 
@@ -160,7 +160,7 @@ def test_only_one_generator_writes_each_figure():
     # 같은 **읽기**는 제외한다.
     pat = re.compile(r'(?:savefig\(fm\.image\(|save\(fig,\s*)"([a-z0-9_]+)"')
     writers = {}
-    for f in sorted(root.glob("tools/*.py")):
+    for f in sorted(root.glob("generate/*.py")):
         txt = f.read_text(encoding="utf-8", errors="replace")
         for name in set(pat.findall(txt)):
             writers.setdefault(name, set()).add(f.name)

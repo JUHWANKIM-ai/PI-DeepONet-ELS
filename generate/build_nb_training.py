@@ -5,7 +5,7 @@
  가중치를 학습·저장하고 OOS 지표까지 낸다. 기본값은 기존 가중치가 있으면 건너뛴다
  (RETRAIN=True 로 강제 재학습).
 
- 실행: python tools/build_nb_training.py
+ 실행: python generate/build_nb_training.py
 """
 import json
 from pathlib import Path
@@ -77,7 +77,7 @@ MDIR = fm.RESULT / "models"; MDIR.mkdir(parents=True, exist_ok=True)
 # 라벨이 바뀌면 저장된 가중치는 낡는다. "파일이 있는가" 로 판단하면 낡은 가중치를 조용히
 # 재사용하므로, 라벨의 **출처 스탬프**와 가중치가 학습된 스탬프를 비교해 자동으로 결정한다.
 # RETRAIN=1 로 강제할 수도 있다.
-from tools import build_mc_variants as BMV
+from generate import build_mc_variants as BMV
 WSTAMP = MDIR / ".trained_label_stamp.json"
 
 

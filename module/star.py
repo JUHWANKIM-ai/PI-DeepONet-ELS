@@ -11,7 +11,7 @@
  iK/iBARR/iCOUPON/iTEN 이 없고, 대신 nstar/nobs 가 있다. 같은 이름의 다른 타입이라는
  스키마 문제는 module/mcvar.py 머리말에 적어둔 별도 과제다.
 
- els12_dataset.parquet 은 tools/build_12star.py 가, mc_variants12 는 tools/build_mc_variants.py 가 만든다.
+ els12_dataset.parquet 은 generate/build_12star.py 가, mc_variants12 는 generate/build_mc_variants.py 가 만든다.
  종전에는 scratch/stage1_all_stars.py 에만 있어 추적 파이프라인에서 쓸 수 없었다.
 """
 from types import SimpleNamespace

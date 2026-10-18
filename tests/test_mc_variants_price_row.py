@@ -27,7 +27,7 @@ from module import dividend as DV                  # noqa: E402
 from module import features as F                   # noqa: E402
 from module import market as MK                    # noqa: E402
 from module import mc_engine as ME                 # noqa: E402
-from tools import build_mc_variants as BMV         # noqa: E402
+from generate import build_mc_variants as BMV         # noqa: E402
 
 SA = ["sA_1", "sA_2", "sA_3"]
 SB = ["sB_1", "sB_2", "sB_3"]

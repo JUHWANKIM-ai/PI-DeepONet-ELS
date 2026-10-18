@@ -2,7 +2,7 @@
 """0_data_preprocessing.ipynb 생성 — 원천 → 학습 데이터셋.
 
  흡수: 0_data.ipynb + EDA_raw_filter.ipynb
- 실행: python tools/build_nb_data.py
+ 실행: python generate/build_nb_data.py
 """
 import json
 from pathlib import Path
@@ -343,12 +343,12 @@ cells.append(md("""
 
 기초자산이 1~2개인 상품을 **슬롯 중복 패딩**(위 용어 참고)으로 3자산 입력 규약에 수용합니다.
 
-아래 셀이 `tools/build_12star.main()` 으로 직접 만듭니다(이미 있으면 건너뜁니다).
+아래 셀이 `generate/build_12star.main()` 으로 직접 만듭니다(이미 있으면 건너뜁니다).
 MC 라벨(`mc_variants12`)은 노트북 1 의 1-0 이 붙이고, 번들 구성은 `module.star.make_all()` 이 맡습니다.
 """))
 
 cells.append(code("""
-from tools import build_12star
+from generate import build_12star
 
 p12 = fm.DATA / "els12_dataset.parquet"
 if not p12.exists():

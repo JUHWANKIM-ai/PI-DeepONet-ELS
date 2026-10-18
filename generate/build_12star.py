@@ -10,7 +10,7 @@
 
  module.build_source 와 **같은 스키마**를 만든다 (+ nstar 열).
  산출: data/els12_dataset.parquet
- 실행: python tools/build_12star.py
+ 실행: python generate/build_12star.py
 """
 import sys, json, time, bisect
 from pathlib import Path

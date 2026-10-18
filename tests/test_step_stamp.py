@@ -18,7 +18,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util import file_manager as fm                  # noqa: E402
-import tools.build_mc_variants as BMV                # noqa: E402
+import generate.build_mc_variants as BMV                # noqa: E402
 
 
 def test_step_stale_when_no_mark(tmp_path):
@@ -57,7 +57,7 @@ def test_missing_file_is_stale(tmp_path):
 def test_notebook1_uses_the_shared_step_check():
     """단계마다 다른 임시방편을 붙이면 다음 산출물에서 또 생긴다."""
     import inspect
-    import tools.build_nb_pricer as BNP
+    import generate.build_nb_pricer as BNP
     src = inspect.getsource(BNP)
     assert "step_stale" in src and "mark_step" in src
     assert 'q.name == "mc_variants.parquet"' not in src, "산출물별 임시방편이 남아 있다"

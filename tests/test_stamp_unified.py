@@ -19,7 +19,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util import file_manager as fm                  # noqa: E402
-import tools.build_mc_variants as BMV                # noqa: E402
+import generate.build_mc_variants as BMV                # noqa: E402
 
 
 def test_one_comparator_only():
@@ -27,7 +27,7 @@ def test_one_comparator_only():
     import pathlib
     root = pathlib.Path(__file__).resolve().parent.parent
     hits = []
-    for pat in ("module/*.py", "tools/*.py"):
+    for pat in ("module/*.py", "generate/*.py"):
         for f in root.glob(pat):
             txt = f.read_text(encoding="utf-8", errors="replace")
             if 'for k in ("npath"' in txt or '"n_rows")' in txt and "any(str(got" in txt:
@@ -57,6 +57,6 @@ def test_dead_stale_helper_is_gone_or_used():
     if "def stale(" in src:
         import pathlib
         root = pathlib.Path(__file__).resolve().parent.parent
-        callers = [f.name for pat in ("module/*.py", "tools/*.py") for f in root.glob(pat)
+        callers = [f.name for pat in ("module/*.py", "generate/*.py") for f in root.glob(pat)
                    if "BMV.stale(" in f.read_text(encoding="utf-8", errors="replace")]
         assert callers, "stale() 이 아무 데서도 쓰이지 않는다 (죽은 코드)"

@@ -4,10 +4,10 @@
  기존 contract_sens_mc_check_mono.csv 는 3스타 12개 상품만 담고 있다.
  1·2스타 기울기를 재려면 같은 정의의 MC 참값이 스타별로 필요하다.
  시장입력(EWMA120 · 영업일120 상관(중복쌍 1.0) · 부트스트랩 커브 · 배당)은
- tools/build_mc_variants.py 의 star12 모드와 동일하고, 계약만 CS.GRID 격자로 바꾼다.
+ generate/build_mc_variants.py 의 star12 모드와 동일하고, 계약만 CS.GRID 격자로 바꾼다.
 
  산출: result/statistics/mc_check_allstar.csv  (item · nstar · factor · level · mc)
- 실행: python tools/mc_check_12star.py [스타당 상품수]
+ 실행: python generate/mc_check_12star.py [스타당 상품수]
 """
 import os, sys, time
 from datetime import date

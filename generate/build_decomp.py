@@ -16,8 +16,8 @@
  **되읽기만 가능한 고아 파일**로 남아 있었다 (노트북 3 이 이 파일에 의존한다).
 
  표본: els3_dataset 에서 시장입력이 모두 조립되는 상품을 발행일 순으로 등간격 추출.
- 실행:  python tools/build_decomp.py build [n]      새로 산출 (기본 200)
-        python tools/build_decomp.py verify         기존 CSV 의 상품을 다시 가격해 대조
+ 실행:  python generate/build_decomp.py build [n]      새로 산출 (기본 200)
+        python generate/build_decomp.py verify         기존 CSV 의 상품을 다시 가격해 대조
 """
 import sys
 import time

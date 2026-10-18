@@ -6,7 +6,7 @@
 
  종전 build_nb*.py 와 달리 **결과 CSV 의 숫자를 박제하지 않는다.** 코드셀이 module/ 만 import 해서
  그 자리에서 계산하므로 깨끗한 체크아웃에서 nbconvert 로 돌리면 그대로 재현된다.
- 실행: python tools/build_nb_pricer.py
+ 실행: python generate/build_nb_pricer.py
 """
 import json
 from pathlib import Path
@@ -106,8 +106,8 @@ cells.append(md("""
 
 cells.append(code("""
 import time
-from tools import mc_check_12star, build_decomp
-from tools import build_mc_variants as BMV
+from generate import mc_check_12star, build_decomp
+from generate import build_mc_variants as BMV
 
 REBUILD = False                      # True 면 이미 있는 산출물도 다시 만든다
 MV = fm.CACHE / "mcvar"
@@ -172,7 +172,7 @@ cells.append(md("""
   추종 ETF 의 값을 씁니다 (`module.dividend.PROXY`).
 
 이 함수가 현행 방법론의 **유일한 정의**입니다. 종전에는 같은 조립이 `module/mc.py`,
-`module/build_source.py`, `tools/mc_discrete_div.py`, `5_MC_implied_vol.ipynb` 네 곳에 흩어져 있었습니다.
+`module/build_source.py`, `generate/mc_discrete_div.py`, `5_MC_implied_vol.ipynb` 네 곳에 흩어져 있었습니다.
 """))
 
 cells.append(code("""
@@ -243,7 +243,7 @@ cells.append(md("""
 경로 수를 하나라도 다르게 주면 난수열이 달라져 비트 단위 일치가 성립하지 않습니다 —
 그래서 상수를 적어 넣지 않고 라벨을 만든 모듈에서 가져옵니다.
 
-종전에는 이 계산이 `tools/mc_discrete_div.py` 의 엔진 복사본으로만 가능했습니다. 지금은
+종전에는 이 계산이 `generate/mc_discrete_div.py` 의 엔진 복사본으로만 가능했습니다. 지금은
 `mc_engine` 에 커브 콜러블과 배당 드리프트를 파라미터로 올려, 포크 없이 재현됩니다.
 """))
 

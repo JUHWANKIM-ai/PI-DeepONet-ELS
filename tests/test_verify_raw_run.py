@@ -20,7 +20,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util import file_manager as fm                              # noqa: E402
-from tools.verify_raw_run import (TIGHT, IDX, BASE, EXP_MAD, GATE,   # noqa: E402
+from generate.verify_raw_run import (TIGHT, IDX, BASE, EXP_MAD, GATE,   # noqa: E402
                                   METRICS, compare, model_verdict, verdict)
 
 needs_baseline = pytest.mark.skipif(
@@ -234,6 +234,6 @@ def test_model_verdict_reports_an_80_percent_power_floor():
 def test_model_verdict_marks_a_frozen_arm():
     """기준선이 사라지면 왼쪽 팔은 **측정이 아니라 기록**이다 — compare() 는 frozen 을 알리는데
      model_verdict 는 조용히 픽스처로 바꿔치기하고 있었다."""
-    import tools.verify_raw_run as V
+    import generate.verify_raw_run as V
     import inspect
     assert "frozen" in inspect.getsource(V.model_verdict)

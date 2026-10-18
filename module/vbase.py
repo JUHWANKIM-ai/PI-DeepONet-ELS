@@ -16,7 +16,7 @@
  리자드(조기상환 완화 조항)도 프록시에서는 무시한다 — 망이 보정할 몫이다.
 
  종전에는 scratch/els_vbase.py 에만 있어 추적 파이프라인에서 쓸 수 없었다.
- 프록시 단독 성능 리포트는 tools/report_vbase.py 가 만든다.
+ 프록시 단독 성능 리포트는 generate/report_vbase.py 가 만든다.
 """
 import numpy as np
 import torch

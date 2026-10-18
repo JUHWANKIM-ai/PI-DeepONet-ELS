@@ -30,7 +30,7 @@
  `nb_training_level.csv` 의 group=ALL · model=통합 학습 행에서 가져온다.
 
  산출: result/statistics/raw_run_verification.csv
- 실행: python tools/verify_raw_run.py
+ 실행: python generate/verify_raw_run.py
 """
 import sys
 from pathlib import Path
@@ -126,7 +126,7 @@ def _fixture():
 
 
 def _frozen_table():
-    """기준선 스냅샷이 사라진 뒤의 대조표 — tools/freeze_verdict.py 가 고정한 값에서 만든다.
+    """기준선 스냅샷이 사라진 뒤의 대조표 — generate/freeze_verdict.py 가 고정한 값에서 만든다.
 
      재계산이 아니라 **기록된 판정 근거**다. frozen 열로 그 사실을 표에 남긴다."""
     d = _fixture()

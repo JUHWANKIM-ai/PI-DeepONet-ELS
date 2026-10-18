@@ -8,7 +8,7 @@
 
  1·2스타(els12_dataset)는 star12 모드가 mc_variants12 를 만든다 — 변형 B 만.
 
- 실행 (프로젝트 루트):  python tools/build_mc_variants.py shard <k> <N>   |   bench [n]
+ 실행 (프로젝트 루트):  python generate/build_mc_variants.py shard <k> <N>   |   bench [n]
                        |   combine <N>   |   fix   |   star12
  배당 소스는 MCVAR_DIV 환경변수 (yf 기본 = 이산, 정본 / lseg = 연속). 소스별로 파일명이 갈린다."""
 import os, sys, time
@@ -184,7 +184,7 @@ def dataset12():
 
 
 def dup_corr(C, ts):
-    """중복 슬롯 쌍의 상관을 1.0 으로 복원. tools/mc_check_12star.exact_dup_corr 와 같은 규칙."""
+    """중복 슬롯 쌍의 상관을 1.0 으로 복원. generate/mc_check_12star.exact_dup_corr 와 같은 규칙."""
     C = np.array(C, float, copy=True)
     for a in range(3):
         for b in range(3):

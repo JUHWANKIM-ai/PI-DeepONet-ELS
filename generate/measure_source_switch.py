@@ -11,7 +11,7 @@
  **하나씩만** 바꾼 가격을 함께 내고, 셋 다 바꾼 것을 덧붙인다.
  커브·계약·공통난수(mc_seed)는 전부 고정하므로 차이는 오직 그 요인에서 온다.
 
- 실행: python tools/measure_source_switch.py [표본수]
+ 실행: python generate/measure_source_switch.py [표본수]
 """
 import sys
 from pathlib import Path
