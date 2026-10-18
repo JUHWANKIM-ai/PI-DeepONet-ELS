@@ -37,8 +37,16 @@ from module.train import train_curve
 
 
 def _anchor(D, cfg, tr, va, te, save_path=None):
-    """stage-1 앵커: MC 이론가를 예측하는 예측기(predictor) 콜백을 반환.
-    anchor_predict(idx)->np.ndarray[float32]. (Part B 계약)"""
+    """stage-1 앵커: MC 이론가를 예측하는 예측기(predictor) 콜백을 반환. (Part B 계약)
+
+    입력
+      tr, va, te : ndarray[int] — 이 폴드의 학습·검증·시험 행 인덱스
+      save_path  : str | None — 주면 폴드 가중치를 그 경로에 저장한다
+      D, cfg     : 공통 번들과 설정
+    출력
+      callable(idx) -> ndarray[float32] — 행 인덱스를 받아 MC_hat 을 내는 예측기.
+                                          학습된 모델 자체가 아니라 **호출 가능한 예측기**다
+    """
     *_, predict = train_curve(
         D, cfg, tr, te, target=D.MC, va=va, save_path=save_path, return_predict=True
     )
@@ -46,6 +54,15 @@ def _anchor(D, cfg, tr, va, te, save_path=None):
 
 
 def run(D, cfg):
+    """레지스트리가 부르는 진입점 — 이 파일이 만드는 예측 전부를 돌려준다.
+
+    입력
+      D   : Dataset — 주요 필드는 이 파일 모듈 독스트링 참고
+      cfg : dict — config.yaml
+    출력
+      dict[str -> DataFrame] — 키는 예측 CSV 파일명 stem 이자 가중치 이름.
+                               저장소 전체에서 **유일**해야 한다 (겹치면 run_all 이 멈춘다)
+    """
     # 예: 공정가 2단계 하이브리드 하나. 이름은 유일해야 함(다른 모델과 충돌 금지).
     return {
         "my_model_hybrid": predict_hybrid(

@@ -30,6 +30,16 @@ NAME = "deeponet_hybrid_pi_lizard"
 
 
 def _paths(name, seed, k):
+    """이 (이름, 시드, 폴드) 조합의 가중치 경로 셋을 만든다.
+
+    입력
+      name : str — 모델 이름
+      seed : int — 학습 시드. 경로에 들어가므로 시드별 가중치가 섞이지 않는다
+      k    : int — 폴드 번호
+    출력
+      (base, pi, resid) — 각각 str. branch A 앵커 · branch B(PI) 앵커 · stage-2 경로 접두.
+                          확장자는 각 학습함수가 붙인다. 디렉터리는 이 호출이 만든다
+    """
     d = fm.RESULT / "models"
     d.mkdir(parents=True, exist_ok=True)
     stem = f"{name}_seed{seed}"
@@ -41,7 +51,19 @@ def _paths(name, seed, k):
 
 
 def _assemble(D, cfg, tr, va, te, mc_hat, route, save_path):
-    """라우팅된 mc_hat 위에 stage-2 를 올려 OOS 행 조립."""
+    """라우팅된 mc_hat 위에 stage-2 를 올려 이 폴드의 OOS 행을 조립한다.
+
+    입력
+      D, cfg     : 공통 번들과 설정
+      tr, va, te : ndarray[int] — 폴드 인덱스
+      mc_hat     : ndarray(n,) float32 — 라우팅이 끝난 stage-1 예측.
+                   tr·va·te 밖 행은 NaN 이어도 된다 (쓰지 않는다)
+      route      : ndarray(n,) bool — True 면 PI 앵커를 쓴 행. 결과의 route 열이 된다
+      save_path  : str | None — stage-2 가중치 경로. None 이면 저장하지 않는다
+    출력
+      DataFrame — te 행만. pipeline.predict_hybrid 와 같은 8열 + route 열
+                  ("pi_pde" | "deeponet")
+    """
     sel = np.concatenate([tr, va, te])
     rt = np.full(D.n, np.nan, "float32")
     rt[sel] = hybrid_residual_target(D.FAIR[sel], mc_hat[sel], D.rm[sel])
@@ -66,7 +88,18 @@ def predict_routed(D, cfg, name=NAME, seed=None, with_control=False):
 
     with_control=True 면 (routed, control) 을 함께 반환한다. control 은 **같은 branch A 가중치**로
     라우팅만 끈 것 — 앵커를 공유하므로 시드·초기화·데이터가 완전히 동일한 짝지은 대조군이고,
-    추가 비용은 폴드당 stage-2 한 번뿐이다. (= ablation 의 A2_width 와 같은 설정)"""
+    추가 비용은 폴드당 stage-2 한 번뿐이다. (= ablation 의 A2_width 와 같은 설정)
+
+    입력
+      D, cfg       : 공통 번들과 설정
+      name         : str — 가중치·CSV 이름. 기본 NAME
+      seed         : int | None — 학습 시드. None 이면 cfg["seed"]
+      with_control : bool — True 면 짝지은 대조군을 함께 돌려준다
+    출력
+      DataFrame                  — with_control=False. 4폴드를 이어 붙인 OOS 예측
+      (routed, control)          — with_control=True. 두 표의 스키마는 같고,
+                                   control 은 route 열이 있어도 전부 branch A 예측이다
+    """
     seed = cfg["seed"] if seed is None else seed
     route = lizard_no_ki_mask(D)
     rows, crows = [], []
@@ -95,13 +128,31 @@ def predict_routed(D, cfg, name=NAME, seed=None, with_control=False):
 
 
 def load_routed_predictor(D, name, seed, k):
-    """저장 가중치로 라우팅된 stage-1 예측기 복원 (infer 재현 경로)."""
+    """저장 가중치로 라우팅된 stage-1 예측기를 복원한다 (infer 재현 경로).
+
+    학습을 다시 하지 않는다 — 두 앵커 가중치를 읽어 라우팅만 재현한다.
+
+    입력
+      D    : Dataset — 라우팅 키(`lizard_no_ki_mask`)와 입력 행렬을 여기서 얻는다
+      name : str — 가중치 이름
+      seed : int — 학습 시드
+      k    : int — 폴드 번호
+    출력
+      callable(idx) -> ndarray[float32] — 라우팅까지 반영한 MC_hat 예측기
+    """
     pa, pb, _ = _paths(name, seed, k)
     base = load_pi_predictor(D, pa + ".pt")
     pi = load_pi_predictor(D, pb + ".pt")
     route = lizard_no_ki_mask(D)
 
     def predict(idx):
+        """branch A 로 전부 예측한 뒤 라우팅 대상 행만 branch B 로 덮어쓴다.
+
+        입력
+          idx : array-like[int] — 예측할 행 인덱스
+        출력
+          ndarray[float32] — 길이 len(idx)
+        """
         idx = np.asarray(idx)
         out = np.asarray(base(idx), dtype="float32").copy()
         m = route[idx]
@@ -113,4 +164,12 @@ def load_routed_predictor(D, name, seed, k):
 
 
 def run(D, cfg):
+    """라우팅 하이브리드 하나를 학습·예측한다.
+
+    입력
+      D   : Dataset — 앵커는 D.MC, 최종 타깃은 D.FAIR
+      cfg : dict — config.yaml
+    출력
+      dict[str -> DataFrame] — {NAME: 하이브리드 8열 + route 열}
+    """
     return {NAME: predict_routed(D, cfg)}

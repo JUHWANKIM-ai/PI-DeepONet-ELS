@@ -16,8 +16,18 @@ _DIRECT = {"ridge": "bench_ridge", "gbm": "bench_gbm", "lgbm": "bench_lgbm", "xg
 
 def _xgb_anchor(D, cfg, tr, va, te, save_path=None):
     """stage-1 앵커: XGBoost가 무차익가 MC를 예측.
+
     입력을 DeepONet-Curve 앵커와 동일하게 맞춤 → 순수 아키텍처 비교.
-    X = [곡선 u0-9 | vol·corr(7) | 계약(strk0-11 + B + coupon + tenor)]. va→val 조기종료. save_path→.pkl 저장.
+    X = [곡선 u0-9 | vol·corr(7) | 계약(strk0-11 + B + coupon + tenor)].
+
+    입력
+      D          : Dataset — D.CURVE · D.VC · D.CON 을 가로로 붙여 X 로 쓴다. 타깃은 D.MC
+      cfg        : dict — tabular.xgb 하이퍼파라미터, data.time_decay, train.es_rounds, seed
+      tr, va, te : ndarray[int] — 폴드 인덱스. va 가 비어 있지 않으면 조기종료를 건다
+                   (te 는 이 함수가 쓰지 않는다 — 호출 규약을 맞추기 위한 자리다)
+      save_path  : str | None — 주면 "<save_path>.pkl" 로 모델을 저장한다
+    출력
+      callable(idx) -> ndarray[float32] — 행 인덱스를 받아 MC_hat 을 내는 예측기
     """
     XP = cfg["tabular"]["xgb"]
     X = np.concatenate([D.CURVE, D.VC, D.CON], axis=1)
@@ -48,6 +58,15 @@ def _xgb_anchor(D, cfg, tr, va, te, save_path=None):
 
 
 def run(D, cfg):
+    """표형 ML 벤치마크 전부를 학습·예측한다 — 직접 4종 + XGB 하이브리드 1종.
+
+    입력
+      D   : Dataset — 직접 벤치마크는 ml.csv 전 특성(regime), 하이브리드는 CURVE·VC·CON
+      cfg : dict — config.yaml
+    출력
+      dict[str -> DataFrame] — bench_ridge, bench_gbm, bench_lgbm, bench_xgboost,
+                               xgb_hybrid. 5개 모두 공정가(FAIR)를 타깃으로 한다
+    """
     out = {}
     # (1) 직접(단일 단계) 벤치마크: ml.csv 전 특성으로 공정가(FAIR) 직접 예측
     for key, name in _DIRECT.items():

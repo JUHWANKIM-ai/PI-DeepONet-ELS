@@ -30,6 +30,15 @@ class MarginOperatorNLL(nn.Module):
     branch=vol·corr·sig_eff, trunk=[곡선|계약]. MarginOperator 를 2-헤드로 확장."""
 
     def __init__(self, nb, nt, P):
+        """두 헤드(μ·logσ²)를 각각 branch·trunk MLP 한 쌍 + 학습 가능한 편향으로 만든다.
+
+        입력
+          nb : int — branch 입력 차원 (표준화된 vol·corr·sig_eff 의 열 수)
+          nt : int — trunk 입력 차원 ([곡선|계약] 의 열 수)
+          P  : int — 내적 잠재 차원 (config networks.P)
+        출력
+          없음 (파라미터 등록만 한다)
+        """
         super().__init__()
         self.b_mu = mlp(nb, P)
         self.t_mu = mlp(nt, P)
@@ -39,14 +48,31 @@ class MarginOperatorNLL(nn.Module):
         self.b0_lv = nn.Parameter(torch.zeros(1))
 
     def forward(self, bx, tx):
+        """두 헤드를 각각 내적해 평균과 로그분산을 낸다.
+
+        입력
+          bx : Tensor(n, nb) — 표준화된 branch 입력
+          tx : Tensor(n, nt) — 표준화된 trunk 입력
+        출력
+          (mu, lv) — 각각 Tensor(n,). lv 는 **clamp 전** 로그분산이다.
+                     하한(log LAM)·상한(LV_MAX) 은 손실과 예측 쪽에서 건다
+        """
         mu = (self.b_mu(bx) * self.t_mu(tx)).sum(-1) + self.b0_mu
         lv = (self.b_lv(bx) * self.t_lv(tx)).sum(-1) + self.b0_lv
         return mu, lv
 
 
 def _nll_loss(mu, lv, y, w=None):
-    """가우시안 음의 로그우도(표준화 공간). lv=logσ² 를 [log LAM, LV_MAX] 로 clamp(식17 floor).
-    w: 표본가중(없으면 균등). 상수항 0.5·log(2π) 는 최적화에 무관해 생략."""
+    """가우시안 음의 로그우도(표준화 공간). 상수항 0.5·log(2π) 는 최적화에 무관해 생략.
+
+    입력
+      mu : Tensor(n,) — 예측 평균
+      lv : Tensor(n,) — 예측 로그분산. 여기서 [log LAM, LV_MAX] 로 clamp 한다 (논문 식17 floor)
+      y  : Tensor(n,) — 표준화된 참값
+      w  : Tensor(n,) | None — 표본가중. None 이면 균등 평균, 주면 가중평균
+    출력
+      Tensor() — 스칼라 손실
+    """
     lvc = lv.clamp(float(np.log(LAM)), LV_MAX)
     per = 0.5 * (lvc + (y - mu) ** 2 * torch.exp(-lvc))
     if w is None:
@@ -55,7 +81,15 @@ def _nll_loss(mu, lv, y, w=None):
 
 
 def _mp(name, k):
-    """폴드별 모델 저장 경로 접두(확장자는 각 학습함수가 붙임). name=None 이면 저장 안 함."""
+    """폴드별 모델 저장 경로 접두를 만든다. 확장자는 각 학습함수가 붙인다.
+
+    입력
+      name : str | None — 모델 이름. None 이면 저장하지 않겠다는 뜻이다
+      k    : int — 폴드 번호
+    출력
+      str | None — "result/models/<name>_fold<k>". name 이 None 이면 None.
+                   디렉터리는 이 호출이 만든다
+    """
     if name is None:
         return None
     d = fm.RESULT / "models"
@@ -64,10 +98,24 @@ def _mp(name, k):
 
 
 def _predict_hybrid_ci(D, cfg, anchor_fn, resid_ci_fn, name=None, target=None, use_margin=True):
-    """CI 2단계 하이브리드(predict_hybrid 미러링 + CI 컬럼).
-    y=MC_hat+recent_margin+mean, 구간=[y−Z·std, y+Z·std].
-    anchor_fn(D,cfg,tr,va,te,save_path=)->predict(idx)->np.ndarray.
-    resid_ci_fn(D,cfg,tr,va,te,target,save_path=)->(mean_te, std_te)."""
+    """CI 2단계 하이브리드 — `pipeline.predict_hybrid` 를 미러링하고 CI 열 4개를 더한다.
+
+    y = MC_hat + recent_margin + mean, 구간 = [y − Z·std, y + Z·std].
+
+    입력
+      D, cfg      : 공통 번들과 설정. 폴드는 D.WF 전부를 돈다
+      anchor_fn   : callable(D, cfg, tr, va, te, save_path=) -> predict(idx) -> ndarray
+                    stage-1 앵커를 만드는 호출
+      resid_ci_fn : callable(D, cfg, tr, va, te, target, save_path=) -> (mean_te, std_te)
+                    stage-2 를 학습해 평균과 표준편차를 함께 내는 호출
+      name        : str | None — 가중치 파일 접두. None 이면 저장하지 않는다
+      target      : ndarray | None — 최종 타깃. None 이면 D.FAIR
+      use_margin  : bool — False 면 recent_margin 을 0 으로 둔다
+    출력
+      DataFrame — 폴드를 이어 붙인 OOS 예측. 하이브리드 8열
+                  (ITEM_CD, isu_ord, y_true, y_pred, mc_true, mc_pred, resid_true, resid_pred)
+                  + CI 4열 (resid_std, y_std, y_lo, y_hi)
+    """
     tgt = D.FAIR if target is None else target
     rm_full = D.rm if use_margin else np.zeros(D.n, dtype="float32")
     rows = []
@@ -109,8 +157,23 @@ def _predict_hybrid_ci(D, cfg, anchor_fn, resid_ci_fn, name=None, target=None, u
 
 
 def nll_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
-    """stage-2 NLL 잔차: 표준화 공간에서 (μ, logσ²) 학습 → 원본 스케일 (mean, std) 반환.
-    don_resid 와 동일한 블록(branch=VC, trunk=[곡선|계약])·표준화·조기종료 규약, 손실만 NLL."""
+    """stage-2 NLL 잔차: 표준화 공간에서 (μ, logσ²) 를 학습해 원본 스케일 (mean, std) 로 되돌린다.
+
+    `don_resid` 와 같은 블록(branch=VC, trunk=[곡선|계약])·표준화·조기종료 규약을 쓰고
+    손실만 NLL 이다. 표준화는 **학습 폴드만**으로 통계를 잡는다 (누출 방지).
+
+    입력
+      D, cfg         : 공통 번들과 설정. train.batch · train.nit · networks.P · seed 를 읽는다
+      tr, va, te     : ndarray[int] — 폴드 인덱스
+      target         : ndarray(n,) — 잔차 타깃. 학습 폴드 평균·표준편차로 표준화한다
+      return_predict : bool — True 면 예측기까지 함께 돌려준다
+      save_path      : str | None — 주면 "<save_path>.pt" 로 가중치와 표준화 통계를 저장한다
+    출력
+      (mean_te, std_te)                     — return_predict=False
+      (mean_te, std_te, predict)            — return_predict=True
+        mean_te, std_te : ndarray[float32] — te 행의 평균·표준편차 (원본 스케일)
+        predict         : callable(idx) -> (mean, std)
+    """
     dev = D.DEV
     B = cfg["train"]["batch"]
     NIT = cfg["train"]["nit"]
@@ -133,6 +196,13 @@ def nll_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
         wsamp = torch.ones(len(tr), device=dev)
 
     def _vloss(vi):
+        """검증 손실 — 조기종료가 부른다.
+
+        입력
+          vi : Tensor[int] — 검증 행 인덱스
+        출력
+          Tensor() — 가중 없는 NLL (학습 손실과 달리 표본가중을 걸지 않는다)
+        """
         mu, lv = net(Bt[vi], Tt[vi])
         return _nll_loss(mu, lv, Y[vi])
 
@@ -168,6 +238,16 @@ def nll_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
         )
 
     def predict(idx):
+        """학습된 망으로 평균·표준편차를 원본 스케일로 낸다.
+
+        표준편차에도 ysd 를 곱한다 — 표준화 공간의 σ 를 그대로 쓰면 구간이 원가격 단위에서
+        틀린다. 로그분산은 손실과 같은 범위로 clamp 한 뒤 exp 한다.
+
+        입력
+          idx : array-like[int] — 예측할 행 인덱스
+        출력
+          (mean, std) — 각각 ndarray[float32], 원본 스케일
+        """
         with torch.no_grad():
             i = torch.tensor(np.asarray(idx), device=dev)
             mu, lv = net(Bt[i], Tt[i])
@@ -181,7 +261,15 @@ def nll_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
 
 
 def _anchor(D, cfg, tr, va, te, save_path=None):
-    """stage-1 앵커: MC 이론가 예측기(train_curve 재사용). deeponet.py 와 동일."""
+    """stage-1 앵커: MC 이론가 예측기(train_curve 재사용). deeponet.py 의 `_anchor` 와 동일.
+
+    입력
+      D, cfg     : 공통 번들과 설정. 타깃은 D.MC
+      tr, va, te : ndarray[int] — 폴드 인덱스
+      save_path  : str | None — 주면 폴드 가중치를 저장한다
+    출력
+      callable(idx) -> ndarray[float32] — MC_hat 예측기
+    """
     *_, predict = train_curve(
         D, cfg, tr, te, target=D.MC, va=va, save_path=save_path, return_predict=True
     )
@@ -189,6 +277,14 @@ def _anchor(D, cfg, tr, va, te, save_path=None):
 
 
 def run(D, cfg):
+    """CI 하이브리드 하나를 학습·예측한다.
+
+    입력
+      D   : Dataset — 앵커는 D.MC, 최종 타깃은 D.FAIR
+      cfg : dict — config.yaml
+    출력
+      dict[str -> DataFrame] — {"deeponet_hybrid_ci": 하이브리드 8열 + CI 4열}
+    """
     # 공정가(FAIR) 2단계 CI 하이브리드 하나: y=MC_hat+recent_margin+μ, 구간=[y−2s, y+2s].
     return {
         "deeponet_hybrid_ci": _predict_hybrid_ci(

@@ -24,7 +24,20 @@ def ml_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
     """기본 stage-2: ml 전체특성(cfg['margin'].feature_set) 으로 잔차 회귀.
     target = FAIR − MC_hat − recent_margin. 저장/로드는 fit_tab 규약(.pkl).
     cfg['margin'].half_life=='auto' 이면 비정상성 대응으로 시간감쇠 반감기를 **시간기반 inner-val**(tr 최근 15%)
-    에서 fold별 선택(test 미사용 → 미래정보 無). 잔차 MSE 최소화는 fair MSE 최소화와 동치(mc·rm 고정 오프셋)."""
+    에서 fold별 선택(test 미사용 → 미래정보 無). 잔차 MSE 최소화는 fair MSE 최소화와 동치(mc·rm 고정 오프셋).
+
+    입력
+      D, cfg         : 공통 번들과 설정. cfg["margin"] 의 model · feature_set · half_life · loss
+      tr, va, te     : ndarray[int] — 폴드 인덱스
+      target         : ndarray(n,) — 잔차 타깃 (FAIR − MC_hat − recent_margin)
+      return_predict : bool — True 면 예측기까지 돌려준다
+      save_path      : str | None — 주면 "<save_path>.pkl" 로 저장한다 (fit_tab 규약)
+    출력
+      (None, resid_te)              — return_predict=False.
+                                      **첫 값이 None 이다** — 학습 폴드 예측을 만들지 않는다
+      (resid_tr, resid_te, predict) — return_predict=True
+        predict : callable(idx) -> ndarray[float32]
+    """
     mg = cfg["margin"]
     hl = mg.get("half_life", 365.25)
     obj = mg.get("loss")  # None|reg:pseudohubererror 등 (이분산 강건손실)
@@ -78,12 +91,30 @@ def ml_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
 
 
 def load_ml_resid(D, path):
-    """ml_resid 저장 .pkl → predict(idx)."""
+    """ml_resid 가 저장한 .pkl 을 읽어 예측기로 되살린다.
+
+    입력
+      D    : Dataset — 특성 행렬을 여기서 얻는다
+      path : str — .pkl 경로
+    출력
+      callable(idx) -> ndarray[float32] — 잔차 예측기
+    """
     return load_tab_predictor(D, path)
 
 
 def xgb_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
-    """기본 stage-2: XGB on deeponet 블록 D.DON. target=잔차(MC−MC_hat 등)."""
+    """XGB stage-2: deeponet 블록 D.DON 위에서 잔차 회귀. 이론가 결정 특성만 쓴다.
+
+    입력
+      D, cfg         : 공통 번들과 설정. tabular.xgb · data.time_decay · train.es_rounds · seed
+      tr, va, te     : ndarray[int] — 폴드 인덱스. va 가 비어 있지 않으면 조기종료를 건다
+      target         : ndarray(n,) — 잔차 타깃 (예: MC − MC_hat)
+      return_predict : bool — True 면 예측기까지 돌려준다
+      save_path      : str | None — 주면 "<save_path>.pkl" 로 저장한다
+    출력
+      (resid_tr, resid_te)          — return_predict=False
+      (resid_tr, resid_te, predict) — return_predict=True
+    """
     from xgboost import XGBRegressor
 
     XP = cfg["tabular"]["xgb"]
@@ -113,13 +144,27 @@ def xgb_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
         joblib.dump({"model": m, "kind": "resid_don_xgb"}, save_path + ".pkl")
 
     def p(idx):
+        """학습된 XGB 로 잔차를 낸다.
+
+        입력
+          idx : array-like[int] — 행 인덱스
+        출력
+          ndarray[float32] — 길이 len(idx)
+        """
         return m.predict(X[idx]).astype("float32")
 
     return (p(tr), p(te), p) if return_predict else (p(tr), p(te))
 
 
 def load_xgb_resid(D, path):
-    """xgb_resid 저장 .pkl → predict(idx). 입력 = deeponet 블록 D.DON."""
+    """xgb_resid 가 저장한 .pkl 을 읽어 예측기로 되살린다. 입력은 deeponet 블록 D.DON.
+
+    입력
+      D    : Dataset — D.DON 을 특성으로 쓴다
+      path : str — .pkl 경로
+    출력
+      callable(idx) -> ndarray[float32] — 잔차 예측기
+    """
     import joblib
 
     m = joblib.load(path)["model"]
@@ -127,7 +172,21 @@ def load_xgb_resid(D, path):
 
 
 def don_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
-    """DeepONet stage-2: branch=D.VC(vol·corr·sig_eff), trunk=[곡선 u0-9 | 계약]. 표준화는 train 폴드 기준."""
+    """DeepONet stage-2: branch=D.VC(vol·corr·sig_eff), trunk=[곡선 u0-9 | 계약].
+
+    표준화 통계는 **학습 폴드만**으로 잡는다 (누출 방지). 타깃도 학습 폴드 평균·표준편차로
+    표준화해 학습하고, 예측에서 원본 스케일로 되돌린다.
+
+    입력
+      D, cfg         : 공통 번들과 설정. train.batch · train.nit · networks.P · seed
+      tr, va, te     : ndarray[int] — 폴드 인덱스
+      target         : ndarray(n,) — 잔차 타깃
+      return_predict : bool — True 면 예측기까지 돌려준다
+      save_path      : str | None — 주면 "<save_path>.pt" 로 가중치와 표준화 통계를 저장한다
+    출력
+      (resid_tr, resid_te)          — return_predict=False
+      (resid_tr, resid_te, predict) — return_predict=True
+    """
     dev = D.DEV
     B = cfg["train"]["batch"]
     NIT = cfg["train"]["nit"]
@@ -180,6 +239,13 @@ def don_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
         )
 
     def p(idx):
+        """학습된 망으로 잔차를 원본 스케일로 낸다.
+
+        입력
+          idx : array-like[int] — 행 인덱스
+        출력
+          ndarray — 길이 len(idx). 표준화를 되돌린 값(× ysd + ym)
+        """
         with torch.no_grad():
             i = torch.tensor(idx, device=dev)
             return (net.V(Bt[i], Tt[i]) * ysd + ym).cpu().numpy()
@@ -188,7 +254,17 @@ def don_resid(D, cfg, tr, va, te, target, return_predict=False, save_path=None):
 
 
 def load_don_resid(D, path):
-    """don_resid 저장 .pt → predict(idx). deeponet 블록(branch=VC, trunk=[곡선|계약])."""
+    """don_resid 가 저장한 .pt 를 읽어 예측기로 되살린다.
+
+    체크포인트에 든 표준화 통계를 그대로 쓴다 — 지금 데이터로 다시 계산하면 학습 때와
+    다른 공간에서 예측하게 된다.
+
+    입력
+      D    : Dataset — branch=D.VC, trunk=[D.CURVE|D.CON] 을 만든다
+      path : str — .pt 경로
+    출력
+      callable(idx) -> ndarray — 잔차 예측기 (원본 스케일)
+    """
     ck = torch.load(path, map_location="cpu", weights_only=False)
     net = MarginOperator(ck["nb"], ck["nt"], ck["P"]).to(D.DEV)
     net.load_state_dict(ck["state"])
@@ -200,6 +276,13 @@ def load_don_resid(D, path):
     ym, ysd = ck["ym"], ck["ysd"]
 
     def predict(idx):
+        """복원된 망으로 잔차를 원본 스케일로 낸다.
+
+        입력
+          idx : array-like[int] — 행 인덱스
+        출력
+          ndarray — 길이 len(idx)
+        """
         with torch.no_grad():
             i = torch.tensor(np.asarray(idx), device=D.DEV)
             return (net.V(Bt[i], Tt[i]) * ysd + ym).cpu().numpy()

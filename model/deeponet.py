@@ -9,6 +9,15 @@ from model.stage2 import don_resid
 
 
 def _anchor(D, cfg, tr, va, te, save_path=None):
+    """cost function 기준선: MC 앵커를 MSE 로 학습. 아래 두 변형과 손실만 다르다.
+
+    입력
+      D, cfg     : 공통 번들과 설정. 타깃은 D.MC
+      tr, va, te : ndarray[int] — 폴드 인덱스
+      save_path  : str | None — 주면 폴드 가중치를 저장한다
+    출력
+      callable(idx) -> ndarray[float32] — MC_hat 예측기
+    """
     *_, predict = train_curve(
         D, cfg, tr, te, target=D.MC, va=va, save_path=save_path, return_predict=True
     )
@@ -16,7 +25,10 @@ def _anchor(D, cfg, tr, va, te, save_path=None):
 
 
 def _anchor_l1(D, cfg, tr, va, te, save_path=None):
-    """cost function 벤치마크: MC 앵커를 L1(MAE) 로 학습."""
+    """cost function 벤치마크: MC 앵커를 L1(MAE) 로 학습.
+
+    입력·출력은 `_anchor` 와 같다 (`train_curve(loss="l1")` 만 다르다).
+    """
     *_, predict = train_curve(
         D, cfg, tr, te, target=D.MC, va=va, loss="l1", save_path=save_path, return_predict=True
     )
@@ -24,7 +36,10 @@ def _anchor_l1(D, cfg, tr, va, te, save_path=None):
 
 
 def _anchor_mape(D, cfg, tr, va, te, save_path=None):
-    """cost function 벤치마크: MC 앵커를 MAPE(상대오차) 로 학습."""
+    """cost function 벤치마크: MC 앵커를 MAPE(상대오차) 로 학습.
+
+    입력·출력은 `_anchor` 와 같다 (`train_curve(loss="mape")` 만 다르다).
+    """
     *_, predict = train_curve(
         D, cfg, tr, te, target=D.MC, va=va, loss="mape", save_path=save_path, return_predict=True
     )
@@ -32,6 +47,17 @@ def _anchor_mape(D, cfg, tr, va, te, save_path=None):
 
 
 def run(D, cfg):
+    """DeepONet 계열 4종을 학습·예측한다 — 앵커 손실 3종 + stage-2 를 DeepONet 으로 바꾼 1종.
+
+    네 모델 모두 stage-1 은 MC 앵커, stage-2 는 공정가 잔차다.
+
+    입력
+      D   : Dataset — 앵커는 D.MC, 최종 타깃은 D.FAIR
+      cfg : dict — config.yaml
+    출력
+      dict[str -> DataFrame] — deeponet_hybrid(앵커 MSE), deeponet_hybrid_s2don(stage-2 DeepONet),
+                               deeponet_hybrid_l1, deeponet_hybrid_mape
+    """
     T = dict(
         target=D.FAIR, use_margin=True
     )  # 공정가 2단계: y=MC_hat+recent_margin+resid, 잔차=FAIR−MC_hat−rm
