@@ -47,3 +47,17 @@ def test_source_rows_exist_for_the_figure():
 @pytest.mark.skipif(not fm.image(NAME).exists(), reason="그림 없음 (노트북 3 미실행)")
 def test_figure_is_produced():
     assert fm.image(NAME).stat().st_size > 20_000
+
+
+def test_allstar_panels_use_r2_and_mape_not_mae():
+    """7종 통합 그림의 성능 패널도 R²·MAPE 두 지표로 고정한다.
+
+     종전에는 1·2·3스타 패널이 **MAE 막대**였다. 스타별로 가격대가 달라 원 단위 오차가
+     직관적이긴 하지만, 성능 히스토그램은 R²·MAPE 로 통일하고 MAE·RMSE 등은 표로만 낸다
+     (`allstar_level.csv` 에 여섯 지표가 모두 있다). 기울기 패널은 비율이라 그대로 둔다."""
+    import inspect
+    import tools.eval_all_stars as EAS
+    src = inspect.getsource(EAS)
+    assert EAS.STAR_PANELS == ("R2", "MAPE")
+    assert "OOS MAE [KRW]" not in src, "스타별 패널에 MAE 막대가 남아 있다"
+    assert "mean |1 - slope / MC slope|" in src, "기울기 패널은 유지한다"

@@ -46,6 +46,10 @@ M = [("Direct+m (1·2·3)", "ball_d", False, False, "#1f6f9c"),
 # (MAE·RMSE 등 나머지 지표는 allstar_level.csv 로만 보고한다).
 HEADLINE = ("Direct+f+m (1·2·3)", "XGBoost (1·2·3)")
 HEADLINE_PANELS = ("R2", "MAPE")
+# 스타별 성능 패널도 같은 규약 — R²·MAPE 두 지표만. MAE·RMSE 등은 allstar_level.csv 로만 낸다.
+STAR_PANELS = ("R2", "MAPE")
+PANEL_AXIS = {"R2": ("R²  (vs MC price)", "{:.3f}"),
+              "MAPE": ("OOS MAPE  [%]", "{:.2f}")}
 
 SHORT = ["Direct+m\n(trained 1·2·3)", "Direct+m\n(trained 3★ only)",
          "XGBoost\n(trained 1·2·3)", "XGBoost\n(trained 3★ only)",
@@ -167,19 +171,29 @@ def main():
 
     # ---------- 그림 ----------
     labs = [l for l, *_ in M]; cols_ = [c for *_, c in M]
-    fig, ax = plt.subplots(1, 4, figsize=(20.0, 4.6))
-    for a, gl in zip(ax[:3], ["1star", "2star", "3star"]):
-        v = [T.loc[(gl, l), "MAE"] for l in labs]; e = [T.loc[(gl, l), "MAE_se"] for l in labs]
-        b = a.bar(range(len(labs)), v, .6, color=cols_, edgecolor="white", lw=.6,
-                  yerr=e, capsize=3, error_kw=dict(lw=1, ecolor="#444444"))
-        for r_, val in zip(b, v):
-            a.text(r_.get_x() + r_.get_width() / 2, val, "{:.1f}".format(val),
-                   ha="center", va="bottom", fontsize=9, fontweight="bold")
-        a.set_xticks(range(len(labs))); a.set_xticklabels(SHORT, fontsize=5.4)
-        a.set_ylabel("OOS MAE [KRW]")
-        a.set_title("{}  (n={:,})".format(gl.replace("star", "-star"),
-                                          int(T.loc[(gl, labs[0]), "n"])), fontsize=12)
-        a.grid(axis="y", color="#dddddd", lw=.5, alpha=.6); a.margins(y=.2)
+    # 행 = 지표(R² · MAPE), 열 = 스타. 기울기 패널은 오른쪽 한 칸을 세로로 차지한다.
+    fig = plt.figure(figsize=(20.0, 8.6))
+    gsp = fig.add_gridspec(len(STAR_PANELS), 4, hspace=.38, wspace=.22)
+    for row, key in enumerate(STAR_PANELS):
+        ylab, fmt = PANEL_AXIS[key]
+        for col, gl in enumerate(["1star", "2star", "3star"]):
+            a = fig.add_subplot(gsp[row, col])
+            v = [T.loc[(gl, l), key] for l in labs]
+            e = [T.loc[(gl, l), key + "_se"] for l in labs]
+            b = a.bar(range(len(labs)), v, .6, color=cols_, edgecolor="white", lw=.6,
+                      yerr=e, capsize=3, error_kw=dict(lw=1, ecolor="#444444"))
+            for r_, val in zip(b, v):
+                a.text(r_.get_x() + r_.get_width() / 2, val, fmt.format(val),
+                       ha="center", va="bottom", fontsize=8.5, fontweight="bold")
+            a.set_xticks(range(len(labs))); a.set_xticklabels(SHORT, fontsize=5.4)
+            a.set_ylabel(ylab)
+            if row == 0:
+                a.set_title("{}  (n={:,})".format(gl.replace("star", "-star"),
+                                                  int(T.loc[(gl, labs[0]), "n"])), fontsize=12)
+            if key == "R2":
+                a.set_ylim(0, 1.0)
+            a.grid(axis="y", color="#dddddd", lw=.5, alpha=.6); a.margins(y=.2)
+    ax = {3: fig.add_subplot(gsp[:, 3])}
     w = .16
     for j, (lab, _, _, _, col) in enumerate(M):
         v = [np.abs(1 - SL.loc[ns][lab]).mean() for ns in (1, 2, 3)]
