@@ -105,7 +105,7 @@ from module import star as ST
 from module import train as TR
 
 SEEDS = range(5)                 # 시드 수. 빠르게 확인하려면 range(1)
-MONO = dict(fixed_w=1.0, kinds=["lz_pmt"], margin_krw=8.0)   # 단조손실 설정
+MONO = dict(fixed_w=1.0, kinds=["lz_pmt"], margin_krw=0.0)   # 단조손실 설정 (margin 0 = 부호만)
 FACE = 10000
 MDIR = fm.RESULT / "models"; MDIR.mkdir(parents=True, exist_ok=True)
 
