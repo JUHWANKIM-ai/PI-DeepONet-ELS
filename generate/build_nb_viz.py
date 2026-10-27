@@ -993,6 +993,82 @@ eval_cross_section.main()
     )
 )
 
+cells.append(
+    md(
+        """
+### 1·2·3스타 **합산** 성능 막대
+
+위 `allstar.png` 는 7종을 스타별로 늘어놓아 한눈에 안 들어옵니다. 합산(ALL, n=29,916) 기준으로
+**두 장만** 따로 냅니다. 숫자는 바로 위 `eval_all_stars` 가 쓴 `allstar_level.csv` 의 `group=ALL`
+행 그대로이므로 표와 어긋날 수 없습니다.
+
+| 그림 | 비교 대상 | 읽는 법 |
+|---|---|---|
+| `headline_allstar_direct_mono` | DeepONet(Direct+단조) vs XGBoost | **아키텍처 효과** — 입력이 같다 |
+| `allstar_three` | 위 둘 + DeepONet(Direct+V_base+단조) | 가운데 막대와의 차이가 **V_base 투입 효과** |
+
+⚠ **README 헤드라인(`headline_3star`)과 숫자가 다릅니다.** 저쪽은 3스타만(n=24,350)이고
+이쪽은 1·2·3 합산입니다. 1·2스타는 DeepONet 에 쉽고 XGBoost 에 어려워 합산하면 격차가 더
+벌어집니다. 발표에 섞어 쓸 때는 **제목의 n 을 반드시 같이** 보여 주세요.
+"""
+    )
+)
+
+cells.append(
+    code(
+        '''
+LV_ALL = pd.read_csv(fm.stat("allstar_level"), encoding="utf-8-sig")
+LV_ALL = LV_ALL[LV_ALL.group == "ALL"].set_index("model")
+
+AS_COL = {"Direct+m (1·2·3)": "#1f6f9c", "Direct+f+m (1·2·3)": "#f0c05a",
+          "XGBoost (1·2·3)": "#8d99ae"}
+# 막대 아래 두 줄 라벨. 생성기가 이 셀을 문자열로 담으므로 역슬래시 이스케이프를 쓰면
+# 한 단계 더 풀려 실제 개행이 박힌다 -> "|" 를 쓰고 여기서 개행으로 바꾼다.
+AS_LAB = {k: v.replace("|", chr(10)) for k, v in {
+    "Direct+m (1·2·3)": "DeepONet|Direct + mono|(no V_base)",
+    "Direct+f+m (1·2·3)": "DeepONet|Direct + V_base + mono",
+    "XGBoost (1·2·3)": "XGBoost|(same inputs)"}.items()}
+AS_SPEC = [("R2", "R²  (vs MC price)", "Explained variance", "{:.4f}", 1.0),
+           ("MAPE", "OOS MAPE  [%]", "Relative error", "{:.3f}%", None)]
+
+
+def allstar_bars(models, name):
+    """ALL 군 막대 2패널(R²·MAPE). 막대는 단일 모형 5시드 평균, 오차막대는 시드 SE."""
+    miss = [m for m in models if m not in LV_ALL.index]
+    if miss:
+        print("건너뜀: allstar_level 에 행이 없다 -", miss)
+        return
+    fig, ax = plt.subplots(1, 2, figsize=(5.6 * len(models) / 2 + 2.3, 4.3))
+    for a, (key, ylab, title, fmt, top) in zip(ax, AS_SPEC):
+        v = [float(LV_ALL.at[m, key]) for m in models]
+        e = [float(LV_ALL.at[m, key + "_se"]) for m in models]
+        bars = a.bar(range(len(models)), v, 0.58, yerr=e, capsize=4,
+                     color=[AS_COL[m] for m in models], edgecolor="white", lw=0.8)
+        for r, val in zip(bars, v):
+            a.text(r.get_x() + r.get_width() / 2, val, fmt.format(val),
+                   ha="center", va="bottom", fontsize=10.5, fontweight="bold")
+        a.set_xticks(range(len(models)))
+        a.set_xticklabels([AS_LAB[m] for m in models], fontsize=9.5)
+        a.set_ylabel(ylab)
+        a.set_title(title, fontsize=12.5, fontweight="bold")
+        a.margins(y=0.18)
+        if top:
+            a.set_ylim(0, top)
+    fig.suptitle("1·2·3-star ELS combined — stage-1 accuracy  "
+                 "(n={:,}, mean of 5 single models ± 1 SE)".format(int(LV_ALL.n.iloc[0])),
+                 fontsize=13, fontweight="bold", y=1.02)
+    fig.tight_layout()
+    save(fig, name)
+
+
+allstar_bars(["Direct+m (1·2·3)", "XGBoost (1·2·3)"],
+             "headline_allstar_direct_mono")
+allstar_bars(["Direct+m (1·2·3)", "Direct+f+m (1·2·3)", "XGBoost (1·2·3)"],
+             "allstar_three")
+'''
+    )
+)
+
 cells.append(md("## 저장된 그림"))
 cells.append(
     code(
