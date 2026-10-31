@@ -1,0 +1,3 @@
+-r requirements-formula.txt
+pandas==2.2.3
+torch==2.7.1

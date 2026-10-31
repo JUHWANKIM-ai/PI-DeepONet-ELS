@@ -1,0 +1,82 @@
+[
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/runtime/els_kan_frozen/checkpoints.py",
+  "published": "KAN/runtime/els_kan_frozen/checkpoints.py",
+  "sha256": "63a4aa31bddcf892cb2fdf0c7c5f85d48c9834f9d6573c2739b7eeee606059a9"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/runtime/els_kan_frozen/formula_numpy.py",
+  "published": "KAN/runtime/els_kan_frozen/formula_numpy.py",
+  "sha256": "9c1e340edad6f6e90c53438e4bfaf6342eeb3c47bade3bd0d9605b1ad15340db"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/runtime/els_kan_frozen/kan_models.py",
+  "published": "KAN/runtime/els_kan_frozen/kan_models.py",
+  "sha256": "44cbfaae1c00520cfbe02d768f3bffd040d8079b27259377d4a406754f68e660"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/runtime/els_kan_frozen/predictor.py",
+  "published": "KAN/runtime/els_kan_frozen/predictor.py",
+  "sha256": "d3ac89ac78f784926a441f085bb88718cc9aa4e4c5b2ad61036011e70b06efbd"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/runtime/els_kan_frozen/__init__.py",
+  "published": "KAN/runtime/els_kan_frozen/__init__.py",
+  "sha256": "4c6c3c4e23fda07b14e5577df70751f471a62e890d4e8a6b1efa96b7d03901b6"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/runtime/els_kan_frozen/_frozen/features.py",
+  "published": "KAN/runtime/els_kan_frozen/_frozen/features.py",
+  "sha256": "c52ce4f0bb8edfb30285a1c01fb0c239e1f3a481117631843f5968f5b8b365a5"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/runtime/els_kan_frozen/_frozen/networks.py",
+  "published": "KAN/runtime/els_kan_frozen/_frozen/networks.py",
+  "sha256": "7b150df1be438a367127e35060c8f01d9cbd15e361a64fdf21a1e7358bb815a5"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/runtime/els_kan_frozen/_frozen/vbase.py",
+  "published": "KAN/runtime/els_kan_frozen/_frozen/vbase.py",
+  "sha256": "e344a1f0e30ee89bcf2921306b20b1650195a9992eb1b6080be07a7c350c0c17"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/runtime/els_kan_frozen/_frozen/__init__.py",
+  "published": "KAN/runtime/els_kan_frozen/_frozen/__init__.py",
+  "sha256": "bed10de0f29dfacdf49771b9c3f32bd482187034e85d0445eca6bb8975438b6c"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/provenance/implementation_original/formula_numpy.py",
+  "published": "KAN/model_sources/formula_numpy.py",
+  "sha256": "9c1e340edad6f6e90c53438e4bfaf6342eeb3c47bade3bd0d9605b1ad15340db"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/provenance/implementation_original/models.py",
+  "published": "KAN/model_sources/models.py",
+  "sha256": "6b41866981dbc5b4a12467ec51fc8e90939777e0bd1f0c930ebd564628f16a94"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/provenance/implementation_original/pricing_api.py",
+  "published": "KAN/model_sources/pricing_api.py",
+  "sha256": "0d28f159f4ed25324a4ad8ca41e462db9ffee07a7320cd5fcb66862032109849"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/provenance/implementation_original/refinement_models.py",
+  "published": "KAN/model_sources/refinement_models.py",
+  "sha256": "da1ffc66944aa4941f120672bf357985c2c4ca00526ac6c55252c82b661fa27b"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/input_schema.json",
+  "published": "KAN/input_schema.json",
+  "sha256": "7f8677fed6f3a843b2d5ae90352016604b88871c88d218ea856695f8d5ccd297"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/requirements-formula.txt",
+  "published": "KAN/requirements-formula.txt",
+  "sha256": "5e6d55d17a3de59f3187483e217af4f7968325ffc490ab74ad6f806b0c314d6d"
+ },
+ {
+  "source": "model_snapshots/Direct_KAN_20261031_v1/requirements-raw.txt",
+  "published": "KAN/requirements-raw.txt",
+  "sha256": "d68fa4fa40bd554c2eb7657fc1494127a6bc2e9750f6fb8066235ecd6151829a"
+ }
+]
