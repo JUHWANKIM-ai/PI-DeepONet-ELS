@@ -137,7 +137,8 @@ def vbase_els(
     mode: str = "mean",
     lizard: bool = False,
     nstar: npt.ArrayLike | None = None,
-) -> np.ndarray:
+    ret_par: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray]:
     """우리 stage-1 입력 -> V_base (액면 1 단위). CON/VC/CURVE 는 D.CON/D.VC/D.CURVE.
 
     mode: 3자산을 스칼라 하나로 줄이는 방식
@@ -155,9 +156,13 @@ def vbase_els(
       lizard : bool — True 면 리자드 조항을 닫힌 형태로 반영한다.
                기본 False (망이 보정할 몫으로 남긴다)
       nstar  : array-like(n,) | None — 기초자산 수. "clark" 에서 패딩 중복을 풀 때 쓴다
+      ret_par: bool — True 면 조립된 가격 대신 **스칼라화 산출물까지** 돌려준다.
+               프록시를 조립하지 않고 (변동성, 드리프트) 둘만 피처로 주는 실험용이다
     출력
       ndarray(n,) — 액면 1 단위 V_base. torch 로 계산하고 numpy 로 돌려준다.
                     입력에 NaN 이 있는 행은 NaN 으로 나온다 (호출부가 0 으로 바꾼다)
+      ret_par=True 면 (V_base, sigma_bar, nu) — sigma_bar 는 스칼라 과정의 연율 변동성,
+                    nu 는 연율 로그드리프트. 둘 다 ndarray(n,)
     """
     T_ = lambda a, t=torch.float32: torch.as_tensor(np.ascontiguousarray(a), dtype=t, device=dev)
     C, V, U = T_(CON), T_(VC), T_(CURVE)
@@ -308,4 +313,6 @@ def vbase_els(
         Sv = torch.where(o, Sv * (1.0 - q_reg - q_lz).clamp(min=0), Sv)
     DFT = torch.gather(DF, 1, (K - 1)[:, None]).squeeze(1)
     v = v + Sv * DFT * (pki * Ew + (1.0 - pki) * 1.0)
+    if ret_par:
+        return v.cpu().numpy(), sb.cpu().numpy(), nu.cpu().numpy()
     return v.cpu().numpy()
