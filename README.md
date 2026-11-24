@@ -323,9 +323,6 @@ data/                    # 원천 입력 및 파생 데이터 / git-ignore
 result/                  # predictions/·image/·statistics/·models/ / git-ignore
                          # README 수록 그림 2장만 추적
 
-docs/                    # 설계 노트·계획서 / git-ignore
-paper/                   # 참고 논문 / git-ignore
-scratch/                 # 임시 작업물 / git-ignore
 ```
 
 - 데이터·가중치·중간결과: Git 추적 제외
