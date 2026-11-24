@@ -364,7 +364,7 @@ scratch/                 # 임시 작업물 / git-ignore
 
 - 필요 자료: 원천 데이터
 - 실행 순서: 노트북 **0 → 1 → 2 → 3**
-- 환경: Python 3.11, conda env `abacus`
+- 환경: Python 3.11
 
 ```bash
 pip install -r requirements.txt
